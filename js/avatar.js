@@ -18,9 +18,11 @@ export const state = {
 };
 
 const CAMERA_FRAMING = {
-  custom: { pos: new THREE.Vector3(0, 1.05, 2.35), look: new THREE.Vector3(0, 0.92, 0), shift: 0.16 },
-  motion: { pos: new THREE.Vector3(0, 1.0, 2.6),  look: new THREE.Vector3(0, 0.95, 0), shift: 0 },
+  custom: { pos: new THREE.Vector3(0, 1.05, 2.5), look: new THREE.Vector3(0, 0.9, 0), shift: 0.16 },
+  // 모션 화면: 카메라를 뒤로 빼서 아바타 위아래 여백 확보 + 왼쪽 절반에 배치(오른쪽은 웹캠)
+  motion: { pos: new THREE.Vector3(0, 0.95, 3.4), look: new THREE.Vector3(0, 0.87, 0), shift: 0.23 },
 };
+export const MOTION_SHIFT = CAMERA_FRAMING.motion.shift;
 
 let container = null;
 let viewShift = 0; // 화면 가로 비율만큼 아바타를 왼쪽으로 밀기(꾸미기 화면)
@@ -28,7 +30,8 @@ let viewShift = 0; // 화면 가로 비율만큼 아바타를 왼쪽으로 밀�
 export async function initStage(containerEl) {
   container = containerEl;
 
-  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  // preserveDrawingBuffer: 영상 녹화(캔버스 복사)를 위해 필요
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -357,13 +360,23 @@ export function resetAvatarRotation() {
 }
 
 // 사진 캡처: 3D 화면만 합성 (웹캠 영상은 절대 포함하지 않음)
+// 아바타를 가운데 두고 세로형(패션 화보 비율)으로 잘라서 저장
 export function capturePhoto() {
   const { renderer, scene, camera } = state;
-  renderer.render(scene, camera); // 캡처 직전에 다시 그려서 버퍼 보존
+
+  // 캡처하는 동안만 아바타를 화면 정중앙으로
+  const prevShift = viewShift;
+  viewShift = 0;
+  applyViewShift();
+  camera.updateProjectionMatrix();
+  renderer.render(scene, camera);
   const src = renderer.domElement;
 
+  const outH = src.height;
+  const outW = Math.min(src.width, Math.round(outH * 0.8)); // 4:5 세로형
+  const sx = Math.round((src.width - outW) / 2);
   const out = document.createElement('canvas');
-  out.width = src.width; out.height = src.height;
+  out.width = outW; out.height = outH;
   const ctx = out.getContext('2d');
 
   const g = ctx.createRadialGradient(
@@ -374,7 +387,12 @@ export function capturePhoto() {
   g.addColorStop(1, '#e9e5de');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, out.width, out.height);
-  ctx.drawImage(src, 0, 0);
+  ctx.drawImage(src, sx, 0, outW, outH, 0, 0, outW, outH);
+
+  // 원래 화면 배치로 복구
+  viewShift = prevShift;
+  applyViewShift();
+  camera.updateProjectionMatrix();
 
   // 하단 브랜드 문구
   ctx.fillStyle = 'rgba(168,121,74,0.95)';

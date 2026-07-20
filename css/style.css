@@ -149,8 +149,11 @@ button { font-family: inherit; cursor: pointer; border: none; }
 .toast.show { opacity: 1; }
 
 /* ───────── 화면 3: 모션 체험 ───────── */
+.choice-title { font-size: 24px; font-weight: 700; margin-bottom: 6px; }
+#video-choice .btn { width: 320px; max-width: 80vw; }
+
 .guide-msg {
-  position: absolute; top: 6vh; left: 50%; transform: translateX(-50%);
+  position: absolute; top: 5vh; left: 27%; transform: translateX(-50%);
   background: rgba(23,21,15,0.82); color: #fff;
   font-size: clamp(22px, 2.4vw, 32px); font-weight: 700;
   padding: 20px 44px; border-radius: 999px;
@@ -159,12 +162,13 @@ button { font-family: inherit; cursor: pointer; border: none; }
 }
 .guide-msg.hidden { opacity: 0; }
 
+/* 웹캠: 아바타 옆에 같은 크기로 (오른쪽 절반) */
 .cam-preview {
-  position: absolute; right: 3vh; bottom: 3vh;
-  width: min(280px, 22vw); aspect-ratio: 4/3; object-fit: cover;
-  border-radius: 20px; border: 3px solid rgba(255,255,255,0.9);
-  box-shadow: 0 14px 40px rgba(23,21,15,0.28);
-  transform: scaleX(-1);           /* 거울 모드 */
+  position: absolute; right: 3.5vw; top: 46%;
+  transform: translateY(-50%) scaleX(-1);   /* 거울 모드 */
+  width: 40vw; height: 74vh; object-fit: cover;
+  border-radius: 24px; border: 3px solid rgba(255,255,255,0.9);
+  box-shadow: 0 20px 60px rgba(23,21,15,0.22);
   background: #222;
 }
 

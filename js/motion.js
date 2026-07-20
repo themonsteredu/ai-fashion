@@ -120,12 +120,32 @@ export function detect(now) {
   const world = poseResult.worldLandmarks && poseResult.worldLandmarks[0];
   poseImg = (poseResult.landmarks && poseResult.landmarks[0]) || null;
 
-  if (world && shoulderVisible(world)) {
+  if (world && poseImg && shoulderVisible(world)) {
     tracked = true;
+    // 좌표 혼합: 좌우/상하는 화면 좌표(정확함), 깊이는 3D 추정값 사용
+    // → 꽃받침처럼 손이 몸 가운데로 모일 때 팔이 엇갈리는 문제 방지
+    const aspect = (video.videoWidth || 640) / (video.videoHeight || 480);
+    const shDx = (poseImg[LM.L_SH].x - poseImg[LM.R_SH].x) * aspect;
+    const shDy = poseImg[LM.L_SH].y - poseImg[LM.R_SH].y;
+    const shImgDist = Math.hypot(shDx, shDy);
+    const shWorldDist = Math.hypot(
+      world[LM.L_SH].x - world[LM.R_SH].x,
+      world[LM.L_SH].y - world[LM.R_SH].y,
+      world[LM.L_SH].z - world[LM.R_SH].z
+    );
+    const scale = shImgDist > 0.01 ? shWorldDist / shImgDist : 1;
+    const originX = ((poseImg[LM.L_HIP].x + poseImg[LM.R_HIP].x) / 2) * aspect;
+    const originY = (poseImg[LM.L_HIP].y + poseImg[LM.R_HIP].y) / 2;
+
     const pts = new Map();
     const vis = new Map();
     for (const idx of Object.values(LM)) {
-      const p = conv(world[idx]);
+      const hybrid = {
+        x: (poseImg[idx].x * aspect - originX) * scale,
+        y: (poseImg[idx].y - originY) * scale,
+        z: world[idx].z,
+      };
+      const p = conv(hybrid);
       let s = smoothedLm.get(idx);
       if (!s) { s = p.clone(); smoothedLm.set(idx, s); }
       s.lerp(p, SMOOTH_LM);
@@ -142,14 +162,26 @@ export function detect(now) {
   if (handLandmarker && tracked) {
     const handResult = handLandmarker.detectForVideo(video, now);
     latestHands.left = latestHands.right = null;
-    if (handResult.landmarks && poseImg) {
-      for (let i = 0; i < handResult.landmarks.length; i++) {
-        const wristImg = handResult.landmarks[i][0];
-        // 이 손이 관람객의 왼손인지 오른손인지: 포즈의 손목 위치와 비교
+    const hands = handResult.landmarks || [];
+    if (hands.length > 0 && poseImg) {
+      if (hands.length >= 2) {
+        // 두 손이 가까이 붙어 있어도(꽃받침 등) 좌우가 뒤바뀌지 않도록
+        // 두 가지 배정 중 전체 거리가 짧은 쪽을 선택
+        const d = (i, wr) => dist2(hands[i][0], poseImg[wr]);
+        const costA = d(0, LM.L_WR) + d(1, LM.R_WR); // 0=왼손, 1=오른손
+        const costB = d(0, LM.R_WR) + d(1, LM.L_WR);
+        if (costA <= costB) {
+          latestHands.right = handResult.worldLandmarks[0]; // 거울: 관람객 왼손 → 아바타 오른손
+          latestHands.left = handResult.worldLandmarks[1];
+        } else {
+          latestHands.right = handResult.worldLandmarks[1];
+          latestHands.left = handResult.worldLandmarks[0];
+        }
+      } else {
+        const wristImg = hands[0][0];
         const dL = dist2(wristImg, poseImg[LM.L_WR]);
         const dR = dist2(wristImg, poseImg[LM.R_WR]);
-        const avatarSide = dL < dR ? 'right' : 'left'; // 거울: 관람객 왼손 → 아바타 오른손
-        latestHands[avatarSide] = handResult.worldLandmarks[i];
+        latestHands[dL < dR ? 'right' : 'left'] = handResult.worldLandmarks[0];
       }
     }
   } else {

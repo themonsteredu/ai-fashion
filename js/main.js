@@ -86,6 +86,7 @@ function show(name) {
 
 async function goStart() {
   cancelVideo(); // 녹화 중이었다면 저장 없이 중단
+  $('#video-choice').classList.add('hidden');
   Motion.stopCamera();
   Avatar.resetLook();          // 다음 관람객을 위해 초기화
   Avatar.resetAvatarRotation();
@@ -216,6 +217,17 @@ function bindUI() {
 
   $('#btn-photo').addEventListener('click', takePhoto);
   $('#btn-video').addEventListener('click', toggleVideo);
+  $('#btn-rec-avatar').addEventListener('click', () => {
+    $('#video-choice').classList.add('hidden');
+    startVideo('avatar');
+  });
+  $('#btn-rec-both').addEventListener('click', () => {
+    $('#video-choice').classList.add('hidden');
+    startVideo('both');
+  });
+  $('#btn-rec-cancel').addEventListener('click', () => {
+    $('#video-choice').classList.add('hidden');
+  });
   $('#btn-photo-close').addEventListener('click', () => {
     $('#photo-modal').classList.add('hidden');
     const v = $('#video-preview');
@@ -310,10 +322,64 @@ let recorder = null;
 let recTimer = null;
 const VIDEO_MAX_SEC = 30;
 
+let recCopyRaf = null;
+
 function toggleVideo() {
   if (recorder) { stopVideo(); return; }
-  const canvas = Avatar.state.renderer.domElement;
-  const recStream = canvas.captureStream(30);
+  $('#video-choice').classList.remove('hidden'); // 아바타만 / 아바타+내 모습 선택
+}
+
+// mode: 'avatar' = 아바타만, 'both' = 왼쪽 아바타 + 오른쪽 내 모습
+function startVideo(mode) {
+  if (recorder) return;
+  const src = Avatar.state.renderer.domElement;
+  const cam = $('#cam');
+
+  const rec = document.createElement('canvas');
+  const h = src.height;
+  rec.height = h;
+  rec.width = mode === 'both' ? Math.round(h * 16 / 9) : Math.round(src.width * 0.5);
+  const rctx = rec.getContext('2d');
+
+  // 렌더 화면에서 아바타가 있는 위치 (가운데에서 왼쪽으로 밀려 있음)
+  const avatarCx = (0.5 - Avatar.MOTION_SHIFT) * src.width;
+
+  const copyFrame = () => {
+    rctx.fillStyle = '#f2efe9';
+    rctx.fillRect(0, 0, rec.width, rec.height);
+
+    if (mode === 'both') {
+      const half = Math.round(rec.width / 2);
+      // 왼쪽: 아바타
+      const sxA = Math.min(Math.max(0, Math.round(avatarCx - half / 2)), Math.max(0, src.width - half));
+      rctx.drawImage(src, sxA, 0, half, h, 0, 0, half, h);
+      // 오른쪽: 웹캠 (거울 모드, 꽉 차게 잘라서)
+      if (cam.videoWidth > 0) {
+        const targetAspect = half / h;
+        let sw = cam.videoHeight * targetAspect, sh = cam.videoHeight, sx = (cam.videoWidth - sw) / 2, sy = 0;
+        if (sw > cam.videoWidth) {
+          sw = cam.videoWidth; sh = cam.videoWidth / targetAspect;
+          sx = 0; sy = (cam.videoHeight - sh) / 2;
+        }
+        rctx.save();
+        rctx.translate(rec.width, 0);
+        rctx.scale(-1, 1);
+        rctx.drawImage(cam, sx, sy, sw, sh, 0, 0, half, h);
+        rctx.restore();
+      }
+      // 가운데 구분선
+      rctx.fillStyle = 'rgba(255,255,255,0.9)';
+      rctx.fillRect(half - 3, 0, 6, h);
+    } else {
+      const cropW = rec.width;
+      const sxA = Math.min(Math.max(0, Math.round(avatarCx - cropW / 2)), Math.max(0, src.width - cropW));
+      rctx.drawImage(src, sxA, 0, cropW, h, 0, 0, cropW, h);
+    }
+    recCopyRaf = requestAnimationFrame(copyFrame);
+  };
+  copyFrame();
+
+  const recStream = rec.captureStream(30);
   let mime = 'video/webm;codecs=vp9';
   if (!MediaRecorder.isTypeSupported(mime)) mime = 'video/webm;codecs=vp8';
   if (!MediaRecorder.isTypeSupported(mime)) mime = 'video/webm';
@@ -327,7 +393,8 @@ function toggleVideo() {
     const a = document.createElement('a');
     const t = new Date();
     const pad = (n) => String(n).padStart(2, '0');
-    a.download = `avatar_video_${t.getFullYear()}${pad(t.getMonth() + 1)}${pad(t.getDate())}_${pad(t.getHours())}${pad(t.getMinutes())}${pad(t.getSeconds())}.webm`;
+    const prefix = mode === 'both' ? 'avatar_with_me' : 'avatar_video';
+    a.download = `${prefix}_${t.getFullYear()}${pad(t.getMonth() + 1)}${pad(t.getDate())}_${pad(t.getHours())}${pad(t.getMinutes())}${pad(t.getSeconds())}.webm`;
     a.href = url;
     a.click();
 
@@ -362,6 +429,7 @@ function stopVideo() {
   if (!recorder) return;
   clearInterval(recTimer);
   recTimer = null;
+  if (recCopyRaf) { cancelAnimationFrame(recCopyRaf); recCopyRaf = null; }
   try { recorder.stop(); } catch (e) {}
   recorder = null;
   const btn = $('#btn-video');
