@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import * as Avatar from './avatar.js';
 import * as Motion from './motion.js';
 import { Debug } from './debug.js';
-import { BACKGROUNDS, getBackground } from './backgrounds.js';
+import { BACKGROUNDS, getBackground, setCustomBackground, getCustom, setCustomVisible } from './backgrounds.js';
 import * as CamBG from './cambg.js';
 
 const IDLE_RESET_MS = 60 * 1000; // 60초 무조작 시 처음 화면으로
@@ -69,6 +69,7 @@ const clock = new THREE.Clock();
 function startRenderLoop() {
   function tick() {
     requestAnimationFrame(tick);
+    if (document.hidden) return; // 창이 숨겨져 있으면 인식·렌더링 중지 (성능)
     const dt = Math.min(clock.getDelta(), 0.05);
     const { renderer, scene, camera, vrm } = Avatar.state;
 
@@ -80,7 +81,7 @@ function startRenderLoop() {
       CamBG.process($('#cam'), nowMs);
       updateCamView();
       updateGuide();
-      if (Debug.enabled) Debug.update(Motion.getDebugInfo(), $('#cam'));
+      if (Debug.enabled) Debug.update({ ...Motion.getDebugInfo(), segFps: CamBG.getSegFps() }, $('#cam'));
     }
     if (vrm) vrm.update(dt);
     renderer.render(scene, camera);
@@ -257,13 +258,44 @@ function buildBgRow() {
     b.addEventListener('click', () => applyBackground(bg.id));
     row.appendChild(b);
   }
+  // 사진/영상 업로드 배경
+  const up = document.createElement('button');
+  up.className = 'bg-swatch bg-upload';
+  up.textContent = '＋';
+  up.title = '사진·영상 배경 업로드';
+  up.dataset.bg = 'custom';
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*,video/*';
+  input.hidden = true;
+  up.addEventListener('click', () => {
+    if (getCustom()) applyBackground('custom'); // 이미 업로드했으면 재선택
+    input.click();
+  });
+  input.addEventListener('change', async (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      await setCustomBackground(file);
+      applyBackground('custom');
+      toast('배경을 불러왔어요');
+    } catch (err) {
+      console.error(err);
+      toast('이 파일은 배경으로 쓸 수 없어요');
+    }
+  });
+  row.appendChild(up);
+  row.appendChild(input);
 }
 
 function applyBackground(id) {
-  selectedBgId = id;
-  document.body.style.background = getBackground(id).css;
+  const bg = getBackground(id);
+  selectedBgId = bg.id;
+  document.body.style.background = bg.css;
+  setCustomVisible(bg.id === 'custom' && bg.type === 'video');
   for (const el of document.querySelectorAll('.bg-swatch')) {
-    el.classList.toggle('active', el.dataset.bg === id);
+    el.classList.toggle('active', el.dataset.bg === selectedBgId);
   }
 }
 

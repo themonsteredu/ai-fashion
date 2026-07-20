@@ -89,5 +89,77 @@ export const BACKGROUNDS = [
 ];
 
 export function getBackground(id) {
+  if (id === 'custom' && custom) return custom;
   return BACKGROUNDS.find((b) => b.id === id) || BACKGROUNDS[0];
+}
+
+// ── 사용자 업로드 배경 (이미지/영상) ──
+let custom = null; // {id, name, type, el, url, css, paint}
+
+export function getCustom() { return custom; }
+
+export async function setCustomBackground(file) {
+  clearCustomBackground();
+  const url = URL.createObjectURL(file);
+  const isVideo = file.type.startsWith('video');
+
+  if (isVideo) {
+    const el = document.createElement('video');
+    el.src = url;
+    el.autoplay = true;
+    el.loop = true;
+    el.muted = true;
+    el.playsInline = true;
+    el.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;object-fit:cover;z-index:0;display:none;';
+    const stage = document.getElementById('stage');
+    document.body.insertBefore(el, stage);
+    await el.play().catch(() => {});
+    custom = {
+      id: 'custom', name: '내 배경(영상)', type: 'video', el, url,
+      css: '#101010',
+      paint(ctx, w, h) { paintCover(ctx, el, el.videoWidth, el.videoHeight, w, h, '#101010'); },
+    };
+  } else {
+    const el = new Image();
+    el.src = url;
+    await new Promise((res, rej) => { el.onload = res; el.onerror = rej; });
+    custom = {
+      id: 'custom', name: '내 배경(사진)', type: 'image', el, url,
+      css: `#101010 url("${url}") center / cover no-repeat`,
+      paint(ctx, w, h) { paintCover(ctx, el, el.naturalWidth, el.naturalHeight, w, h, '#101010'); },
+    };
+  }
+  return custom;
+}
+
+export function clearCustomBackground() {
+  if (!custom) return;
+  if (custom.type === 'video') {
+    custom.el.pause();
+    custom.el.remove();
+  }
+  URL.revokeObjectURL(custom.url); // texture/메모리 정리
+  custom = null;
+}
+
+// 영상 배경 표시 켜기/끄기 (선택된 배경이 영상일 때만 보이게)
+export function setCustomVisible(on) {
+  if (custom && custom.type === 'video') {
+    custom.el.style.display = on ? 'block' : 'none';
+    if (on) custom.el.play().catch(() => {});
+    else custom.el.pause();
+  }
+}
+
+function paintCover(ctx, src, sw, sh, dw, dh, fill) {
+  ctx.fillStyle = fill;
+  ctx.fillRect(0, 0, dw, dh);
+  if (!sw || !sh) return;
+  const targetAspect = dw / dh;
+  let cw = sh * targetAspect, ch = sh, cx = (sw - cw) / 2, cy = 0;
+  if (cw > sw) {
+    cw = sw; ch = sw / targetAspect;
+    cx = 0; cy = (sh - ch) / 2;
+  }
+  ctx.drawImage(src, cx, cy, cw, ch, 0, 0, dw, dh);
 }

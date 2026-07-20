@@ -72,6 +72,11 @@ export const Debug = {
       `발 L:${info.feet.left.locked ? '고정' : '자유'}(vy ${info.feet.left.vy.toFixed(2)}) ` +
       `R:${info.feet.right.locked ? '고정' : '자유'}(vy ${info.feet.right.vy.toFixed(2)})\n` +
       `vis 어깨 ${v(L.L_SH)}/${v(L.R_SH)} 손목 ${v(L.L_WR)}/${v(L.R_WR)} 발목 ${v(L.L_ANK)}/${v(L.R_ANK)}\n` +
+      (info.hands
+        ? `손 L:${info.hands.left.state}(${info.hands.left.conf.toFixed(2)}) R:${info.hands.right.state}(${info.hands.right.conf.toFixed(2)})\n` +
+          `제스처 ${info.gesture.heartState} blend ${info.gesture.heartBlend.toFixed(2)} | V L:${info.hands.left.v.toFixed(2)} R:${info.hands.right.v.toFixed(2)}\n` +
+          (info.segFps != null ? `세그멘테이션 ${info.segFps.toFixed(1)}fps\n` : '')
+        : '') +
       `filter torso(${info.filterParams.torso.minCutoff},${info.filterParams.torso.beta}) ` +
       `limb(${info.filterParams.limb.minCutoff},${info.filterParams.limb.beta}) ` +
       `ext(${info.filterParams.extremity.minCutoff},${info.filterParams.extremity.beta})`;
@@ -97,6 +102,19 @@ export const Debug = {
         ctx.beginPath();
         ctx.arc(offX + lm.x * dispW, lm.y * r.height, 3, 0, Math.PI * 2);
         ctx.fill();
+      }
+      // 손 21점 (왼손 파랑 / 오른손 노랑 — 아바타 기준 좌우)
+      if (info.handsImg) {
+        for (const [side, color] of [['left', '#54a8ff'], ['right', '#ffd54a']]) {
+          const hand = info.handsImg[side];
+          if (!hand) continue;
+          ctx.fillStyle = color;
+          for (const lm of hand) {
+            ctx.beginPath();
+            ctx.arc(offX + lm.x * dispW, lm.y * r.height, 2.2, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
       }
     } else {
       this.camOverlay.style.display = 'none';

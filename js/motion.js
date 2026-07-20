@@ -14,6 +14,7 @@
 import * as THREE from 'three';
 import { FilesetResolver, PoseLandmarker, FaceLandmarker, HandLandmarker } from '../lib/mediapipe/vision_bundle.mjs';
 import { OneEuroVec3, safeNormalize, isFiniteVec } from './filters.js';
+import { HAND_PRESETS, blendHandPose, VPoseDetector, HeartDetector, HEART_ARM_PRESET, HEART_ARM_MIX } from './gestures.js';
 
 // ── 필터 파라미터 (부위별 One Euro) ──
 export const FILTER_PARAMS = {
@@ -76,6 +77,35 @@ let detectFps = 0, fpsAccum = 0, fpsCount = 0, fpsLast = 0;
 const lmFilters = new Map();   // idx → OneEuroVec3
 const smoothedCurls = { left: {}, right: {} };
 
+// ── 손 전용 추적 상태 (TRACKED / LOW_CONFIDENCE / RECOVERING / LOST) ──
+const HAND_HOLD_MS = 450;      // 놓쳐도 이 시간 동안 마지막 자세 유지
+const HAND_RECOVER_MS = 250;   // 다시 잡히면 이 시간 동안 부드럽게 복귀
+function newHandTrack() {
+  return {
+    state: 'LOST', lastSeenMs: 0, recoverStartMs: 0, conf: 0, has: false,
+    filters: null, filtered: [], lastWrist: null, outlierCount: 0,
+    v: new VPoseDetector(),
+  };
+}
+const handTrack = { left: newHandTrack(), right: newHandTrack() };
+const latestHandsImg = { left: null, right: null }; // 디버그 표시용 (화면 좌표)
+let lastHandOrderSwapped = false;
+const heart = new HeartDetector();
+let heartBlendCur = 0;
+let dtCur = 1 / 60;
+
+// 손 부위별 One Euro 파라미터: 손목·손바닥은 안정, 손끝은 반응 우선
+function makeHandFilters() {
+  const arr = [];
+  for (let i = 0; i < 21; i++) {
+    const isPalm = i === 0 || i === 1 || i === 5 || i === 9 || i === 13 || i === 17;
+    const isTip = i === 4 || i === 8 || i === 12 || i === 16 || i === 20;
+    const p = isPalm ? { c: 1.1, b: 0.5 } : isTip ? { c: 2.6, b: 1.6 } : { c: 1.8, b: 1.0 };
+    arr.push(new OneEuroVec3(p.c, p.b));
+  }
+  return arr;
+}
+
 // 캘리브레이션 상태
 let calib = null;              // {scale, floorY, user:{...}, avatar:{...}}
 let calibStartMs = 0;
@@ -137,6 +167,10 @@ function resetTracking() {
   feet.left.locked = feet.right.locked = false;
   feet.left.prevY = feet.right.prevY = null;
   for (const c of Object.values(chains)) c.lastFull = 0;
+  Object.assign(handTrack.left, newHandTrack());
+  Object.assign(handTrack.right, newHandTrack());
+  heart.reset();
+  heartBlendCur = 0;
 }
 
 export async function initTrackers(onStatus) {
@@ -239,12 +273,16 @@ export function detect(now) {
     calibAccum = null;
   }
 
-  // 손: 매 프레임
+  // 손: 매 프레임 (배정 → 상태머신 → 손 전용 필터)
   if (handLandmarker && tracked) {
     const handResult = handLandmarker.detectForVideo(video, ts);
-    assignHands(handResult);
+    const confs = assignHands(handResult);
+    processHand('left', latestHands.left, confs.left, now, dtDetect);
+    processHand('right', latestHands.right, confs.right, now, dtDetect);
   } else {
     latestHands.left = latestHands.right = null;
+    processHand('left', null, 0, now, dtDetect);
+    processHand('right', null, 0, now, dtDetect);
   }
 
   // 표정: 3프레임에 1번
@@ -356,24 +394,69 @@ function updateCalibration(now) {
 
 function assignHands(handResult) {
   latestHands.left = latestHands.right = null;
+  latestHandsImg.left = latestHandsImg.right = null;
   const hands = handResult.landmarks || [];
-  if (!hands.length || !poseImg) return;
+  const confs = (handResult.handedness || []).map(
+    (h) => (h && h[0] && h[0].score != null ? h[0].score : 0.9)
+  );
+  if (!hands.length || !poseImg) return { left: 0, right: 0 };
+  const out = { left: 0, right: 0 };
+  const put = (side, i) => {
+    latestHands[side] = handResult.worldLandmarks[i];
+    latestHandsImg[side] = hands[i];
+    out[side] = confs[i] != null ? confs[i] : 0.9;
+  };
   if (hands.length >= 2) {
     const d = (i, wr) => dist2(hands[i][0], poseImg[wr]);
     const costA = d(0, LM.L_WR) + d(1, LM.R_WR);
     const costB = d(0, LM.R_WR) + d(1, LM.L_WR);
-    if (costA <= costB) {
-      latestHands.right = handResult.worldLandmarks[0];
-      latestHands.left = handResult.worldLandmarks[1];
-    } else {
-      latestHands.right = handResult.worldLandmarks[1];
-      latestHands.left = handResult.worldLandmarks[0];
-    }
+    // 두 배정의 차이가 근소하면 직전 배정을 유지 (좌우 손 뒤바뀜 방지)
+    let swapped;
+    if (Math.abs(costA - costB) < 0.004) swapped = lastHandOrderSwapped;
+    else swapped = costB < costA;
+    lastHandOrderSwapped = swapped;
+    if (!swapped) { put('right', 0); put('left', 1); }
+    else { put('right', 1); put('left', 0); }
   } else {
     const wristImg = hands[0][0];
     const dL = dist2(wristImg, poseImg[LM.L_WR]);
     const dR = dist2(wristImg, poseImg[LM.R_WR]);
-    latestHands[dL < dR ? 'right' : 'left'] = handResult.worldLandmarks[0];
+    put(dL < dR ? 'right' : 'left', 0);
+  }
+  return out;
+}
+
+// 손 상태머신 + 손 전용 필터 (아웃라이어 1~2프레임 무시 포함)
+function processHand(side, rawWorld, conf, now, dt) {
+  const t = handTrack[side];
+  if (rawWorld) {
+    const w = rawWorld[0];
+    if (t.lastWrist) {
+      const jump = Math.hypot(w.x - t.lastWrist.x, w.y - t.lastWrist.y, w.z - t.lastWrist.z);
+      if (jump > 0.3 && t.outlierCount < 2) { t.outlierCount++; return; } // 순간 튄 값 무시
+    }
+    t.outlierCount = 0;
+    t.lastWrist = { x: w.x, y: w.y, z: w.z };
+    if (!t.filters) t.filters = makeHandFilters();
+    // 신뢰도가 낮거나 복귀 중이면 더 강하게 스무딩
+    const recovering = t.recoverStartMs && now - t.recoverStartMs < HAND_RECOVER_MS;
+    const fdt = (conf < 0.8 || recovering) ? dt * 0.45 : dt;
+    for (let i = 0; i < 21; i++) {
+      t.filtered[i] = t.filters[i].filter(rawWorld[i], fdt, t.filtered[i] || new THREE.Vector3());
+    }
+    if (t.state === 'LOST') t.recoverStartMs = now;
+    else if (t.recoverStartMs && now - t.recoverStartMs > HAND_RECOVER_MS) t.recoverStartMs = 0;
+    t.state = t.recoverStartMs ? 'RECOVERING' : (conf >= 0.8 ? 'TRACKED' : 'LOW_CONFIDENCE');
+    t.lastSeenMs = now;
+    t.conf = conf;
+    t.has = true;
+  } else {
+    t.has = false;
+    t.lastWrist = null;
+    if (now - t.lastSeenMs > HAND_HOLD_MS) {
+      if (t.state !== 'LOST') { t.state = 'LOST'; t.v.reset(); }
+    }
+    // HOLD 시간 내에는 상태·목표값 유지 (손이 화면 밖으로 나가도 갑자기 안 풀림)
   }
 }
 
@@ -473,6 +556,7 @@ const _m1 = new THREE.Matrix4();
 export function applyToVRM(vrm, dt) {
   if (!vrm) return;
   const now = performance.now();
+  dtCur = dt;
 
   if (tracked && latestPose && calib) {
     computeTargets(vrm, now, dt);
@@ -558,6 +642,9 @@ function computeTargets(vrm, now, dt) {
   const p = (i) => latestPose.get(i);
   const vis = (i) => latestVis.get(i) || 0;
 
+  // 머리 위 하트 감지 (디바운스+히스테리시스, blend 0~1)
+  heartBlendCur = heart.update(p, LM, dt);
+
   // ── 골반 ──
   const hipAcross = safeNormalize(_v1.copy(p(LM.R_HIP)).sub(p(LM.L_HIP)), X_AXIS);
   _q1.setFromUnitVectors(X_AXIS, hipAcross);
@@ -578,6 +665,24 @@ function computeTargets(vrm, now, dt) {
   // ── 팔 (관람객 왼팔 → 아바타 오른팔) ──
   const armR = computeArm('right', LM.L_SH, LM.L_EL, LM.L_WR, REST_R_ARM, NEUTRAL.rightUpperArm, qChestWorld, chains.armRight, now);
   const armL = computeArm('left', LM.R_SH, LM.R_EL, LM.R_WR, REST_L_ARM, NEUTRAL.leftUpperArm, qChestWorld, chains.armLeft, now);
+
+  // 하트 활성 시: 사용자 추적 70% + 하트 보정 포즈 30% 혼합 (모양 다듬기)
+  if (heartBlendCur > 0.01) {
+    for (const side of ['left', 'right']) {
+      const rest = side === 'right' ? REST_R_ARM : REST_L_ARM;
+      const pr = HEART_ARM_PRESET[side];
+      const w = HEART_ARM_MIX * heartBlendCur;
+      const qU = new THREE.Quaternion().setFromUnitVectors(rest, pr.upperDir);
+      const localU = new THREE.Quaternion().copy(qChestWorld).invert().multiply(qU);
+      targets[side + 'UpperArm'].slerp(localU, w);
+      prevTargets[side + 'UpperArm'].copy(targets[side + 'UpperArm']);
+      const qL = new THREE.Quaternion().setFromUnitVectors(rest, pr.lowerDir);
+      const localL = qU.clone().invert().multiply(qL);
+      targets[side + 'LowerArm'].slerp(localL, w);
+      prevTargets[side + 'LowerArm'].copy(targets[side + 'LowerArm']);
+    }
+  }
+
   solveHand('right', armR);
   solveHand('left', armL);
 
@@ -793,17 +898,22 @@ function solveLegs(vrm, qHipsWorld, now, dt) {
   }
 }
 
-// ── 손 (손목 방향 + 손가락) ──
+// ── 손 (상태머신 + 손목 방향 + 손가락 + 제스처 프리셋 혼합) ──
 function solveHand(side, arm) {
-  const world = latestHands[side];
+  const t = handTrack[side];
   const curls = smoothedCurls[side];
 
-  if (!world || !arm) {
-    setTargetSafe(side + 'Hand', IDENTITY);
-    setFingerTargets(side, (f) => smoothCurl(curls, f, 0.15));
+  // 완전히 놓침(LOST): relaxed 손모양으로 서서히 복귀
+  if (t.state === 'LOST' || !arm) {
+    _q3.copy(targets[side + 'Hand']).slerp(IDENTITY, 0.05);
+    setTargetSafe(side + 'Hand', _q3);
+    setFingerTargets(side, (f) => smoothCurl(curls, f, HAND_PRESETS.relaxed[f]));
     return;
   }
+  // 잠시 놓침(HOLD 구간): 마지막 정상 자세 그대로 유지
+  if (!t.has || t.filtered.length < 21) return;
 
+  const world = t.filtered; // 손 전용 One Euro 필터를 거친 21점
   const pts = [];
   for (let i = 0; i < 21; i++) pts.push(conv(world[i]));
 
@@ -824,7 +934,9 @@ function solveHand(side, arm) {
     const qHandWorld = qTarget.multiply(qRest.invert());
     const local = _q3.copy(arm.lowerWorld).invert().multiply(qHandWorld);
     clampRotation(local, 1.6);
-    const out = new THREE.Quaternion().copy(IDENTITY).slerp(local, HAND_ORIENT);
+    // 신뢰도가 낮으면 손목 방향 반영을 줄여 안정화
+    const orientW = HAND_ORIENT * (t.state === 'TRACKED' ? 1 : 0.6);
+    const out = new THREE.Quaternion().copy(IDENTITY).slerp(local, orientW);
     setTargetSafe(side + 'Hand', out);
   } else {
     setTargetSafe(side + 'Hand', IDENTITY);
@@ -837,7 +949,11 @@ function solveHand(side, arm) {
     Little: fingerCurl(world, 17),
     Thumb: thumbCurl(world),
   };
-  setFingerTargets(side, (f) => smoothCurl(curls, f, raw[f]));
+  // 제스처 프리셋 혼합: V 포즈(손가락 조건 감지) + 머리 위 하트
+  const vBlend = t.v.update(raw, world, dtCur);
+  let mixed = vBlend > 0.01 ? blendHandPose(raw, HAND_PRESETS.victory, vBlend * (1 - heartBlendCur)) : raw;
+  if (heartBlendCur > 0.01) mixed = blendHandPose(mixed, HAND_PRESETS.overheadHeart, heartBlendCur);
+  setFingerTargets(side, (f) => smoothCurl(curls, f, mixed[f]));
 }
 
 function smoothCurl(store, finger, target) {
@@ -920,6 +1036,12 @@ export function getDebugInfo() {
       left: { locked: feet.left.locked, vy: feet.left.vy },
       right: { locked: feet.right.locked, vy: feet.right.vy },
     },
+    hands: {
+      left: { state: handTrack.left.state, conf: handTrack.left.conf, v: handTrack.left.v.blend },
+      right: { state: handTrack.right.state, conf: handTrack.right.conf, v: handTrack.right.v.blend },
+    },
+    handsImg: latestHandsImg,
+    gesture: { heartState: heart.state, heartBlend: heartBlendCur },
     filterParams: FILTER_PARAMS,
     LM,
   };

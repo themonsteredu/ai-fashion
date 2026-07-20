@@ -8,8 +8,16 @@ let mode = 'off'; // 'off' | 'blur' | 'replace'
 let lastTs = 0;
 let maskReady = false;
 
+// 성능: 세그멘테이션은 렌더링과 분리해 ~15fps로만 실행
+const SEG_INTERVAL_MS = 66;
+let lastSegMs = 0;
+let segFps = 0, segCount = 0, segWindowStart = 0;
+
 const maskCanvas = document.createElement('canvas');
+const maskSmooth = document.createElement('canvas'); // 프레임 간 마스크 블렌딩(흔들림 방지)
 const personCanvas = document.createElement('canvas');
+
+export function getSegFps() { return segFps; }
 
 export function isReady() { return ready; }
 export function getMode() { return mode; }
@@ -34,10 +42,20 @@ export async function init() {
   ready = true;
 }
 
-// 매 프레임: 인물 마스크 갱신 → personCanvas에 인물만 남김
+// 인물 마스크 갱신 → personCanvas에 인물만 남김 (15fps 간격으로만 실행)
 export function process(video, now) {
-  maskReady = false;
-  if (mode === 'off' || !segmenter || !video || video.readyState < 2 || !video.videoWidth) return;
+  if (mode === 'off' || !segmenter || !video || video.readyState < 2 || !video.videoWidth) {
+    maskReady = false;
+    return;
+  }
+  if (now - lastSegMs < SEG_INTERVAL_MS) return; // 이전 마스크 재사용
+  lastSegMs = now;
+  segCount++;
+  if (now - segWindowStart > 1000) {
+    segFps = segCount * 1000 / (now - segWindowStart || 1);
+    segCount = 0;
+    segWindowStart = now;
+  }
 
   let ts = Math.round(now);
   if (ts <= lastTs) ts = lastTs + 1;
@@ -69,6 +87,18 @@ export function process(video, now) {
   mctx.putImageData(img, 0, 0);
   mask.close();
 
+  // 시간 스무딩: 이전 프레임 마스크와 블렌딩 (경계 흔들림 방지)
+  if (maskSmooth.width !== mw || maskSmooth.height !== mh) {
+    maskSmooth.width = mw;
+    maskSmooth.height = mh;
+    maskSmooth.getContext('2d').drawImage(maskCanvas, 0, 0);
+  } else {
+    const sctx = maskSmooth.getContext('2d');
+    sctx.globalAlpha = 0.55;
+    sctx.drawImage(maskCanvas, 0, 0);
+    sctx.globalAlpha = 1;
+  }
+
   // 인물만 남긴 캔버스 (표시용 절반 해상도면 충분)
   const pw = Math.max(2, Math.round(video.videoWidth / 2));
   const ph = Math.max(2, Math.round(video.videoHeight / 2));
@@ -80,8 +110,8 @@ export function process(video, now) {
   pctx.clearRect(0, 0, pw, ph);
   pctx.drawImage(video, 0, 0, pw, ph);
   pctx.globalCompositeOperation = 'destination-in';
-  pctx.filter = 'blur(1.5px)'; // 경계 부드럽게
-  pctx.drawImage(maskCanvas, 0, 0, pw, ph);
+  pctx.filter = 'blur(1.5px)'; // 경계 feathering
+  pctx.drawImage(maskSmooth, 0, 0, pw, ph);
   pctx.filter = 'none';
   pctx.globalCompositeOperation = 'source-over';
   maskReady = true;
