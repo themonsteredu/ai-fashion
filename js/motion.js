@@ -111,7 +111,8 @@ export function getHeadHint() {
   const dy = poseImg[LM.L_EYE].y - poseImg[LM.R_EYE].y;
   const eyeFrac = Math.hypot(dx, dy);
   if (eyeFrac < 0.008) return null;
-  return { eyeFrac };
+  const eyeY = (poseImg[LM.L_EYE].y + poseImg[LM.R_EYE].y) / 2;
+  return { eyeFrac, eyeY };
 }
 
 // 새 아바타 등록: 골격 치수 측정 + 상태 초기화
@@ -181,8 +182,9 @@ export async function initTrackers(onStatus) {
 
 export async function startCamera(videoEl) {
   video = videoEl;
+  // 고해상도 요청: 웹캠에 따라 더 넓은 화각으로 잡혀 몸이 더 많이 나옴
   stream = await navigator.mediaDevices.getUserMedia({
-    video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
+    video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
     audio: false,
   });
   video.srcObject = stream;

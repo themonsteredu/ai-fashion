@@ -122,60 +122,31 @@ export function setFraming(mode) {
   state.camera.updateProjectionMatrix();
 }
 
-// ── 모션 화면: 관람객 머리 크기에 맞춰 아바타 배율 자동 조절 ──
-// 관람객이 가까이 있으면(상반신만 보이면) 아바타도 상반신 위주로 확대,
-// 뒤로 물러나 전신이 보이면 아바타도 전신으로.
-const ZOOM_MIN_Z = 1.15;      // 최대 확대 (가슴 위)
-const ZOOM_MATCH = 0.74;      // 웹캠 화면이 차지하는 세로 비율 (74vh)
-
-let cachedEyeDist = 0;
-
-export function updateMotionFraming(hint, dt) {
-  if (framingMode !== 'motion' || !state.vrm) return;
-  const f = CAMERA_FRAMING.motion;
-  let targetZ = f.pos.z, targetLookY = f.look.y, targetLookX = 0;
-
-  if (hint && hint.eyeFrac) {
-    const eyeW = avatarEyeDist();
-    const fovTan = Math.tan(THREE.MathUtils.degToRad(state.camera.fov / 2));
-    const desired = eyeW / (2 * fovTan * hint.eyeFrac * ZOOM_MATCH);
-    targetZ = THREE.MathUtils.clamp(desired, ZOOM_MIN_Z, f.pos.z);
-    const t = (f.pos.z - targetZ) / Math.max(0.001, f.pos.z - ZOOM_MIN_Z);
-    const head = headWorldPos();
-    targetLookY = THREE.MathUtils.lerp(f.look.y, head.y - 0.05, t);
-    targetLookX = THREE.MathUtils.lerp(0, head.x, t);
-  }
-
-  const k = 1 - Math.exp(-dt * 2.2);
-  motionCam.z += (targetZ - motionCam.z) * k;
-  motionCam.lookY += (targetLookY - motionCam.lookY) * k;
-  motionCam.lookX += (targetLookX - motionCam.lookX) * k;
-
-  const t2 = (f.pos.z - motionCam.z) / Math.max(0.001, f.pos.z - ZOOM_MIN_Z);
-  const camY = THREE.MathUtils.lerp(f.pos.y, motionCam.lookY + 0.05, t2);
-  state.camera.position.set(motionCam.lookX, camY, motionCam.z);
-  state.camera.lookAt(motionCam.lookX, motionCam.lookY, 0);
-}
-
-const _wp = new THREE.Vector3();
-
-function avatarEyeDist() {
-  if (cachedEyeDist > 0) return cachedEyeDist;
+// ── 웹캠 배율 맞춤용: 아바타 눈 사이 거리의 화면상 픽셀 크기와 눈높이 ──
+// (아바타는 항상 전신 고정, 웹캠 표시 배율을 여기에 맞춘다)
+export function getAvatarEyeScreen() {
+  if (!state.vrm) return null;
   const h = state.vrm.humanoid;
   const l = h.getRawBoneNode('leftEye');
   const r = h.getRawBoneNode('rightEye');
+  let a, b;
   if (l && r) {
-    const d = l.getWorldPosition(new THREE.Vector3()).distanceTo(r.getWorldPosition(_wp));
-    if (d > 0.01 && d < 0.35) { cachedEyeDist = d; return d; }
+    a = l.getWorldPosition(new THREE.Vector3());
+    b = r.getWorldPosition(new THREE.Vector3());
+  } else {
+    const head = h.getRawBoneNode('head');
+    if (!head) return null;
+    const c = head.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 0.06, 0));
+    a = c.clone().setX(c.x - 0.035);
+    b = c.clone().setX(c.x + 0.035);
   }
-  cachedEyeDist = 0.07;
-  return cachedEyeDist;
-}
-
-function headWorldPos() {
-  const head = state.vrm.humanoid.getRawBoneNode('head');
-  if (head) return head.getWorldPosition(_wp).clone().add(new THREE.Vector3(0, 0.06, 0));
-  return new THREE.Vector3(0, 1.3, 0);
+  const w = window.innerWidth, hpx = window.innerHeight;
+  const toPx = (v) => {
+    const p = v.clone().project(state.camera);
+    return { x: (p.x + 1) / 2 * w, y: (1 - p.y) / 2 * hpx };
+  };
+  const pa = toPx(a), pb = toPx(b);
+  return { px: Math.hypot(pa.x - pb.x, pa.y - pb.y), y: (pa.y + pb.y) / 2 };
 }
 
 function makeLoader() {
@@ -206,7 +177,6 @@ function setupVrm(gltf) {
 
   state.scene.add(vrm.scene);
   state.vrm = vrm;
-  cachedEyeDist = 0;
 
   // 아바타가 항상 관람객(화면) 쪽을 바라보게 — 눈맞춤 디테일
   if (vrm.lookAt) vrm.lookAt.target = state.camera;

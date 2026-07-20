@@ -70,7 +70,7 @@ function startRenderLoop() {
     if (current === 'motion' && motionReady) {
       Motion.detect(performance.now());
       Motion.applyToVRM(vrm, dt);
-      Avatar.updateMotionFraming(Motion.getHeadHint(), dt); // 관람객 배율에 맞춰 줌
+      updateCamMatch(dt); // 웹캠 표시 배율을 아바타 크기에 맞춤
       updateGuide();
       if (Debug.enabled) Debug.update(Motion.getDebugInfo(), $('#cam'));
     }
@@ -92,6 +92,7 @@ function show(name) {
 async function goStart() {
   cancelVideo(); // 녹화 중이었다면 저장 없이 중단
   $('#video-choice').classList.add('hidden');
+  resetCamMatch();
   Motion.stopCamera();
   Avatar.resetLook();          // 다음 관람객을 위해 초기화
   Avatar.resetAvatarRotation();
@@ -119,6 +120,40 @@ async function goMotion() {
     cameraFailed = true;
   }
   updateGuide();
+}
+
+// ── 웹캠 표시 배율 맞춤: 아바타는 그대로, 내 모습의 크기·눈높이를 아바타에 맞춤 ──
+const camMatch = { s: 1, ty: 0 };
+
+function updateCamMatch(dt) {
+  const camEl = $('#cam');
+  const wrap = $('#cam-wrap');
+  const hint = motionReady ? Motion.getHeadHint() : null;
+  let targetS = 1, targetTy = 0;
+
+  const eye = hint ? Avatar.getAvatarEyeScreen() : null;
+  if (hint && eye && eye.px > 1) {
+    const rect = wrap.getBoundingClientRect();
+    const userEyePx = hint.eyeFrac * rect.height; // 웹캠은 세로 기준으로 표시됨
+    if (userEyePx > 2) {
+      targetS = THREE.MathUtils.clamp(eye.px / userEyePx, 0.3, 1.2);
+      // 눈높이 정렬: 배율 적용 후 내 눈 위치를 아바타 눈 위치에 맞춤
+      const originY = rect.top + rect.height * 0.3; // transform-origin 50% 30%
+      const eyeYAfter = originY + (hint.eyeY - 0.3) * rect.height * targetS;
+      targetTy = THREE.MathUtils.clamp(eye.y - eyeYAfter, -rect.height * 0.45, rect.height * 0.45);
+    }
+  }
+  const k = 1 - Math.exp(-dt * 3);
+  camMatch.s += (targetS - camMatch.s) * k;
+  camMatch.ty += (targetTy - camMatch.ty) * k;
+  camEl.style.transform = `translateY(${camMatch.ty.toFixed(1)}px) scale(${camMatch.s.toFixed(3)}) scaleX(-1)`;
+}
+
+function resetCamMatch() {
+  camMatch.s = 1;
+  camMatch.ty = 0;
+  const camEl = $('#cam');
+  if (camEl) camEl.style.transform = '';
 }
 
 function updateGuide() {

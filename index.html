@@ -71,7 +71,9 @@
 <!-- ───────── 화면 3 : 모션 체험 ───────── -->
 <section id="screen-motion" class="screen">
   <div id="guide-msg" class="guide-msg">카메라 앞에 서 주세요</div>
-  <video id="cam" class="cam-preview" playsinline muted></video>
+  <div id="cam-wrap" class="cam-preview">
+    <video id="cam" playsinline muted></video>
+  </div>
   <div class="motion-bar">
     <button id="btn-photo" class="btn btn-primary btn-lg">📷 사진 찍기</button>
     <button id="btn-video" class="btn btn-ghost btn-lg">🎥 영상 찍기</button>
