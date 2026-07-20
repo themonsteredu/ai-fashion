@@ -42,6 +42,7 @@ async function boot() {
     return;
   }
   if (Avatar.state.usingSample) $('#sample-badge').classList.remove('hidden');
+  adaptPartTabs();
 
   $('#loading').classList.add('hidden');
 
@@ -131,6 +132,24 @@ function updateGuide() {
   } else {
     guide.textContent = '카메라 앞에 서 주세요';
     guide.classList.remove('hidden');
+  }
+}
+
+// 아바타에 없는 부위 버튼은 숨김 (원피스 아바타면 "상의" → "의상")
+function adaptPartTabs() {
+  const btns = document.querySelectorAll('#part-tabs .seg-btn');
+  let firstAvailable = null;
+  for (const b of btns) {
+    const ok = Avatar.partAvailable(b.dataset.part);
+    b.style.display = ok ? '' : 'none';
+    if (ok && !firstAvailable) firstAvailable = b;
+  }
+  if (!Avatar.partAvailable('bottom') && Avatar.partAvailable('top')) {
+    document.querySelector('#part-tabs .seg-btn[data-part="top"]').textContent = '의상';
+  }
+  if (firstAvailable && !Avatar.partAvailable(selectedPart)) {
+    selectedPart = firstAvailable.dataset.part;
+    for (const b of btns) b.classList.toggle('active', b === firstAvailable);
   }
 }
 
