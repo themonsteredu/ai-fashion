@@ -1057,7 +1057,8 @@ function segAngle(w, a, b, c) {
 }
 
 const _axisZ = new THREE.Vector3(0, 0, 1);
-// 엄지 굽힘 축: rest 자세에서 엄지는 대각선(±X와 +Z 사이)을 향하므로
+const _axisYUp = new THREE.Vector3(0, 1, 0);
+// 엄지 굽힘 축(마디용): rest 자세에서 엄지는 대각선(±X와 +Z 사이)을 향하므로
 // 순수 Y축이 아닌 [엄지 방향 × 손바닥 법선] 대각 축으로 굽혀야 뒤틀리지 않음
 const THUMB_AXIS = {
   right: new THREE.Vector3(0.707, 0, 0.707),
@@ -1082,8 +1083,17 @@ function setFingerTargetsByAngles(side, angles, store) {
       v = smoothCurl(store, f + j, v);                 // 관절별 개별 스무딩
       v = THREE.MathUtils.clamp(v, -0.08, limits[j]);  // 관절 각도 제한
       const bone = side + f + joints[j];
-      if (f === 'Thumb') targets[bone].setFromAxisAngle(thumbAxis, v);
-      else targets[bone].setFromAxisAngle(_axisZ, zSign * v);
+      if (f === 'Thumb') {
+        if (j === 0) {
+          // 뿌리(Metacarpal): 손바닥에 눕지 않도록 '아래로 접기'가 아니라
+          // 손바닥 위에서 다른 손가락 쪽으로 '모으는' 회전(손바닥 법선 축)
+          targets[bone].setFromAxisAngle(_axisYUp, (side === 'right' ? -1 : 1) * v * 0.9);
+        } else {
+          targets[bone].setFromAxisAngle(thumbAxis, v);
+        }
+      } else {
+        targets[bone].setFromAxisAngle(_axisZ, zSign * v);
+      }
     }
   }
 }
