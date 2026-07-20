@@ -67,6 +67,7 @@ function startRenderLoop() {
     if (current === 'motion' && motionReady) {
       Motion.detect(performance.now());
       Motion.applyToVRM(vrm, dt);
+      Avatar.updateMotionFraming(Motion.getHeadHint(), dt); // 관람객 배율에 맞춰 줌
       updateGuide();
     }
     if (vrm) vrm.update(dt);

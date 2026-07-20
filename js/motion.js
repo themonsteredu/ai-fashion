@@ -3,8 +3,8 @@ import * as THREE from 'three';
 import { FilesetResolver, PoseLandmarker, FaceLandmarker, HandLandmarker } from '../lib/mediapipe/vision_bundle.mjs';
 
 // ── 조정 가능한 상수 (아바타가 떨리면 SMOOTH_* 값을 낮추세요) ──
-const SMOOTH_LM = 0.45;        // 관절 좌표 스무딩 (0~1, 낮을수록 부드럽고 느림)
-const SMOOTH_BONE = 11;        // 본 회전 따라가는 속도 (낮을수록 부드러움)
+const SMOOTH_LM = 0.55;        // 관절 좌표 스무딩 (0~1, 낮을수록 부드럽고 느림)
+const SMOOTH_BONE = 13;        // 본 회전 따라가는 속도 (낮을수록 부드러움)
 const SMOOTH_LEG = 8;          // 다리 회전 속도 (팔보다 천천히 = 덜 떨림)
 const SMOOTH_FACE = 0.5;       // 표정 스무딩
 const FINGER_SMOOTH = 0.55;    // 손가락 스무딩
@@ -37,13 +37,25 @@ let latestPose = null;   // 스무딩된 관절 좌표 (아바타 좌표계)
 let latestVis = null;    // 관절별 신뢰도
 let poseImg = null;      // 화면 기준 좌표 (좌우 이동·손 배정용)
 let latestHands = { left: null, right: null }; // 아바타 기준 좌우
-let faceValues = { aa: 0, blinkL: 0, blinkR: 0 };
+let faceValues = { aa: 0, blinkL: 0, blinkR: 0, smile: 0 };
 let tracked = false;
 
 const smoothedLm = new Map();
 const smoothedCurls = { left: {}, right: {} };
 
 export function isTracking() { return tracked; }
+
+// 화면 속 관람객 눈 사이 거리 (카메라 프레임 높이 대비 비율)
+// → 아바타 크기를 관람객과 비슷하게 맞추는 데 사용
+export function getHeadHint() {
+  if (!tracked || !poseImg || !video) return null;
+  const aspect = (video.videoWidth || 640) / (video.videoHeight || 480);
+  const dx = (poseImg[LM.L_EYE].x - poseImg[LM.R_EYE].x) * aspect;
+  const dy = poseImg[LM.L_EYE].y - poseImg[LM.R_EYE].y;
+  const eyeFrac = Math.hypot(dx, dy);
+  if (eyeFrac < 0.008) return null;
+  return { eyeFrac };
+}
 
 // 새 아바타를 불러왔을 때 호출 (기억해 둔 기준 자세 초기화)
 export function resetForNewAvatar() {
@@ -193,15 +205,20 @@ export function detect(now) {
     const faceResult = faceLandmarker.detectForVideo(video, now + 0.001);
     const shapes = faceResult.faceBlendshapes && faceResult.faceBlendshapes[0];
     if (shapes) {
-      let jaw = 0, bl = 0, br = 0;
+      let jaw = 0, bl = 0, br = 0, smL = 0, smR = 0;
       for (const c of shapes.categories) {
         if (c.categoryName === 'jawOpen') jaw = c.score;
         else if (c.categoryName === 'eyeBlinkLeft') bl = c.score;
         else if (c.categoryName === 'eyeBlinkRight') br = c.score;
+        else if (c.categoryName === 'mouthSmileLeft') smL = c.score;
+        else if (c.categoryName === 'mouthSmileRight') smR = c.score;
       }
       faceValues.aa += (clamp01(jaw * 1.6) - faceValues.aa) * SMOOTH_FACE;
       faceValues.blinkR += (blinkCurve(bl) - faceValues.blinkR) * SMOOTH_FACE;
       faceValues.blinkL += (blinkCurve(br) - faceValues.blinkL) * SMOOTH_FACE;
+      // 미소: 입꼬리가 올라가면 아바타도 웃는 표정
+      const smile = clamp01(((smL + smR) / 2 - 0.3) / 0.45) * 0.75;
+      faceValues.smile += (smile - faceValues.smile) * SMOOTH_FACE * 0.7;
     }
   }
 }
@@ -241,6 +258,8 @@ const targets = {
   chest: new THREE.Quaternion(),
   neck: new THREE.Quaternion(),
   head: new THREE.Quaternion(),
+  leftShoulder: new THREE.Quaternion(),
+  rightShoulder: new THREE.Quaternion(),
   leftUpperArm: NEUTRAL.leftUpperArm.clone(),
   leftLowerArm: new THREE.Quaternion(),
   leftHand: new THREE.Quaternion(),
@@ -305,8 +324,9 @@ export function applyToVRM(vrm, dt) {
   // 표정
   const em = vrm.expressionManager;
   if (em) {
-    const value = tracked ? faceValues : { aa: 0, blinkL: 0, blinkR: 0 };
+    const value = tracked ? faceValues : { aa: 0, blinkL: 0, blinkR: 0, smile: 0 };
     safeSet(em, 'aa', value.aa);
+    safeSet(em, 'happy', value.smile);
     if (em.expressionMap && em.expressionMap['blinkLeft']) {
       safeSet(em, 'blinkLeft', value.blinkL);
       safeSet(em, 'blinkRight', value.blinkR);
@@ -383,9 +403,14 @@ function computeTargets() {
     if (Math.min(vis(iSh), vis(iEl)) < VISIBILITY_MIN) {
       targets[ua].copy(neutral);
       targets[la].identity();
+      targets[side + 'Shoulder'].identity();
       return null;
     }
     const upperDir = _v1.copy(p(iEl)).sub(p(iSh)).normalize();
+    // 팔을 들면 어깨도 살짝 따라 올라가게 (디테일)
+    const elev = Math.max(0, upperDir.y);
+    const shoulderAngle = elev * 0.3;
+    targets[side + 'Shoulder'].setFromAxisAngle(_axisZ, side === 'right' ? -shoulderAngle : shoulderAngle);
     const qUpperWorld = new THREE.Quaternion().setFromUnitVectors(rest, upperDir);
     targets[ua].copy(parentWorld).invert().multiply(qUpperWorld);
 
