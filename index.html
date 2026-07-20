@@ -28,6 +28,11 @@
     <h1>나만의 아바타와<br>런웨이에 서 보세요</h1>
     <p class="sub">옷 색상을 고르고, 카메라 앞에서 움직이면<br>아바타가 실시간으로 따라 해요</p>
     <button id="btn-start" class="btn btn-primary btn-xl">시작하기</button>
+    <div class="upload-row">
+      <button id="btn-upload" class="btn btn-ghost">📂 내 아바타 불러오기 (.vrm)</button>
+      <input type="file" id="vrm-file" accept=".vrm" hidden>
+      <p class="upload-hint">VRoid Studio에서 만든 VRM 파일을 선택하면 내 아바타로 체험할 수 있어요</p>
+    </div>
   </div>
 </section>
 
@@ -69,6 +74,7 @@
   <video id="cam" class="cam-preview" playsinline muted></video>
   <div class="motion-bar">
     <button id="btn-photo" class="btn btn-primary btn-lg">📷 사진 찍기</button>
+    <button id="btn-video" class="btn btn-ghost btn-lg">🎥 영상 찍기</button>
     <button id="btn-home-3" class="btn btn-ghost btn-lg">처음으로</button>
   </div>
   <div id="countdown" class="countdown hidden"></div>
@@ -79,7 +85,8 @@
 <div id="photo-modal" class="modal hidden">
   <div class="modal-card">
     <img id="photo-img" alt="촬영된 아바타 사진">
-    <p class="save-note">사진이 저장되었어요 (다운로드 폴더)</p>
+    <video id="video-preview" class="hidden" controls autoplay loop muted playsinline></video>
+    <p id="save-note" class="save-note">사진이 저장되었어요 (다운로드 폴더)</p>
     <button id="btn-photo-close" class="btn btn-primary">확인</button>
   </div>
 </div>

@@ -112,20 +112,13 @@ export function setFraming(mode) {
   state.camera.updateProjectionMatrix();
 }
 
-export async function loadAvatar(onProgress) {
+function makeLoader() {
   const loader = new GLTFLoader();
   loader.register((parser) => new VRMLoaderPlugin(parser));
+  return loader;
+}
 
-  let gltf;
-  try {
-    gltf = await loadWithProgress(loader, './character.vrm', onProgress);
-    state.usingSample = false;
-  } catch (e) {
-    console.warn('character.vrm 로드 실패 → 샘플 아바타 사용', e);
-    gltf = await loadWithProgress(loader, './sample_avatar.vrm', onProgress);
-    state.usingSample = true;
-  }
-
+function setupVrm(gltf) {
   const vrm = gltf.userData.vrm;
 
   // 성능 최적화 + VRM0 모델 방향 보정
@@ -137,12 +130,45 @@ export async function loadAvatar(onProgress) {
     if (obj.isMesh || obj.isSkinnedMesh) obj.frustumCulled = false;
   });
 
+  // 이전 아바타 제거
+  if (state.vrm) {
+    state.scene.remove(state.vrm.scene);
+    try { VRMUtils.deepDispose(state.vrm.scene); } catch (e) {}
+  }
+  texCache.clear();
+
   state.scene.add(vrm.scene);
   state.vrm = vrm;
 
   classifyMaterials(vrm);
   applyNeutralArms(vrm);
   return vrm;
+}
+
+export async function loadAvatar(onProgress) {
+  const loader = makeLoader();
+  let gltf;
+  try {
+    gltf = await loadWithProgress(loader, './character.vrm', onProgress);
+    state.usingSample = false;
+  } catch (e) {
+    console.warn('character.vrm 로드 실패 → 샘플 아바타 사용', e);
+    gltf = await loadWithProgress(loader, './sample_avatar.vrm', onProgress);
+    state.usingSample = true;
+  }
+  return setupVrm(gltf);
+}
+
+// 관람객·학생이 직접 고른 .vrm 파일 불러오기
+export async function loadAvatarFromFile(file, onProgress) {
+  const url = URL.createObjectURL(file);
+  try {
+    const gltf = await loadWithProgress(makeLoader(), url, onProgress);
+    state.usingSample = false;
+    return setupVrm(gltf);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 
 function loadWithProgress(loader, url, onProgress) {

@@ -85,6 +85,7 @@ function show(name) {
 }
 
 async function goStart() {
+  cancelVideo(); // 녹화 중이었다면 저장 없이 중단
   Motion.stopCamera();
   Avatar.resetLook();          // 다음 관람객을 위해 초기화
   Avatar.resetAvatarRotation();
@@ -214,8 +215,42 @@ function bindUI() {
   }
 
   $('#btn-photo').addEventListener('click', takePhoto);
+  $('#btn-video').addEventListener('click', toggleVideo);
   $('#btn-photo-close').addEventListener('click', () => {
     $('#photo-modal').classList.add('hidden');
+    const v = $('#video-preview');
+    v.pause();
+    v.removeAttribute('src');
+  });
+
+  // 내 아바타(.vrm) 불러오기
+  $('#btn-upload').addEventListener('click', () => $('#vrm-file').click());
+  $('#vrm-file').addEventListener('change', async (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    const loading = $('#loading');
+    const loadingText = $('#loading-text');
+    loading.classList.remove('hidden');
+    loadingText.textContent = '아바타를 불러오는 중…';
+    try {
+      await Avatar.loadAvatarFromFile(file, (r) => {
+        loadingText.textContent = `아바타를 불러오는 중… ${Math.round(r * 100)}%`;
+      });
+      Motion.resetForNewAvatar();
+      $('#sample-badge').classList.add('hidden');
+      selectedPart = 'top';
+      selectedPattern = 'solid';
+      adaptPartTabs();
+      syncPaletteUI();
+      loading.classList.add('hidden');
+      goCustom();
+      toast('아바타를 불러왔어요! 이제 꾸며 보세요');
+    } catch (err) {
+      console.error('VRM 로드 실패', err);
+      loading.classList.add('hidden');
+      alert('이 파일은 열 수 없어요. VRoid Studio에서 내보낸 .vrm 파일인지 확인해 주세요.');
+    }
   });
 
   // 무조작 감지
@@ -252,6 +287,9 @@ async function takePhoto() {
 
   const dataUrl = Avatar.capturePhoto();
   $('#photo-img').src = dataUrl;
+  $('#photo-img').classList.remove('hidden');
+  $('#video-preview').classList.add('hidden');
+  $('#save-note').textContent = '사진이 저장되었어요 (다운로드 폴더)';
   $('#photo-modal').classList.remove('hidden');
 
   const a = document.createElement('a');
@@ -266,6 +304,71 @@ async function takePhoto() {
 }
 
 function wait(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+// ── 동영상 찍기: 아바타 화면만 녹화 (웹캠 미포함, 최대 30초) ──
+let recorder = null;
+let recTimer = null;
+const VIDEO_MAX_SEC = 30;
+
+function toggleVideo() {
+  if (recorder) { stopVideo(); return; }
+  const canvas = Avatar.state.renderer.domElement;
+  const recStream = canvas.captureStream(30);
+  let mime = 'video/webm;codecs=vp9';
+  if (!MediaRecorder.isTypeSupported(mime)) mime = 'video/webm;codecs=vp8';
+  if (!MediaRecorder.isTypeSupported(mime)) mime = 'video/webm';
+  const chunks = [];
+  recorder = new MediaRecorder(recStream, { mimeType: mime, videoBitsPerSecond: 8_000_000 });
+  recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+  recorder.onstop = () => {
+    const blob = new Blob(chunks, { type: 'video/webm' });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement('a');
+    const t = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    a.download = `avatar_video_${t.getFullYear()}${pad(t.getMonth() + 1)}${pad(t.getDate())}_${pad(t.getHours())}${pad(t.getMinutes())}${pad(t.getSeconds())}.webm`;
+    a.href = url;
+    a.click();
+
+    $('#photo-img').classList.add('hidden');
+    const v = $('#video-preview');
+    v.classList.remove('hidden');
+    v.src = url;
+    $('#save-note').textContent = '영상이 저장되었어요 (다운로드 폴더)';
+    $('#photo-modal').classList.remove('hidden');
+  };
+  recorder.start(250);
+
+  const btn = $('#btn-video');
+  btn.classList.add('recording');
+  const t0 = Date.now();
+  recTimer = setInterval(() => {
+    const sec = Math.floor((Date.now() - t0) / 1000);
+    btn.textContent = `⏹ 저장하기 ${String(Math.floor(sec / 60))}:${String(sec % 60).padStart(2, '0')}`;
+    if (sec >= VIDEO_MAX_SEC) stopVideo();
+  }, 250);
+  btn.textContent = '⏹ 저장하기 0:00';
+  resetIdleTimer();
+}
+
+function cancelVideo() {
+  if (!recorder) return;
+  recorder.onstop = null; // 저장하지 않고 버림
+  stopVideo();
+}
+
+function stopVideo() {
+  if (!recorder) return;
+  clearInterval(recTimer);
+  recTimer = null;
+  try { recorder.stop(); } catch (e) {}
+  recorder = null;
+  const btn = $('#btn-video');
+  btn.classList.remove('recording');
+  btn.textContent = '🎥 영상 찍기';
+  resetIdleTimer();
+}
 
 // ── 60초 무조작 시 처음으로 ──
 function resetIdleTimer() {
