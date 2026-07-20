@@ -197,6 +197,7 @@ function setupVrm(gltf) {
   });
 
   // 이전 아바타 제거
+  toggleSkeletonHelper(false);
   if (state.vrm) {
     state.scene.remove(state.vrm.scene);
     try { VRMUtils.deepDispose(state.vrm.scene); } catch (e) {}
@@ -404,6 +405,43 @@ function drawPattern(ctx, pattern, w, h) {
     ctx.fillStyle = 'rgba(40, 34, 28, 0.20)';
     for (let y = 0; y < h; y += band * 2) ctx.fillRect(0, y, w, band);
     for (let x = 0; x < w; x += band * 2) ctx.fillRect(x, 0, band, h);
+  }
+}
+
+// ── 아바타 골격 치수 측정 (모션 캘리브레이션용) ──
+export function getSkeletonMeasures() {
+  if (!state.vrm) return null;
+  const h = state.vrm.humanoid;
+  state.vrm.scene.updateMatrixWorld(true);
+  const wp = (name) => {
+    const n = h.getRawBoneNode(name);
+    return n ? n.getWorldPosition(new THREE.Vector3()) : null;
+  };
+  const dist = (a, b) => (a && b) ? a.distanceTo(b) : 0;
+  const hips = wp('hips');
+  const neck = wp('neck') || wp('head');
+  const lu = wp('leftUpperLeg'), ll = wp('leftLowerLeg'), lf = wp('leftFoot');
+  const la = wp('leftUpperArm'), lel = wp('leftLowerArm'), lh = wp('leftHand');
+  return {
+    hipsY: hips ? hips.y : 0.8,
+    torsoLen: dist(hips, neck),
+    upperLegLen: dist(lu, ll),
+    lowerLegLen: dist(ll, lf),
+    legLen: dist(lu, ll) + dist(ll, lf),
+    armLen: dist(la, lel) + dist(lel, lh),
+    shoulderW: dist(wp('leftUpperArm'), wp('rightUpperArm')),
+  };
+}
+
+// ── 디버그: 본 축(스켈레톤) 표시 ──
+let skeletonHelper = null;
+export function toggleSkeletonHelper(on) {
+  if (on && !skeletonHelper && state.vrm) {
+    skeletonHelper = new THREE.SkeletonHelper(state.vrm.scene);
+    state.scene.add(skeletonHelper);
+  } else if (!on && skeletonHelper) {
+    state.scene.remove(skeletonHelper);
+    skeletonHelper = null;
   }
 }
 

@@ -1,52 +1,109 @@
-// 모션 인식: MediaPipe(포즈+손+표정) → VRM 본 매핑 (거울 모드, 전신)
+// 모션 인식 파이프라인: MediaPipe(포즈+손+표정) → VRM 본 매핑 (거울 모드)
+//
+// 처리 순서 (매 프레임):
+//  1. MediaPipe 결과 수신 (detect)
+//  2. visibility 신뢰도 게이팅
+//  3. One Euro Filter 랜드마크 스무딩
+//  4. 캘리브레이션 / 체형 스케일 변환
+//  5. 목표 Quaternion 계산 (setFromUnitVectors, 부모-자식 체인)
+//  6. 관절 제한 (무릎 역접힘 방지, 회전 한계, hemisphere flip 방지)
+//  7. 발 잠금(Foot Lock) + two-bone 다리 IK
+//  8. normalized VRM bone 적용 (dt 기반 slerp 감쇠)
+//  9. vrm.update(dt)  ← main.js에서 호출
+// 10. render          ← main.js에서 호출
 import * as THREE from 'three';
 import { FilesetResolver, PoseLandmarker, FaceLandmarker, HandLandmarker } from '../lib/mediapipe/vision_bundle.mjs';
+import { OneEuroVec3, safeNormalize, isFiniteVec } from './filters.js';
 
-// ── 조정 가능한 상수 (아바타가 떨리면 SMOOTH_* 값을 낮추세요) ──
-const SMOOTH_LM = 0.55;        // 관절 좌표 스무딩 (0~1, 낮을수록 부드럽고 느림)
-const SMOOTH_BONE = 13;        // 본 회전 따라가는 속도 (낮을수록 부드러움)
-const SMOOTH_LEG = 8;          // 다리 회전 속도 (팔보다 천천히 = 덜 떨림)
-const SMOOTH_FACE = 0.5;       // 표정 스무딩
-const FINGER_SMOOTH = 0.55;    // 손가락 스무딩
-const HEAD_PITCH_GAIN = 1.1;   // 고개 끄덕임 민감도
-const HEAD_LIMIT = 0.55;       // 고개 회전 한계 (라디안)
-const TORSO_AMOUNT = 0.7;      // 몸통 기울기 반영 비율
-const HIPS_AMOUNT = 0.5;       // 골반 회전 반영 비율 (런웨이 힙 스웨이)
-const HAND_ORIENT = 0.85;      // 손목 방향 반영 비율 (0이면 손목 방향 끔)
-const CROUCH_DEPTH = 0.42;     // 앉을 때 내려가는 깊이 (골반 높이 대비 비율)
-const SIDE_STEP_RANGE = 1.0;   // 좌우 이동 반영 폭
-const VISIBILITY_MIN = 0.55;   // 팔: 인식 신뢰도 최소값
-const LEG_VISIBILITY_MIN = 0.6;// 다리: 인식 신뢰도 최소값 (튀지 않게 더 엄격히)
+// ── 필터 파라미터 (부위별 One Euro) ──
+export const FILTER_PARAMS = {
+  torso:     { minCutoff: 1.0, beta: 0.5 },   // 어깨·골반·머리: 안정 우선
+  limb:      { minCutoff: 1.6, beta: 0.9 },   // 팔꿈치·무릎
+  extremity: { minCutoff: 2.2, beta: 1.4 },   // 손목·발목: 반응 우선
+};
 
-// MediaPipe 포즈 관절 번호
+// ── 조정 가능한 상수 ──
+const SMOOTH_BONE = 14;        // 본 회전 감쇠 속도 (dt 기반)
+const SMOOTH_LEG = 9;
+const SMOOTH_FACE = 0.5;
+const HEAD_PITCH_GAIN = 1.1;
+const HEAD_LIMIT = 0.55;
+const TORSO_AMOUNT = 0.7;
+const HIPS_AMOUNT = 0.5;
+const HAND_ORIENT = 0.85;
+const CROUCH_DEPTH = 0.42;
+const SIDE_STEP_RANGE = 1.0;
+
+// 신뢰도 게이팅 (E)
+const VIS_FULL = 0.75;         // 이상: 정상 적용
+const VIS_SOFT = 0.5;          // 0.5~0.75: 강한 스무딩 / 미만: 마지막 값 유지
+const HOLD_TIMEOUT_MS = 1500;  // 이 시간 이상 미검출 → 기본 자세로 서서히 복귀
+const SOFT_BLEND = 0.45;
+
+// 캘리브레이션 (B)
+const CALIB_DURATION_MS = 1500;
+
+// Foot Lock (G)
+const FOOT_CONTACT_H = 0.075;  // 바닥에서 이 높이 이내면 접촉 후보 (m)
+const FOOT_CONTACT_VY = 0.55;  // 수직 속도가 이보다 느려야 접촉 (m/s)
+const FOOT_RELEASE_H = 0.13;   // 이 높이 이상 올라가면 잠금 해제
+const FOOT_RELEASE_DIST = 0.26;// 잠금 위치에서 이만큼 벗어나면 해제
+
 const LM = {
   NOSE: 0, L_EYE: 2, R_EYE: 5, L_EAR: 7, R_EAR: 8,
   L_SH: 11, R_SH: 12, L_EL: 13, R_EL: 14, L_WR: 15, R_WR: 16,
   L_HIP: 23, R_HIP: 24, L_KNEE: 25, R_KNEE: 26, L_ANK: 27, R_ANK: 28,
 };
+const LM_GROUP = {};
+for (const i of [LM.NOSE, LM.L_EYE, LM.R_EYE, LM.L_EAR, LM.R_EAR, LM.L_SH, LM.R_SH, LM.L_HIP, LM.R_HIP]) LM_GROUP[i] = 'torso';
+for (const i of [LM.L_EL, LM.R_EL, LM.L_KNEE, LM.R_KNEE]) LM_GROUP[i] = 'limb';
+for (const i of [LM.L_WR, LM.R_WR, LM.L_ANK, LM.R_ANK]) LM_GROUP[i] = 'extremity';
 
-let poseLandmarker = null;
-let faceLandmarker = null;
-let handLandmarker = null;
-let video = null;
-let stream = null;
-let lastVideoTime = -1;
-let frameCount = 0;
+let poseLandmarker = null, faceLandmarker = null, handLandmarker = null;
+let video = null, stream = null;
+let lastVideoTime = -1, lastTs = 0, frameCount = 0;
 
-let latestPose = null;   // 스무딩된 관절 좌표 (아바타 좌표계)
-let latestVis = null;    // 관절별 신뢰도
-let poseImg = null;      // 화면 기준 좌표 (좌우 이동·손 배정용)
-let latestHands = { left: null, right: null }; // 아바타 기준 좌우
+let rawPose = null;      // 필터 전 좌표 (디버그용)
+let latestPose = null;   // 필터 후 좌표 (아바타 좌표계, 사람 체형 스케일)
+let latestVis = null;
+let poseImg = null;
+let latestHands = { left: null, right: null };
 let faceValues = { aa: 0, blinkL: 0, blinkR: 0, smile: 0 };
 let tracked = false;
+let inferMs = 0;
+let detectFps = 0, fpsAccum = 0, fpsCount = 0, fpsLast = 0;
 
-const smoothedLm = new Map();
+const lmFilters = new Map();   // idx → OneEuroVec3
 const smoothedCurls = { left: {}, right: {} };
+
+// 캘리브레이션 상태
+let calib = null;              // {scale, floorY, user:{...}, avatar:{...}}
+let calibStartMs = 0;
+let calibAccum = null;
+let skeleton = null;           // 아바타 골격 치수 (setAvatar에서 계산)
+let vrmVersion = '?';
+
+// 발 잠금 상태
+const feet = {
+  left:  { locked: false, lockPos: new THREE.Vector3(), prevY: null, vy: 0 },
+  right: { locked: false, lockPos: new THREE.Vector3(), prevY: null, vy: 0 },
+};
 
 export function isTracking() { return tracked; }
 
-// 화면 속 관람객 눈 사이 거리 (카메라 프레임 높이 대비 비율)
-// → 아바타 크기를 관람객과 비슷하게 맞추는 데 사용
+// 상태: 'idle' | 'noperson' | 'calibrating' | 'ok'
+export function getStatus() {
+  if (!stream) return 'idle';
+  if (!tracked) return 'noperson';
+  if (!calib) return 'calibrating';
+  return 'ok';
+}
+export function getCalibProgress() {
+  if (calib) return 1;
+  if (!calibStartMs) return 0;
+  return Math.min(1, (performance.now() - calibStartMs) / CALIB_DURATION_MS);
+}
+
 export function getHeadHint() {
   if (!tracked || !poseImg || !video) return null;
   const aspect = (video.videoWidth || 640) / (video.videoHeight || 480);
@@ -57,11 +114,28 @@ export function getHeadHint() {
   return { eyeFrac };
 }
 
-// 새 아바타를 불러왔을 때 호출 (기억해 둔 기준 자세 초기화)
-export function resetForNewAvatar() {
+// 새 아바타 등록: 골격 치수 측정 + 상태 초기화
+export function setAvatar(vrm, measures) {
+  skeleton = measures || null;
+  vrmVersion = (vrm && vrm.meta && (vrm.meta.metaVersion || vrm.meta.specVersion)) || '?';
   hipsRest = null;
-  smoothedLm.clear();
+  resetTracking();
+}
+export function resetForNewAvatar() { // 하위 호환
+  hipsRest = null;
+  resetTracking();
+}
+
+function resetTracking() {
+  calib = null;
+  calibStartMs = 0;
+  calibAccum = null;
+  for (const f of lmFilters.values()) f.reset();
   hipsOffset.set(0, 0, 0);
+  hipsOffsetTarget.set(0, 0, 0);
+  feet.left.locked = feet.right.locked = false;
+  feet.left.prevY = feet.right.prevY = null;
+  for (const c of Object.values(chains)) c.lastFull = 0;
 }
 
 export async function initTrackers(onStatus) {
@@ -73,17 +147,26 @@ export async function initTrackers(onStatus) {
       baseOptions: { modelAssetPath: './models/pose_landmarker_full.task', delegate },
       runningMode: 'VIDEO',
       numPoses: 1,
+      minPoseDetectionConfidence: 0.5,
+      minPosePresenceConfidence: 0.5,
+      minTrackingConfidence: 0.6,
     });
     const face = await FaceLandmarker.createFromOptions(fileset, {
       baseOptions: { modelAssetPath: './models/face_landmarker.task', delegate },
       runningMode: 'VIDEO',
       outputFaceBlendshapes: true,
       numFaces: 1,
+      minFaceDetectionConfidence: 0.5,
+      minFacePresenceConfidence: 0.5,
+      minTrackingConfidence: 0.5,
     });
     const hand = await HandLandmarker.createFromOptions(fileset, {
       baseOptions: { modelAssetPath: './models/hand_landmarker.task', delegate },
       runningMode: 'VIDEO',
       numHands: 2,
+      minHandDetectionConfidence: 0.5,
+      minHandPresenceConfidence: 0.5,
+      minTrackingConfidence: 0.5,
     });
     return { pose, face, hand };
   }
@@ -104,6 +187,7 @@ export async function startCamera(videoEl) {
   });
   video.srcObject = stream;
   await video.play();
+  resetTracking();
 }
 
 export function stopCamera() {
@@ -115,129 +199,212 @@ export function stopCamera() {
   tracked = false;
   latestPose = null;
   latestHands.left = latestHands.right = null;
-  smoothedLm.clear();
+  resetTracking();
 }
 
-// MediaPipe 좌표 → 아바타 좌표 (거울 반전 포함)
-function conv(lm) { return new THREE.Vector3(-lm.x, -lm.y, -lm.z); }
+function conv(lm) { return new THREE.Vector3(-lm.x, -lm.y, -lm.z); } // 거울 반전
 
-// 매 프레임: 웹캠에서 관절 추출
+let lastDetectMs = 0;
+
+// ── 1~4단계: 수신 → 게이팅 → 필터 → 스케일 ──
 export function detect(now) {
   if (!video || !poseLandmarker || video.readyState < 2) return;
   if (video.currentTime === lastVideoTime) return;
   lastVideoTime = video.currentTime;
   frameCount++;
 
-  const poseResult = poseLandmarker.detectForVideo(video, now);
+  // timestamp는 항상 증가하도록 보장
+  let ts = Math.round(now);
+  if (ts <= lastTs) ts = lastTs + 1;
+  lastTs = ts;
+
+  const dtDetect = lastDetectMs ? Math.min((now - lastDetectMs) / 1000, 0.1) : 1 / 30;
+  lastDetectMs = now;
+  fpsAccum += dtDetect; fpsCount++;
+  if (fpsAccum > 0.5) { detectFps = fpsCount / fpsAccum; fpsAccum = 0; fpsCount = 0; }
+
+  const t0 = performance.now();
+  const poseResult = poseLandmarker.detectForVideo(video, ts);
   const world = poseResult.worldLandmarks && poseResult.worldLandmarks[0];
   poseImg = (poseResult.landmarks && poseResult.landmarks[0]) || null;
 
   if (world && poseImg && shoulderVisible(world)) {
     tracked = true;
-    // 좌표 혼합: 좌우/상하는 화면 좌표(정확함), 깊이는 3D 추정값 사용
-    // → 꽃받침처럼 손이 몸 가운데로 모일 때 팔이 엇갈리는 문제 방지
-    const aspect = (video.videoWidth || 640) / (video.videoHeight || 480);
-    const shDx = (poseImg[LM.L_SH].x - poseImg[LM.R_SH].x) * aspect;
-    const shDy = poseImg[LM.L_SH].y - poseImg[LM.R_SH].y;
-    const shImgDist = Math.hypot(shDx, shDy);
-    const shWorldDist = Math.hypot(
-      world[LM.L_SH].x - world[LM.R_SH].x,
-      world[LM.L_SH].y - world[LM.R_SH].y,
-      world[LM.L_SH].z - world[LM.R_SH].z
-    );
-    const scale = shImgDist > 0.01 ? shWorldDist / shImgDist : 1;
-    const originX = ((poseImg[LM.L_HIP].x + poseImg[LM.R_HIP].x) / 2) * aspect;
-    const originY = (poseImg[LM.L_HIP].y + poseImg[LM.R_HIP].y) / 2;
-
-    const pts = new Map();
-    const vis = new Map();
-    for (const idx of Object.values(LM)) {
-      const hybrid = {
-        x: (poseImg[idx].x * aspect - originX) * scale,
-        y: (poseImg[idx].y - originY) * scale,
-        z: world[idx].z,
-      };
-      const p = conv(hybrid);
-      let s = smoothedLm.get(idx);
-      if (!s) { s = p.clone(); smoothedLm.set(idx, s); }
-      s.lerp(p, SMOOTH_LM);
-      pts.set(idx, s);
-      vis.set(idx, world[idx].visibility != null ? world[idx].visibility : 1);
-    }
-    latestPose = pts;
-    latestVis = vis;
+    ingestPose(world, dtDetect, now);
   } else {
     tracked = false;
+    calibStartMs = 0;
+    calibAccum = null;
   }
 
-  // 손가락: 매 프레임
+  // 손: 매 프레임
   if (handLandmarker && tracked) {
-    const handResult = handLandmarker.detectForVideo(video, now);
-    latestHands.left = latestHands.right = null;
-    const hands = handResult.landmarks || [];
-    if (hands.length > 0 && poseImg) {
-      if (hands.length >= 2) {
-        // 두 손이 가까이 붙어 있어도(꽃받침 등) 좌우가 뒤바뀌지 않도록
-        // 두 가지 배정 중 전체 거리가 짧은 쪽을 선택
-        const d = (i, wr) => dist2(hands[i][0], poseImg[wr]);
-        const costA = d(0, LM.L_WR) + d(1, LM.R_WR); // 0=왼손, 1=오른손
-        const costB = d(0, LM.R_WR) + d(1, LM.L_WR);
-        if (costA <= costB) {
-          latestHands.right = handResult.worldLandmarks[0]; // 거울: 관람객 왼손 → 아바타 오른손
-          latestHands.left = handResult.worldLandmarks[1];
-        } else {
-          latestHands.right = handResult.worldLandmarks[1];
-          latestHands.left = handResult.worldLandmarks[0];
-        }
-      } else {
-        const wristImg = hands[0][0];
-        const dL = dist2(wristImg, poseImg[LM.L_WR]);
-        const dR = dist2(wristImg, poseImg[LM.R_WR]);
-        latestHands[dL < dR ? 'right' : 'left'] = handResult.worldLandmarks[0];
-      }
-    }
+    const handResult = handLandmarker.detectForVideo(video, ts);
+    assignHands(handResult);
   } else {
     latestHands.left = latestHands.right = null;
   }
 
-  // 표정은 세 프레임에 한 번 (성능)
+  // 표정: 3프레임에 1번
   if (faceLandmarker && frameCount % 3 === 0) {
-    const faceResult = faceLandmarker.detectForVideo(video, now + 0.001);
-    const shapes = faceResult.faceBlendshapes && faceResult.faceBlendshapes[0];
-    if (shapes) {
-      let jaw = 0, bl = 0, br = 0, smL = 0, smR = 0;
-      for (const c of shapes.categories) {
-        if (c.categoryName === 'jawOpen') jaw = c.score;
-        else if (c.categoryName === 'eyeBlinkLeft') bl = c.score;
-        else if (c.categoryName === 'eyeBlinkRight') br = c.score;
-        else if (c.categoryName === 'mouthSmileLeft') smL = c.score;
-        else if (c.categoryName === 'mouthSmileRight') smR = c.score;
-      }
-      faceValues.aa += (clamp01(jaw * 1.6) - faceValues.aa) * SMOOTH_FACE;
-      faceValues.blinkR += (blinkCurve(bl) - faceValues.blinkR) * SMOOTH_FACE;
-      faceValues.blinkL += (blinkCurve(br) - faceValues.blinkL) * SMOOTH_FACE;
-      // 미소: 입꼬리가 올라가면 아바타도 웃는 표정
-      const smile = clamp01(((smL + smR) / 2 - 0.3) / 0.45) * 0.75;
-      faceValues.smile += (smile - faceValues.smile) * SMOOTH_FACE * 0.7;
-    }
+    const faceResult = faceLandmarker.detectForVideo(video, ts + 1);
+    ingestFace(faceResult);
   }
+  inferMs = performance.now() - t0;
+}
+
+function ingestPose(world, dt, now) {
+  // 좌표 혼합: x·y는 화면 좌표(정확), z는 3D 추정값
+  const aspect = (video.videoWidth || 640) / (video.videoHeight || 480);
+  const shDx = (poseImg[LM.L_SH].x - poseImg[LM.R_SH].x) * aspect;
+  const shDy = poseImg[LM.L_SH].y - poseImg[LM.R_SH].y;
+  const shImgDist = Math.hypot(shDx, shDy);
+  const shWorldDist = Math.hypot(
+    world[LM.L_SH].x - world[LM.R_SH].x,
+    world[LM.L_SH].y - world[LM.R_SH].y,
+    world[LM.L_SH].z - world[LM.R_SH].z
+  );
+  const scale = shImgDist > 0.01 ? shWorldDist / shImgDist : 1;
+  const originX = ((poseImg[LM.L_HIP].x + poseImg[LM.R_HIP].x) / 2) * aspect;
+  const originY = (poseImg[LM.L_HIP].y + poseImg[LM.R_HIP].y) / 2;
+
+  const raw = new Map();
+  const pts = new Map();
+  const vis = new Map();
+  for (const idx of Object.values(LM)) {
+    const hybrid = {
+      x: (poseImg[idx].x * aspect - originX) * scale,
+      y: (poseImg[idx].y - originY) * scale,
+      z: world[idx].z,
+    };
+    const p = conv(hybrid);
+    if (!isFiniteVec(p)) continue;
+    raw.set(idx, p.clone());
+
+    let f = lmFilters.get(idx);
+    if (!f) {
+      const g = FILTER_PARAMS[LM_GROUP[idx] || 'limb'];
+      f = new OneEuroVec3(g.minCutoff, g.beta);
+      lmFilters.set(idx, f);
+    }
+    const v = world[idx].visibility != null ? world[idx].visibility : 1;
+    // 신뢰도가 애매하면(0.5~0.75) 필터를 더 무겁게: dt를 줄여 컷오프 효과 강화
+    const fdt = v >= VIS_FULL ? dt : dt * 0.45;
+    const sp = f.filter(p, fdt);
+    pts.set(idx, sp.clone());
+    vis.set(idx, v);
+  }
+  rawPose = raw;
+  latestPose = pts;
+  latestVis = vis;
+
+  updateCalibration(now);
+}
+
+// ── B. 캘리브레이션: 1.5초간 편하게 선 자세 측정 ──
+function updateCalibration(now) {
+  if (calib || !latestPose) return;
+  if (!calibStartMs) {
+    calibStartMs = now;
+    calibAccum = { n: 0, shoulderW: 0, hipW: 0, torso: 0, arm: 0, leg: 0, legN: 0, ankleY: 0, ankleN: 0 };
+  }
+  const p = (i) => latestPose.get(i);
+  const vis = (i) => latestVis.get(i) || 0;
+  const a = calibAccum;
+  a.n++;
+  a.shoulderW += p(LM.L_SH).distanceTo(p(LM.R_SH));
+  a.hipW += p(LM.L_HIP).distanceTo(p(LM.R_HIP));
+  const shMid = p(LM.L_SH).clone().add(p(LM.R_SH)).multiplyScalar(0.5);
+  const hipMid = p(LM.L_HIP).clone().add(p(LM.R_HIP)).multiplyScalar(0.5);
+  a.torso += shMid.distanceTo(hipMid);
+  a.arm += (p(LM.L_SH).distanceTo(p(LM.L_EL)) + p(LM.L_EL).distanceTo(p(LM.L_WR))
+          + p(LM.R_SH).distanceTo(p(LM.R_EL)) + p(LM.R_EL).distanceTo(p(LM.R_WR))) / 2;
+  if (Math.min(vis(LM.L_KNEE), vis(LM.L_ANK)) > 0.6) {
+    a.leg += p(LM.L_HIP).distanceTo(p(LM.L_KNEE)) + p(LM.L_KNEE).distanceTo(p(LM.L_ANK));
+    a.legN++;
+    a.ankleY += p(LM.L_ANK).y; a.ankleN++;
+  }
+  if (Math.min(vis(LM.R_KNEE), vis(LM.R_ANK)) > 0.6) {
+    a.ankleY += p(LM.R_ANK).y; a.ankleN++;
+  }
+
+  if (now - calibStartMs >= CALIB_DURATION_MS && a.n > 10) {
+    const user = {
+      shoulderW: a.shoulderW / a.n,
+      hipW: a.hipW / a.n,
+      torso: a.torso / a.n,
+      arm: a.arm / a.n,
+      leg: a.legN > 3 ? a.leg / a.legN : null,
+    };
+    // 아바타 골격과 비교해 체형 스케일 계산
+    let scale = 1;
+    if (skeleton) {
+      scale = user.leg && skeleton.legLen > 0.1
+        ? skeleton.legLen / user.leg
+        : (skeleton.torsoLen > 0.1 && user.torso > 0.1 ? skeleton.torsoLen / user.torso : 1);
+      scale = THREE.MathUtils.clamp(scale, 0.4, 3.0);
+    }
+    const hipsY = skeleton ? skeleton.hipsY : 0.8;
+    // 바닥 높이: 서 있을 때 발목의 아바타 공간 y
+    const floorY = a.ankleN > 3 ? hipsY + (a.ankleY / a.ankleN) * scale : 0.05;
+    calib = { scale, floorY, user };
+    console.log('캘리브레이션 완료', JSON.stringify({ scale: scale.toFixed(2), floorY: floorY.toFixed(2) }));
+  }
+}
+
+function assignHands(handResult) {
+  latestHands.left = latestHands.right = null;
+  const hands = handResult.landmarks || [];
+  if (!hands.length || !poseImg) return;
+  if (hands.length >= 2) {
+    const d = (i, wr) => dist2(hands[i][0], poseImg[wr]);
+    const costA = d(0, LM.L_WR) + d(1, LM.R_WR);
+    const costB = d(0, LM.R_WR) + d(1, LM.L_WR);
+    if (costA <= costB) {
+      latestHands.right = handResult.worldLandmarks[0];
+      latestHands.left = handResult.worldLandmarks[1];
+    } else {
+      latestHands.right = handResult.worldLandmarks[1];
+      latestHands.left = handResult.worldLandmarks[0];
+    }
+  } else {
+    const wristImg = hands[0][0];
+    const dL = dist2(wristImg, poseImg[LM.L_WR]);
+    const dR = dist2(wristImg, poseImg[LM.R_WR]);
+    latestHands[dL < dR ? 'right' : 'left'] = handResult.worldLandmarks[0];
+  }
+}
+
+function ingestFace(faceResult) {
+  const shapes = faceResult.faceBlendshapes && faceResult.faceBlendshapes[0];
+  if (!shapes) return;
+  let jaw = 0, bl = 0, br = 0, smL = 0, smR = 0;
+  for (const c of shapes.categories) {
+    if (c.categoryName === 'jawOpen') jaw = c.score;
+    else if (c.categoryName === 'eyeBlinkLeft') bl = c.score;
+    else if (c.categoryName === 'eyeBlinkRight') br = c.score;
+    else if (c.categoryName === 'mouthSmileLeft') smL = c.score;
+    else if (c.categoryName === 'mouthSmileRight') smR = c.score;
+  }
+  faceValues.aa += (clamp01(jaw * 1.6) - faceValues.aa) * SMOOTH_FACE;
+  faceValues.blinkR += (blinkCurve(bl) - faceValues.blinkR) * SMOOTH_FACE;
+  faceValues.blinkL += (blinkCurve(br) - faceValues.blinkL) * SMOOTH_FACE;
+  const smile = clamp01(((smL + smR) / 2 - 0.3) / 0.45) * 0.75;
+  faceValues.smile += (smile - faceValues.smile) * SMOOTH_FACE * 0.7;
 }
 
 function dist2(a, b) { const dx = a.x - b.x, dy = a.y - b.y; return dx * dx + dy * dy; }
-
 function shoulderVisible(world) {
   const l = world[LM.L_SH], r = world[LM.R_SH];
-  const lv = l.visibility != null ? l.visibility : 1;
-  const rv = r.visibility != null ? r.visibility : 1;
-  return lv > 0.5 && rv > 0.5;
+  return (l.visibility ?? 1) > 0.5 && (r.visibility ?? 1) > 0.5;
 }
-
 function clamp01(v) { return Math.min(1, Math.max(0, v)); }
 function blinkCurve(v) { return clamp01((v - 0.3) / 0.35); }
 
-// ── VRM 본에 적용 ──
+// ── 본 목표값 ──
 const X_AXIS = new THREE.Vector3(1, 0, 0);
 const Y_DOWN = new THREE.Vector3(0, -1, 0);
+const FORWARD = new THREE.Vector3(0, 0, 1);
 const REST_L_ARM = new THREE.Vector3(1, 0, 0);
 const REST_R_ARM = new THREE.Vector3(-1, 0, 0);
 const IDENTITY = new THREE.Quaternion();
@@ -268,38 +435,52 @@ const targets = {
   rightHand: new THREE.Quaternion(),
   leftUpperLeg: new THREE.Quaternion(),
   leftLowerLeg: new THREE.Quaternion(),
+  leftFoot: new THREE.Quaternion(),
   rightUpperLeg: new THREE.Quaternion(),
   rightLowerLeg: new THREE.Quaternion(),
+  rightFoot: new THREE.Quaternion(),
 };
-// 손가락 본 타깃 등록 (좌우 × 5손가락 × 3마디)
 for (const side of ['left', 'right']) {
   for (const f of FINGERS) {
     const joints = f === 'Thumb' ? FINGER_JOINTS.Thumb : FINGER_JOINTS.other;
     for (const j of joints) targets[side + f + j] = new THREE.Quaternion();
   }
 }
+// hemisphere flip 방지용 직전 프레임 값
+const prevTargets = {};
+for (const k of Object.keys(targets)) prevTargets[k] = targets[k].clone();
 
-const LEG_BONES = ['leftUpperLeg', 'leftLowerLeg', 'rightUpperLeg', 'rightLowerLeg'];
+const LEG_BONES = ['leftUpperLeg', 'leftLowerLeg', 'leftFoot', 'rightUpperLeg', 'rightLowerLeg', 'rightFoot'];
 
-let hipsRest = null;                       // 골반 기본 위치 (일어선 상태)
-const hipsOffset = new THREE.Vector3();    // 앉기/좌우 이동량 (스무딩됨)
+// 체인별 신뢰도 게이팅 상태
+const chains = {
+  armLeft: { lastFull: 0 }, armRight: { lastFull: 0 },
+  legLeft: { lastFull: 0 }, legRight: { lastFull: 0 },
+  head: { lastFull: 0 },
+};
+
+let hipsRest = null;
+const hipsOffset = new THREE.Vector3();
 const hipsOffsetTarget = new THREE.Vector3();
 
 const _q1 = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _q3 = new THREE.Quaternion();
 const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3();
 const _m1 = new THREE.Matrix4();
 
+// ── 5~8단계: 목표 계산 → 제한 → Foot IK → 본 적용 ──
 export function applyToVRM(vrm, dt) {
   if (!vrm) return;
+  const now = performance.now();
 
-  if (tracked && latestPose) {
-    computeTargets();
+  if (tracked && latestPose && calib) {
+    computeTargets(vrm, now, dt);
   } else {
-    // 사람이 없으면 기본 자세로 서서히 복귀
-    for (const name of Object.keys(targets)) targets[name].identity();
-    targets.leftUpperArm.copy(NEUTRAL.leftUpperArm);
-    targets.rightUpperArm.copy(NEUTRAL.rightUpperArm);
+    // 미검출/캘리브레이션 중: 기본 자세로 서서히 복귀
+    for (const name of Object.keys(targets)) setTargetSafe(name, IDENTITY);
+    setTargetSafe('leftUpperArm', NEUTRAL.leftUpperArm);
+    setTargetSafe('rightUpperArm', NEUTRAL.rightUpperArm);
     hipsOffsetTarget.set(0, 0, 0);
+    feet.left.locked = feet.right.locked = false;
   }
 
   const k = 1 - Math.exp(-dt * SMOOTH_BONE);
@@ -309,22 +490,16 @@ export function applyToVRM(vrm, dt) {
     if (bone) bone.quaternion.slerp(targets[name], LEG_BONES.includes(name) ? kLeg : k);
   }
 
-  // 골반 위치 (앉기 + 좌우 이동)
   const hipsNode = vrm.humanoid.getNormalizedBoneNode('hips');
   if (hipsNode) {
     if (!hipsRest) hipsRest = hipsNode.position.clone();
     hipsOffset.lerp(hipsOffsetTarget, kLeg);
-    hipsNode.position.set(
-      hipsRest.x + hipsOffset.x,
-      hipsRest.y + hipsOffset.y,
-      hipsRest.z
-    );
+    hipsNode.position.set(hipsRest.x + hipsOffset.x, hipsRest.y + hipsOffset.y, hipsRest.z);
   }
 
-  // 표정
   const em = vrm.expressionManager;
   if (em) {
-    const value = tracked ? faceValues : { aa: 0, blinkL: 0, blinkR: 0, smile: 0 };
+    const value = tracked && calib ? faceValues : { aa: 0, blinkL: 0, blinkR: 0, smile: 0 };
     safeSet(em, 'aa', value.aa);
     safeSet(em, 'happy', value.smile);
     if (em.expressionMap && em.expressionMap['blinkLeft']) {
@@ -336,150 +511,289 @@ export function applyToVRM(vrm, dt) {
   }
 }
 
-function safeSet(em, name, v) {
-  try { em.setValue(name, v); } catch (e) {}
+function safeSet(em, name, v) { try { em.setValue(name, v); } catch (e) {} }
+
+// 목표값 저장: NaN 방어 + hemisphere flip 방지
+function setTargetSafe(name, q) {
+  if (!Number.isFinite(q.x) || !Number.isFinite(q.y) || !Number.isFinite(q.z) || !Number.isFinite(q.w)) return;
+  const t = targets[name];
+  t.copy(q);
+  if (t.dot(prevTargets[name]) < 0) t.set(-t.x, -t.y, -t.z, -t.w);
+  prevTargets[name].copy(t);
 }
 
-function computeTargets() {
-  const p = (i) => latestPose.get(i);
-  const vis = (i) => latestVis.get(i);
+// 회전 한계: 최대 각도를 넘으면 그만큼 깎기 (F)
+function clampRotation(q, maxRad) {
+  const angle = 2 * Math.acos(THREE.MathUtils.clamp(Math.abs(q.w), 0, 1));
+  if (angle > maxRad && angle > 1e-4) q.slerp(IDENTITY, 1 - maxRad / angle);
+  return q;
+}
 
-  // ── 골반: 엉덩이선 회전 (런웨이 힙 스웨이) ──
-  const hipAcross = _v1.copy(p(LM.R_HIP)).sub(p(LM.L_HIP)).normalize();
+// 체인 게이팅: 'full' | 'soft' | 'hold' (E)
+function chainGate(chain, minVis, now) {
+  if (minVis >= VIS_FULL) { chain.lastFull = now; return 'full'; }
+  if (minVis >= VIS_SOFT) { chain.lastFull = now; return 'soft'; }
+  return now - chain.lastFull > HOLD_TIMEOUT_MS ? 'timeout' : 'hold';
+}
+
+// 게이트에 따라 목표값 반영
+function applyGated(name, computed, gate) {
+  if (gate === 'full') { setTargetSafe(name, computed); return; }
+  if (gate === 'soft') {
+    _q3.copy(targets[name]).slerp(computed, SOFT_BLEND);
+    setTargetSafe(name, _q3);
+    return;
+  }
+  if (gate === 'timeout') {
+    const neutral = NEUTRAL[name] || IDENTITY;
+    _q3.copy(targets[name]).slerp(neutral, 0.03);
+    setTargetSafe(name, _q3);
+  }
+  // 'hold': 마지막 정상값 유지 (아무것도 안 함)
+}
+
+function computeTargets(vrm, now, dt) {
+  const p = (i) => latestPose.get(i);
+  const vis = (i) => latestVis.get(i) || 0;
+
+  // ── 골반 ──
+  const hipAcross = safeNormalize(_v1.copy(p(LM.R_HIP)).sub(p(LM.L_HIP)), X_AXIS);
   _q1.setFromUnitVectors(X_AXIS, hipAcross);
   const qHipsWorld = new THREE.Quaternion().copy(IDENTITY).slerp(_q1, HIPS_AMOUNT);
-  targets.hips.copy(qHipsWorld);
+  clampRotation(qHipsWorld, 0.6);
+  setTargetSafe('hips', qHipsWorld);
 
-  // ── 몸통: 어깨선 (골반 회전과의 차이를 허리·가슴에 분배) ──
-  const across = _v1.copy(p(LM.R_SH)).sub(p(LM.L_SH)).normalize();
+  // ── 몸통 ──
+  const across = safeNormalize(_v1.copy(p(LM.R_SH)).sub(p(LM.L_SH)), X_AXIS);
   _q1.setFromUnitVectors(X_AXIS, across);
   const qChestWorld = new THREE.Quaternion().copy(IDENTITY).slerp(_q1, TORSO_AMOUNT);
+  clampRotation(qChestWorld, 0.8);
   const relTorso = _q2.copy(qHipsWorld).invert().multiply(qChestWorld);
-  targets.spine.copy(IDENTITY).slerp(relTorso, 0.5);
-  targets.chest.copy(targets.spine).invert().multiply(relTorso);
+  const spineQ = new THREE.Quaternion().copy(IDENTITY).slerp(relTorso, 0.5);
+  setTargetSafe('spine', spineQ);
+  setTargetSafe('chest', _q3.copy(spineQ).invert().multiply(relTorso));
 
-  // ── 팔 ── (관람객 왼팔 → 아바타 오른팔)
-  const armR = computeArm('right', LM.L_SH, LM.L_EL, LM.L_WR, REST_R_ARM, NEUTRAL.rightUpperArm, qChestWorld);
-  const armL = computeArm('left', LM.R_SH, LM.R_EL, LM.R_WR, REST_L_ARM, NEUTRAL.leftUpperArm, qChestWorld);
-
-  // ── 손목 방향 + 손가락 ──
+  // ── 팔 (관람객 왼팔 → 아바타 오른팔) ──
+  const armR = computeArm('right', LM.L_SH, LM.L_EL, LM.L_WR, REST_R_ARM, NEUTRAL.rightUpperArm, qChestWorld, chains.armRight, now);
+  const armL = computeArm('left', LM.R_SH, LM.R_EL, LM.R_WR, REST_L_ARM, NEUTRAL.leftUpperArm, qChestWorld, chains.armLeft, now);
   solveHand('right', armR);
   solveHand('left', armL);
 
-  // ── 다리 ── (관람객 왼다리 → 아바타 오른다리)
-  computeLeg('right', LM.L_HIP, LM.L_KNEE, LM.L_ANK, qHipsWorld);
-  computeLeg('left', LM.R_HIP, LM.R_KNEE, LM.R_ANK, qHipsWorld);
+  // ── 다리 + Foot Lock/IK ──
+  solveLegs(vrm, qHipsWorld, now, dt);
 
-  // ── 앉기: 무릎 굽힘 정도 → 골반 내리기 ──
+  // ── 앉기/좌우 이동 ──
   let crouch = 0;
   crouch = Math.max(crouch, kneeBend(LM.L_HIP, LM.L_KNEE, LM.L_ANK));
   crouch = Math.max(crouch, kneeBend(LM.R_HIP, LM.R_KNEE, LM.R_ANK));
   const hipsH = hipsRest ? hipsRest.y : 0.8;
   hipsOffsetTarget.y = -crouch * CROUCH_DEPTH * hipsH;
-
-  // ── 좌우 이동: 화면 속 몸 위치 따라가기 ──
   if (poseImg) {
     const hipMidX = (poseImg[LM.L_HIP].x + poseImg[LM.R_HIP].x) / 2;
-    hipsOffsetTarget.x = THREE.MathUtils.clamp((0.5 - hipMidX) * SIDE_STEP_RANGE, -0.45, 0.45);
+    let targetX = THREE.MathUtils.clamp((0.5 - hipMidX) * SIDE_STEP_RANGE, -0.45, 0.45);
+    // 양발이 잠긴 상태에서는 root가 미끄러지듯 움직이지 않도록 제한 (G)
+    if (feet.left.locked && feet.right.locked) {
+      const maxStep = 0.06 * dt / 0.016;
+      targetX = THREE.MathUtils.clamp(targetX, hipsOffsetTarget.x - maxStep, hipsOffsetTarget.x + maxStep);
+    }
+    hipsOffsetTarget.x = targetX;
   }
 
   // ── 고개 ──
-  const earMid = _v1.copy(p(LM.L_EAR)).add(p(LM.R_EAR)).multiplyScalar(0.5);
-  const eyeMid = _v2.copy(p(LM.L_EYE)).add(p(LM.R_EYE)).multiplyScalar(0.5);
-  const fwd = eyeMid.sub(earMid);
-  const flen = fwd.length() || 1;
-  const yaw = clampAbs(Math.atan2(fwd.x, Math.max(0.02, fwd.z)), HEAD_LIMIT);
-  const pitch = clampAbs(Math.asin(clampAbs(-fwd.y / flen, 1)) * HEAD_PITCH_GAIN, HEAD_LIMIT * 0.8);
-  const earLine = _v2.copy(p(LM.R_EAR)).sub(p(LM.L_EAR));
-  const roll = clampAbs(Math.atan2(earLine.y, Math.abs(earLine.x) || 0.01), HEAD_LIMIT * 0.8);
-
-  const headWorld = _q1.setFromEuler(new THREE.Euler(pitch, yaw, roll, 'YXZ'));
-  const rel = _q2.copy(qChestWorld).invert().multiply(headWorld);
-  targets.neck.copy(IDENTITY).slerp(rel, 0.4);
-  targets.head.copy(targets.neck).invert().multiply(rel);
-
-  function computeArm(side, iSh, iEl, iWr, rest, neutral, parentWorld) {
-    const ua = side + 'UpperArm', la = side + 'LowerArm';
-    if (Math.min(vis(iSh), vis(iEl)) < VISIBILITY_MIN) {
-      targets[ua].copy(neutral);
-      targets[la].identity();
-      targets[side + 'Shoulder'].identity();
-      return null;
-    }
-    const upperDir = _v1.copy(p(iEl)).sub(p(iSh)).normalize();
-    // 팔을 들면 어깨도 살짝 따라 올라가게 (디테일)
-    const elev = Math.max(0, upperDir.y);
-    const shoulderAngle = elev * 0.3;
-    targets[side + 'Shoulder'].setFromAxisAngle(_axisZ, side === 'right' ? -shoulderAngle : shoulderAngle);
-    const qUpperWorld = new THREE.Quaternion().setFromUnitVectors(rest, upperDir);
-    targets[ua].copy(parentWorld).invert().multiply(qUpperWorld);
-
-    if (vis(iWr) < VISIBILITY_MIN) {
-      targets[la].identity();
-      return { lowerWorld: qUpperWorld, rest };
-    }
-    const lowerDir = _v2.copy(p(iWr)).sub(p(iEl)).normalize();
-    const qLowerWorld = new THREE.Quaternion().setFromUnitVectors(rest, lowerDir);
-    targets[la].copy(qUpperWorld).invert().multiply(qLowerWorld);
-    return { lowerWorld: qLowerWorld, rest };
+  const headVis = Math.min(vis(LM.L_EAR), vis(LM.R_EAR), vis(LM.L_EYE), vis(LM.R_EYE));
+  const headGate = chainGate(chains.head, headVis, now);
+  if (headGate === 'full' || headGate === 'soft') {
+    const earMid = _v1.copy(p(LM.L_EAR)).add(p(LM.R_EAR)).multiplyScalar(0.5);
+    const eyeMid = _v2.copy(p(LM.L_EYE)).add(p(LM.R_EYE)).multiplyScalar(0.5);
+    const fwd = eyeMid.sub(earMid);
+    const flen = fwd.length() || 1;
+    const yaw = clampAbs(Math.atan2(fwd.x, Math.max(0.02, fwd.z)), HEAD_LIMIT);
+    const pitch = clampAbs(Math.asin(clampAbs(-fwd.y / flen, 1)) * HEAD_PITCH_GAIN, HEAD_LIMIT * 0.8);
+    const earLine = _v2.copy(p(LM.R_EAR)).sub(p(LM.L_EAR));
+    const roll = clampAbs(Math.atan2(earLine.y, Math.abs(earLine.x) || 0.01), HEAD_LIMIT * 0.8);
+    const headWorld = _q1.setFromEuler(new THREE.Euler(pitch, yaw, roll, 'YXZ'));
+    clampRotation(headWorld, 0.9);
+    const rel = _q2.copy(qChestWorld).invert().multiply(headWorld);
+    const neckQ = new THREE.Quaternion().copy(IDENTITY).slerp(rel, 0.4);
+    applyGated('neck', neckQ, headGate);
+    applyGated('head', _q3.copy(neckQ).invert().multiply(rel), headGate);
+  } else {
+    applyGated('neck', IDENTITY, headGate);
+    applyGated('head', IDENTITY, headGate);
   }
 
-  function computeLeg(side, iHip, iKnee, iAnk, parentWorld) {
-    const ul = side + 'UpperLeg', ll = side + 'LowerLeg';
-    if (Math.min(vis(iHip), vis(iKnee)) < LEG_VISIBILITY_MIN) {
-      targets[ul].identity();
-      targets[ll].identity();
-      return;
+  function computeArm(side, iSh, iEl, iWr, rest, neutral, parentWorld, chain, now2) {
+    const ua = side + 'UpperArm', la = side + 'LowerArm', sh = side + 'Shoulder';
+    const gate = chainGate(chain, Math.min(vis(iSh), vis(iEl)), now2);
+    if (gate === 'hold') return null;
+    if (gate === 'timeout') {
+      applyGated(ua, neutral, 'timeout');
+      applyGated(la, IDENTITY, 'timeout');
+      applyGated(sh, IDENTITY, 'timeout');
+      return null;
     }
-    const upperDir = _v1.copy(p(iKnee)).sub(p(iHip)).normalize();
-    const qUpperWorld = new THREE.Quaternion().setFromUnitVectors(Y_DOWN, upperDir);
-    targets[ul].copy(parentWorld).invert().multiply(qUpperWorld);
+    const upperDir = safeNormalize(_v1.copy(p(iEl)).sub(p(iSh)), side === 'right' ? REST_R_ARM : REST_L_ARM);
+    const elev = Math.max(0, upperDir.y);
+    const shoulderQ = _q3.setFromAxisAngle(_axisZ, (side === 'right' ? -1 : 1) * elev * 0.3);
+    clampRotation(shoulderQ, 0.35);
+    applyGated(sh, shoulderQ, gate);
 
-    if (vis(iAnk) < LEG_VISIBILITY_MIN) {
-      targets[ll].identity();
-      return;
+    const qUpperWorld = new THREE.Quaternion().setFromUnitVectors(rest, upperDir);
+    applyGated(ua, _q3.copy(parentWorld).invert().multiply(qUpperWorld), gate);
+
+    if (vis(iWr) < VIS_SOFT) {
+      applyGated(la, IDENTITY, gate);
+      return { lowerWorld: qUpperWorld, gate };
     }
-    const lowerDir = _v2.copy(p(iAnk)).sub(p(iKnee)).normalize();
-    const qLowerWorld = new THREE.Quaternion().setFromUnitVectors(Y_DOWN, lowerDir);
-    targets[ll].copy(qUpperWorld).invert().multiply(qLowerWorld);
+    const lowerDir = safeNormalize(_v2.copy(p(iWr)).sub(p(iEl)), upperDir);
+    const qLowerWorld = new THREE.Quaternion().setFromUnitVectors(rest, lowerDir);
+    const relLower = new THREE.Quaternion().copy(qUpperWorld).invert().multiply(qLowerWorld);
+    clampRotation(relLower, 2.7); // 팔꿈치 과도한 접힘 제한
+    applyGated(la, relLower, gate);
+    return { lowerWorld: qLowerWorld, gate };
   }
 
   function kneeBend(iHip, iKnee, iAnk) {
-    if (Math.min(vis(iHip), vis(iKnee), vis(iAnk)) < LEG_VISIBILITY_MIN) return 0;
-    const d1 = _v1.copy(p(iKnee)).sub(p(iHip)).normalize();
-    const d2 = _v2.copy(p(iAnk)).sub(p(iKnee)).normalize();
-    const bend = Math.acos(THREE.MathUtils.clamp(d1.dot(d2), -1, 1)); // 편 다리 = 0
+    if (Math.min(vis(iHip), vis(iKnee), vis(iAnk)) < VIS_SOFT) return 0;
+    const d1 = safeNormalize(_v1.copy(p(iKnee)).sub(p(iHip)), Y_DOWN);
+    const d2 = safeNormalize(_v2.copy(p(iAnk)).sub(p(iKnee)), Y_DOWN);
+    const bend = Math.acos(THREE.MathUtils.clamp(d1.dot(d2), -1, 1));
     return clamp01(bend / 1.9);
   }
 }
 
-// ── 손: 손목 방향 + 손가락 굽힘 (브이 등 손모양) ──
+// ── G. 다리: Foot Lock + two-bone IK ──
+function solveLegs(vrm, qHipsWorld, now, dt) {
+  const p = (i) => latestPose.get(i);
+  const vis = (i) => latestVis.get(i) || 0;
+  const scale = calib.scale;
+  const hipsWorldY = (hipsRest ? hipsRest.y : 0.8) + hipsOffset.y;
+  const hipsWorldX = (hipsRest ? hipsRest.x : 0) + hipsOffset.x;
+
+  solveLeg('right', LM.L_HIP, LM.L_KNEE, LM.L_ANK, feet.right, chains.legRight);
+  solveLeg('left', LM.R_HIP, LM.R_KNEE, LM.R_ANK, feet.left, chains.legLeft);
+
+  function solveLeg(side, iHip, iKnee, iAnk, foot, chain) {
+    const ul = side + 'UpperLeg', ll = side + 'LowerLeg', ft = side + 'Foot';
+    const gate = chainGate(chain, Math.min(vis(iHip), vis(iKnee)), now);
+    if (gate === 'hold') return;
+    if (gate === 'timeout') {
+      applyGated(ul, IDENTITY, 'timeout');
+      applyGated(ll, IDENTITY, 'timeout');
+      applyGated(ft, IDENTITY, 'timeout');
+      foot.locked = false;
+      return;
+    }
+
+    const ankVisible = vis(iAnk) >= VIS_SOFT;
+
+    // 발목의 아바타 공간 위치 + 수직 속도 (접촉 판정용)
+    let ankleWorld = null;
+    if (ankVisible) {
+      ankleWorld = new THREE.Vector3(
+        hipsWorldX + p(iAnk).x * scale,
+        hipsWorldY + p(iAnk).y * scale,
+        0
+      );
+      const h = ankleWorld.y - calib.floorY;
+      if (foot.prevY != null && dt > 0) foot.vy = foot.vy * 0.6 + ((ankleWorld.y - foot.prevY) / dt) * 0.4;
+      foot.prevY = ankleWorld.y;
+
+      // 접촉 판정: 낮고 + 느리게 움직일 때 잠금
+      if (!foot.locked && h < FOOT_CONTACT_H && Math.abs(foot.vy) < FOOT_CONTACT_VY) {
+        foot.locked = true;
+        foot.lockPos.copy(ankleWorld);
+        foot.lockPos.y = Math.max(calib.floorY, 0.02);
+      } else if (foot.locked) {
+        // 해제 판정: 들어올리거나 멀어지면
+        if (h > FOOT_RELEASE_H || Math.hypot(ankleWorld.x - foot.lockPos.x, ankleWorld.y - foot.lockPos.y) > FOOT_RELEASE_DIST) {
+          foot.locked = false;
+        }
+      }
+    } else {
+      foot.locked = false;
+      foot.prevY = null;
+    }
+
+    let upperDir, lowerDir;
+
+    if (foot.locked && skeleton && skeleton.upperLegLen > 0.05) {
+      // two-bone IK: 골반 관절 → 잠긴 발 위치
+      const hipNode = vrm.humanoid.getRawBoneNode(side + 'UpperLeg');
+      const H = hipNode ? hipNode.getWorldPosition(_v3) : _v3.set(hipsWorldX + (side === 'left' ? 0.08 : -0.08), hipsWorldY, 0);
+      const L1 = skeleton.upperLegLen, L2 = skeleton.lowerLegLen;
+      const toT = new THREE.Vector3().copy(foot.lockPos).sub(H);
+      let d = THREE.MathUtils.clamp(toT.length(), Math.abs(L1 - L2) + 0.02, L1 + L2 - 0.01);
+      const toTn = safeNormalize(toT.clone(), Y_DOWN);
+      // pole: 무릎은 앞(+Z)을 향함 + 실측 무릎 방향 반영
+      const pole = new THREE.Vector3(0, 0, 1);
+      if (vis(iKnee) >= VIS_SOFT) {
+        const kneeOff = _v1.copy(p(iKnee)).sub(p(iHip)).multiplyScalar(scale);
+        pole.x += kneeOff.x * 0.6;
+      }
+      const kneeSide = pole.sub(toTn.clone().multiplyScalar(pole.dot(toTn)));
+      safeNormalize(kneeSide, FORWARD);
+      const cosA = THREE.MathUtils.clamp((L1 * L1 + d * d - L2 * L2) / (2 * L1 * d), -1, 1);
+      const sinA = Math.sqrt(1 - cosA * cosA);
+      upperDir = toTn.clone().multiplyScalar(cosA).add(kneeSide.clone().multiplyScalar(sinA));
+      const knee = H.clone().add(upperDir.clone().multiplyScalar(L1));
+      lowerDir = safeNormalize(new THREE.Vector3().copy(foot.lockPos).sub(knee), upperDir);
+    } else {
+      // 일반 리타게팅
+      upperDir = safeNormalize(new THREE.Vector3().copy(p(iKnee)).sub(p(iHip)), Y_DOWN);
+      lowerDir = ankVisible ? safeNormalize(new THREE.Vector3().copy(p(iAnk)).sub(p(iKnee)), upperDir) : null;
+    }
+
+    // F. 무릎 역접힘 방지: 접히는 방향이 반대면 자연 방향으로 보정
+    if (lowerDir) {
+      const s = _v1.copy(upperDir).cross(lowerDir).dot(X_AXIS);
+      if (s < -0.03) {
+        const bendAngle = Math.acos(THREE.MathUtils.clamp(upperDir.dot(lowerDir), -1, 1));
+        const axisNat = safeNormalize(_v2.copy(upperDir).cross(new THREE.Vector3(0, 0, -1)), X_AXIS);
+        const fixed = upperDir.clone().applyAxisAngle(axisNat, bendAngle);
+        lowerDir.lerp(fixed, 0.7).normalize();
+      }
+    }
+
+    const qUpperWorld = new THREE.Quaternion().setFromUnitVectors(Y_DOWN, upperDir);
+    applyGated(ul, _q3.copy(qHipsWorld).invert().multiply(qUpperWorld), gate);
+    if (lowerDir) {
+      const qLowerWorld = new THREE.Quaternion().setFromUnitVectors(Y_DOWN, lowerDir);
+      const relLower = new THREE.Quaternion().copy(qUpperWorld).invert().multiply(qLowerWorld);
+      clampRotation(relLower, 2.4);
+      applyGated(ll, relLower, gate);
+      // 발바닥은 바닥과 수평 유지
+      applyGated(ft, _q3.copy(qLowerWorld).invert(), gate);
+    } else {
+      applyGated(ll, IDENTITY, gate);
+      applyGated(ft, IDENTITY, gate);
+    }
+  }
+}
+
+// ── 손 (손목 방향 + 손가락) ──
 function solveHand(side, arm) {
   const world = latestHands[side];
   const curls = smoothedCurls[side];
 
   if (!world || !arm) {
-    // 손 미인식: 살짝 쥔 자연스러운 손 + 손목은 팔 방향 그대로
-    targets[side + 'Hand'].identity();
+    setTargetSafe(side + 'Hand', IDENTITY);
     setFingerTargets(side, (f) => smoothCurl(curls, f, 0.15));
     return;
   }
 
-  // 손 좌표 변환 (거울)
   const pts = [];
   for (let i = 0; i < 21; i++) pts.push(conv(world[i]));
 
   if (HAND_ORIENT > 0) {
-    // 손 방향 기저: 손가락 방향 + 손바닥 법선
-    const dir = _v1.copy(pts[9]).sub(pts[0]).normalize();             // 손목→중지 뿌리
+    const dir = safeNormalize(_v1.copy(pts[9]).sub(pts[0]), side === 'right' ? REST_R_ARM : REST_L_ARM);
     const vI = _v2.copy(pts[5]).sub(pts[0]);
     const vL = _v3.copy(pts[17]).sub(pts[0]);
-    const palmN = (side === 'right' ? vI.clone().cross(vL) : vL.clone().cross(vI)).normalize();
-    const z = dir.clone().cross(palmN).normalize();
+    const palmN = safeNormalize(side === 'right' ? vI.clone().cross(vL) : vL.clone().cross(vI), Y_DOWN);
+    const z = safeNormalize(dir.clone().cross(palmN), FORWARD);
     const y = z.clone().cross(dir).normalize();
     _m1.makeBasis(dir, y, z);
     const qTarget = new THREE.Quaternion().setFromRotationMatrix(_m1);
-    // 기본 자세 기저: 오른손 (-1,0,0)/(0,-1,0), 왼손 (1,0,0)/(0,-1,0)
     const restX = side === 'right' ? REST_R_ARM : REST_L_ARM;
     const restZ = restX.clone().cross(new THREE.Vector3(0, -1, 0)).normalize();
     const restY = restZ.clone().cross(restX).normalize();
@@ -487,55 +801,55 @@ function solveHand(side, arm) {
     const qRest = new THREE.Quaternion().setFromRotationMatrix(_m1);
     const qHandWorld = qTarget.multiply(qRest.invert());
     const local = _q3.copy(arm.lowerWorld).invert().multiply(qHandWorld);
-    // 과도한 손목 꺾임 방지
-    if (local.angleTo(IDENTITY) > 1.7) local.slerp(IDENTITY, 0.5);
-    targets[side + 'Hand'].copy(IDENTITY).slerp(local, HAND_ORIENT);
+    clampRotation(local, 1.6);
+    const out = new THREE.Quaternion().copy(IDENTITY).slerp(local, HAND_ORIENT);
+    setTargetSafe(side + 'Hand', out);
   } else {
-    targets[side + 'Hand'].identity();
+    setTargetSafe(side + 'Hand', IDENTITY);
   }
 
-  // 손가락 굽힘 (0=쫙 폄, 1=주먹)
-  const raw = {};
-  raw.Index = fingerCurl(world, 5);
-  raw.Middle = fingerCurl(world, 9);
-  raw.Ring = fingerCurl(world, 13);
-  raw.Little = fingerCurl(world, 17);
-  raw.Thumb = thumbCurl(world);
+  const raw = {
+    Index: fingerCurl(world, 5),
+    Middle: fingerCurl(world, 9),
+    Ring: fingerCurl(world, 13),
+    Little: fingerCurl(world, 17),
+    Thumb: thumbCurl(world),
+  };
   setFingerTargets(side, (f) => smoothCurl(curls, f, raw[f]));
 }
 
 function smoothCurl(store, finger, target) {
   if (store[finger] == null) store[finger] = target;
-  store[finger] += (target - store[finger]) * FINGER_SMOOTH;
+  store[finger] += (target - store[finger]) * 0.55;
   return store[finger];
 }
-
 function fingerCurl(w, mcp) {
   const a1 = segAngle(w, mcp, mcp + 1, mcp + 2);
   const a2 = segAngle(w, mcp + 1, mcp + 2, mcp + 3);
   return clamp01((a1 + a2) / 2.4);
 }
-
 function thumbCurl(w) {
   const a1 = segAngle(w, 1, 2, 3);
   const a2 = segAngle(w, 2, 3, 4);
   return clamp01((a1 + a2) / 1.6);
 }
-
 function segAngle(w, a, b, c) {
   const v1 = _v1.set(w[b].x - w[a].x, w[b].y - w[a].y, w[b].z - w[a].z).normalize();
   const v2 = _v2.set(w[c].x - w[b].x, w[c].y - w[b].y, w[c].z - w[b].z).normalize();
-  return Math.acos(THREE.MathUtils.clamp(v1.dot(v2), -1, 1));
+  const d = v1.dot(v2);
+  if (!Number.isFinite(d)) return 0;
+  return Math.acos(THREE.MathUtils.clamp(d, -1, 1));
 }
 
 const _axisZ = new THREE.Vector3(0, 0, 1);
 const _axisY = new THREE.Vector3(0, 1, 0);
 
 function setFingerTargets(side, curlOf) {
-  const zSign = side === 'right' ? 1 : -1;   // 오른손: +Z 회전이 손바닥 쪽
-  const ySign = side === 'right' ? -1 : 1;   // 엄지 접기 방향
+  const zSign = side === 'right' ? 1 : -1;
+  const ySign = side === 'right' ? -1 : 1;
   for (const f of FINGERS) {
     const curl = curlOf(f);
+    if (!Number.isFinite(curl)) continue;
     if (f === 'Thumb') {
       const a = curl * 0.55;
       targets[side + 'ThumbMetacarpal'].setFromAxisAngle(_axisY, ySign * a);
@@ -550,3 +864,26 @@ function setFingerTargets(side, curlOf) {
 }
 
 function clampAbs(v, limit) { return Math.min(limit, Math.max(-limit, v)); }
+
+// ── H. 디버그 정보 ──
+export function getDebugInfo() {
+  return {
+    fps: detectFps,
+    inferMs,
+    tracked,
+    status: getStatus(),
+    calib,
+    calibProgress: getCalibProgress(),
+    vrmVersion,
+    rawPose,
+    filteredPose: latestPose,
+    vis: latestVis,
+    poseImg,
+    feet: {
+      left: { locked: feet.left.locked, vy: feet.left.vy },
+      right: { locked: feet.right.locked, vy: feet.right.vy },
+    },
+    filterParams: FILTER_PARAMS,
+    LM,
+  };
+}

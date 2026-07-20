@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import * as Avatar from './avatar.js';
 import * as Motion from './motion.js';
+import { Debug } from './debug.js';
 
 const IDLE_RESET_MS = 60 * 1000; // 60초 무조작 시 처음 화면으로
 
@@ -43,12 +44,14 @@ async function boot() {
   }
   if (Avatar.state.usingSample) $('#sample-badge').classList.remove('hidden');
   adaptPartTabs();
+  Motion.setAvatar(Avatar.state.vrm, Avatar.getSkeletonMeasures());
 
   $('#loading').classList.add('hidden');
 
   buildPalette();
   bindUI();
   Avatar.enableDragRotate($('#stage'));
+  Debug.init((on) => Avatar.toggleSkeletonHelper(on));
   startRenderLoop();
 
   // 모션 인식은 백그라운드에서 미리 준비 (화면 3 진입이 빨라짐)
@@ -69,6 +72,7 @@ function startRenderLoop() {
       Motion.applyToVRM(vrm, dt);
       Avatar.updateMotionFraming(Motion.getHeadHint(), dt); // 관람객 배율에 맞춰 줌
       updateGuide();
+      if (Debug.enabled) Debug.update(Motion.getDebugInfo(), $('#cam'));
     }
     if (vrm) vrm.update(dt);
     renderer.render(scene, camera);
@@ -129,9 +133,14 @@ function updateGuide() {
     guide.classList.remove('hidden');
     return;
   }
-  if (Motion.isTracking()) {
+  const status = Motion.getStatus();
+  if (status === 'ok') {
     guide.classList.add('hidden');
     resetIdleTimer(); // 사람이 움직이는 동안은 초기화하지 않음
+  } else if (status === 'calibrating') {
+    guide.textContent = `그대로 편하게 서 주세요… ${Math.round(Motion.getCalibProgress() * 100)}%`;
+    guide.classList.remove('hidden');
+    resetIdleTimer();
   } else {
     guide.textContent = '카메라 앞에 서 주세요';
     guide.classList.remove('hidden');
@@ -250,7 +259,7 @@ function bindUI() {
       await Avatar.loadAvatarFromFile(file, (r) => {
         loadingText.textContent = `아바타를 불러오는 중… ${Math.round(r * 100)}%`;
       });
-      Motion.resetForNewAvatar();
+      Motion.setAvatar(Avatar.state.vrm, Avatar.getSkeletonMeasures());
       $('#sample-badge').classList.add('hidden');
       selectedPart = 'top';
       selectedPattern = 'solid';
