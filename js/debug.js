@@ -64,7 +64,7 @@ export const Debug = {
     const v = (i) => info.vis ? (info.vis.get(i) || 0).toFixed(2) : '-';
     const L = info.LM;
     this.stats.textContent =
-      `FPS ${info.fps.toFixed(1)} | 추론 ${info.inferMs.toFixed(1)}ms | VRM ${info.vrmVersion}\n` +
+      `FPS ${info.fps.toFixed(1)} | 추론 ${info.inferMs.toFixed(1)}ms | ${info.delegate || '-'} | VRM ${info.vrmVersion}\n` +
       `상태 ${info.status}` +
       (info.calib
         ? ` | scale ${info.calib.scale.toFixed(2)} floor ${info.calib.floorY.toFixed(2)}`

@@ -78,10 +78,12 @@ export class HeartDetector {
   update(p, LM, dt) {
     const lw = p(LM.L_WR), rw = p(LM.R_WR);
     const nose = p(LM.NOSE);
-    const shoulderW = p(LM.L_SH).distanceTo(p(LM.R_SH)) || 0.3;
+    const ls = p(LM.L_SH), rs = p(LM.R_SH);
+    const le = p(LM.L_EL), re = p(LM.R_EL);
+    const shoulderW = (ls && rs ? ls.distanceTo(rs) : 0.3) || 0.3;
 
     let cond = false;
-    if (lw && rw && nose) {
+    if (lw && rw && nose && ls && rs && le && re) {
       const bothAbove = lw.y > nose.y + 0.04 && rw.y > nose.y + 0.04;      // 손목이 얼굴보다 위
       const close = lw.distanceTo(rw) < shoulderW * 1.15;                   // 양손이 가까움
       const centered = Math.abs((lw.x + rw.x) / 2 - nose.x) < shoulderW;    // 머리 중심 근처

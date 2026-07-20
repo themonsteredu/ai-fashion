@@ -41,8 +41,9 @@ const VIS_SOFT = 0.5;          // 0.5~0.75: 강한 스무딩 / 미만: 마지막
 const HOLD_TIMEOUT_MS = 1500;  // 이 시간 이상 미검출 → 기본 자세로 서서히 복귀
 const SOFT_BLEND = 0.45;
 
-// 캘리브레이션 (B)
+// 캘리브레이션 (B): 시간과 표본 수 둘 다 충족해야 완료
 const CALIB_DURATION_MS = 1500;
+const CALIB_MIN_SAMPLES = 6;
 
 // Foot Lock (G)
 const FOOT_CONTACT_H = 0.075;  // 바닥에서 이 높이 이내면 접촉 후보 (m)
@@ -131,7 +132,10 @@ export function getStatus() {
 export function getCalibProgress() {
   if (calib) return 1;
   if (!calibStartMs) return 0;
-  return Math.min(1, (performance.now() - calibStartMs) / CALIB_DURATION_MS);
+  // 시간과 표본 수 중 덜 채워진 쪽 기준으로 표시 (100%인데 안 끝나는 현상 방지)
+  const byTime = (performance.now() - calibStartMs) / CALIB_DURATION_MS;
+  const byFrames = calibAccum ? calibAccum.n / CALIB_MIN_SAMPLES : 0;
+  return Math.min(1, Math.min(byTime, byFrames));
 }
 
 export function getHeadHint() {
@@ -177,9 +181,13 @@ export async function initTrackers(onStatus) {
   onStatus && onStatus('모션 인식 준비 중…');
   const fileset = await FilesetResolver.forVisionTasks('./lib/mediapipe/wasm');
 
+  // 기본은 가벼운 모델(부드러움 우선). 주소 뒤에 ?full=1 을 붙이면 정밀 모델 사용
+  const useFull = new URLSearchParams(location.search).get('full') === '1';
+  const poseModel = useFull ? './models/pose_landmarker_full.task' : './models/pose_landmarker_lite.task';
+
   async function make(delegate) {
     const pose = await PoseLandmarker.createFromOptions(fileset, {
-      baseOptions: { modelAssetPath: './models/pose_landmarker_full.task', delegate },
+      baseOptions: { modelAssetPath: poseModel, delegate },
       runningMode: 'VIDEO',
       numPoses: 1,
       minPoseDetectionConfidence: 0.5,
@@ -208,11 +216,14 @@ export async function initTrackers(onStatus) {
 
   try {
     ({ pose: poseLandmarker, face: faceLandmarker, hand: handLandmarker } = await make('GPU'));
+    delegateMode = 'GPU';
   } catch (e) {
     console.warn('GPU 모드 실패 → CPU 모드로 전환', e);
     ({ pose: poseLandmarker, face: faceLandmarker, hand: handLandmarker } = await make('CPU'));
+    delegateMode = 'CPU';
   }
 }
+let delegateMode = '-';
 
 export async function startCamera(videoEl) {
   video = videoEl;
@@ -241,6 +252,7 @@ export function stopCamera() {
 function conv(lm) { return new THREE.Vector3(-lm.x, -lm.y, -lm.z); } // 거울 반전
 
 let lastDetectMs = 0;
+let lastTrackedMs = 0;
 
 // ── 1~4단계: 수신 → 게이팅 → 필터 → 스케일 ──
 export function detect(now) {
@@ -266,11 +278,15 @@ export function detect(now) {
 
   if (world && poseImg && shoulderVisible(world)) {
     tracked = true;
+    lastTrackedMs = now;
     ingestPose(world, dtDetect, now);
   } else {
     tracked = false;
-    calibStartMs = 0;
-    calibAccum = null;
+    // 잠깐(1초 미만) 놓친 것은 캘리브레이션을 처음부터 다시 하지 않음
+    if (!calib && calibStartMs && now - lastTrackedMs > 3000) {
+      calibStartMs = 0;
+      calibAccum = null;
+    }
   }
 
   // 손: 매 프레임 (배정 → 상태머신 → 손 전용 필터)
@@ -344,6 +360,9 @@ function ingestPose(world, dt, now) {
 // ── B. 캘리브레이션: 1.5초간 편하게 선 자세 측정 ──
 function updateCalibration(now) {
   if (calib || !latestPose) return;
+  for (const idx of Object.values(LM)) {
+    if (!latestPose.get(idx)) return; // 누락 프레임 건너뜀
+  }
   if (!calibStartMs) {
     calibStartMs = now;
     calibAccum = { n: 0, shoulderW: 0, hipW: 0, torso: 0, arm: 0, leg: 0, legN: 0, ankleY: 0, ankleN: 0 };
@@ -368,7 +387,7 @@ function updateCalibration(now) {
     a.ankleY += p(LM.R_ANK).y; a.ankleN++;
   }
 
-  if (now - calibStartMs >= CALIB_DURATION_MS && a.n > 10) {
+  if (now - calibStartMs >= CALIB_DURATION_MS && a.n >= CALIB_MIN_SAMPLES) {
     const user = {
       shoulderW: a.shoulderW / a.n,
       hipW: a.hipW / a.n,
@@ -623,17 +642,21 @@ function chainGate(chain, minVis, now) {
 }
 
 // 게이트에 따라 목표값 반영
+// 주의: computed가 _q1~_q3 임시 변수일 수 있으므로 전용 임시 변수만 사용
+const _qGateA = new THREE.Quaternion();
+const _qGateB = new THREE.Quaternion();
 function applyGated(name, computed, gate) {
   if (gate === 'full') { setTargetSafe(name, computed); return; }
   if (gate === 'soft') {
-    _q3.copy(targets[name]).slerp(computed, SOFT_BLEND);
-    setTargetSafe(name, _q3);
+    _qGateA.copy(computed);
+    _qGateB.copy(targets[name]).slerp(_qGateA, SOFT_BLEND);
+    setTargetSafe(name, _qGateB);
     return;
   }
   if (gate === 'timeout') {
     const neutral = NEUTRAL[name] || IDENTITY;
-    _q3.copy(targets[name]).slerp(neutral, 0.03);
-    setTargetSafe(name, _q3);
+    _qGateB.copy(targets[name]).slerp(neutral, 0.03);
+    setTargetSafe(name, _qGateB);
   }
   // 'hold': 마지막 정상값 유지 (아무것도 안 함)
 }
@@ -641,6 +664,11 @@ function applyGated(name, computed, gate) {
 function computeTargets(vrm, now, dt) {
   const p = (i) => latestPose.get(i);
   const vis = (i) => latestVis.get(i) || 0;
+
+  // 랜드마크가 하나라도 누락된 프레임은 건너뜀 (undefined 접근으로 루프가 죽는 것 방지)
+  for (const idx of Object.values(LM)) {
+    if (!latestPose.get(idx)) return;
+  }
 
   // 머리 위 하트 감지 (디바운스+히스테리시스, blend 0~1)
   heartBlendCur = heart.update(p, LM, dt);
@@ -770,7 +798,7 @@ function computeTargets(vrm, now, dt) {
     applyGated(ua, _q3.copy(parentWorld).invert().multiply(qUpperWorld), gate);
 
     if (!lowerDir) {
-      applyGated(la, IDENTITY, gate);
+      // 손목만 잠깐 놓친 경우: 아래팔은 마지막 자세 유지 (팔이 홱 펴지는 것 방지)
       return { lowerWorld: qUpperWorld, gate };
     }
     const qLowerWorld = new THREE.Quaternion().setFromUnitVectors(rest, lowerDir);
@@ -846,8 +874,10 @@ function solveLegs(vrm, qHipsWorld, now, dt) {
 
     if (foot.locked && skeleton && skeleton.upperLegLen > 0.05) {
       // two-bone IK: 골반 관절 → 잠긴 발 위치
-      const hipNode = vrm.humanoid.getRawBoneNode(side + 'UpperLeg');
-      const H = hipNode ? hipNode.getWorldPosition(_v3) : _v3.set(hipsWorldX + (side === 'left' ? 0.08 : -0.08), hipsWorldY, 0);
+      // (raw 본은 VRM 0.x에서 좌표가 180도 뒤집혀 있으므로 쓰지 않고,
+      //  normalized 공간 기준으로 골반 관절 위치를 직접 계산)
+      const hipHalf = skeleton.hipHalf || 0.08;
+      const H = _v3.set(hipsWorldX + (side === 'left' ? hipHalf : -hipHalf), hipsWorldY, 0);
       const L1 = skeleton.upperLegLen, L2 = skeleton.lowerLegLen;
       const toT = new THREE.Vector3().copy(foot.lockPos).sub(H);
       let d = THREE.MathUtils.clamp(toT.length(), Math.abs(L1 - L2) + 0.02, L1 + L2 - 0.01);
@@ -904,7 +934,7 @@ function solveHand(side, arm) {
   const curls = smoothedCurls[side];
 
   // 완전히 놓침(LOST): relaxed 손모양으로 서서히 복귀
-  if (t.state === 'LOST' || !arm) {
+  if (t.state === 'LOST') {
     _q3.copy(targets[side + 'Hand']).slerp(IDENTITY, 0.05);
     setTargetSafe(side + 'Hand', _q3);
     const relaxedAngles = {};
@@ -912,8 +942,8 @@ function solveHand(side, arm) {
     setFingerTargetsByAngles(side, relaxedAngles, curls);
     return;
   }
-  // 잠시 놓침(HOLD 구간): 마지막 정상 자세 그대로 유지
-  if (!t.has || t.filtered.length < 21) return;
+  // 팔 체인이 잠시 hold 상태거나 손 데이터가 잠깐 없으면: 마지막 자세 그대로 유지
+  if (!arm || !t.has || t.filtered.length < 21) return;
 
   const world = t.filtered; // 손 전용 One Euro 필터를 거친 21점
   const pts = [];
@@ -974,17 +1004,22 @@ function solveHand(side, arm) {
 }
 
 // 관절별 굽힘 각도 (라디안): [MCP, PIP, DIP]
+// 사람 손은 쫙 펴도 관절 사이에 기본 각도가 있으므로(특히 엄지 뿌리),
+// rest 기준 각도를 빼서 "펴면 0"이 되도록 만든다
+const MCP_REST = 0.12;
+const THUMB_CMC_REST = 0.7;
+const THUMB_MP_REST = 0.15;
 function fingerJointAngles(w, mcp) {
   return [
-    segAngle(w, 0, mcp, mcp + 1),          // 손바닥(손목→MCP) 대비 첫마디
-    segAngle(w, mcp, mcp + 1, mcp + 2),    // PIP
-    segAngle(w, mcp + 1, mcp + 2, mcp + 3),// DIP
+    Math.max(0, segAngle(w, 0, mcp, mcp + 1) - MCP_REST),
+    segAngle(w, mcp, mcp + 1, mcp + 2),
+    segAngle(w, mcp + 1, mcp + 2, mcp + 3),
   ];
 }
 function thumbJointAngles(w) {
   return [
-    segAngle(w, 0, 1, 2) * 0.8,
-    segAngle(w, 1, 2, 3),
+    Math.max(0, segAngle(w, 0, 1, 2) - THUMB_CMC_REST) * 1.1,
+    Math.max(0, segAngle(w, 1, 2, 3) - THUMB_MP_REST),
     segAngle(w, 2, 3, 4),
   ];
 }
@@ -999,7 +1034,8 @@ function mixAngles(a, b, w) {
 
 function smoothCurl(store, finger, target) {
   if (store[finger] == null) store[finger] = target;
-  store[finger] += (target - store[finger]) * 0.55;
+  const k = 1 - Math.exp(-dtCur * 16); // 프레임 속도와 무관하게 동일한 반응성
+  store[finger] += (target - store[finger]) * k;
   return store[finger];
 }
 function fingerCurl(w, mcp) {
@@ -1078,6 +1114,9 @@ export function getDebugInfo() {
     status: getStatus(),
     calib,
     calibProgress: getCalibProgress(),
+    calibN: calibAccum ? calibAccum.n : -1,
+    calibAge: calibStartMs ? Math.round(performance.now() - calibStartMs) : -1,
+    delegate: delegateMode,
     vrmVersion,
     rawPose,
     filteredPose: latestPose,

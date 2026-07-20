@@ -394,6 +394,7 @@ export function getSkeletonMeasures() {
   const la = wp('leftUpperArm'), lel = wp('leftLowerArm'), lh = wp('leftHand');
   return {
     hipsY: hips ? hips.y : 0.8,
+    hipHalf: dist(lu, wp('rightUpperLeg')) / 2 || 0.08,
     torsoLen: dist(hips, neck),
     upperLegLen: dist(lu, ll),
     lowerLegLen: dist(ll, lf),
