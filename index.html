@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>패션 아바타 체험</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="css/style.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "./lib/three.module.min.js",
+    "three/addons/": "./lib/three/addons/",
+    "@pixiv/three-vrm": "./lib/three-vrm.module.min.js"
+  }
+}
+</script>
+</head>
+<body>
+
+<!-- 3D 캔버스 (모든 화면 공통 배경) -->
+<div id="stage"></div>
+
+<!-- ───────── 화면 1 : 시작 ───────── -->
+<section id="screen-start" class="screen active">
+  <div class="start-inner">
+    <div class="brand">FASHION&nbsp;AVATAR&nbsp;STUDIO</div>
+    <h1>나만의 아바타와<br>런웨이에 서 보세요</h1>
+    <p class="sub">옷 색상을 고르고, 카메라 앞에서 움직이면<br>아바타가 실시간으로 따라 해요</p>
+    <button id="btn-start" class="btn btn-primary btn-xl">시작하기</button>
+  </div>
+</section>
+
+<!-- ───────── 화면 2 : 아바타 꾸미기 ───────── -->
+<section id="screen-custom" class="screen">
+  <div class="drag-hint">아바타를 드래그하면 돌려볼 수 있어요</div>
+  <aside class="panel">
+    <h2>아바타 꾸미기</h2>
+
+    <div class="field-label">부위 선택</div>
+    <div class="seg" id="part-tabs">
+      <button class="seg-btn active" data-part="top">상의</button>
+      <button class="seg-btn" data-part="bottom">하의</button>
+      <button class="seg-btn" data-part="hair">헤어</button>
+    </div>
+
+    <div class="field-label">색상</div>
+    <div class="palette" id="palette"></div>
+
+    <div class="field-label">패턴</div>
+    <div class="seg" id="pattern-tabs">
+      <button class="seg-btn active" data-pattern="solid">단색</button>
+      <button class="seg-btn" data-pattern="stripe">줄무늬</button>
+      <button class="seg-btn" data-pattern="dot">도트</button>
+      <button class="seg-btn" data-pattern="check">체크</button>
+    </div>
+
+    <div class="panel-spacer"></div>
+    <button id="btn-reset-color" class="btn btn-ghost">원래대로</button>
+    <button id="btn-done" class="btn btn-primary">완성! 움직여보기</button>
+    <button id="btn-home-2" class="btn btn-text">처음으로</button>
+  </aside>
+  <div class="toast" id="toast"></div>
+</section>
+
+<!-- ───────── 화면 3 : 모션 체험 ───────── -->
+<section id="screen-motion" class="screen">
+  <div id="guide-msg" class="guide-msg">카메라 앞에 서 주세요</div>
+  <video id="cam" class="cam-preview" playsinline muted></video>
+  <div class="motion-bar">
+    <button id="btn-photo" class="btn btn-primary btn-lg">📷 사진 찍기</button>
+    <button id="btn-home-3" class="btn btn-ghost btn-lg">처음으로</button>
+  </div>
+  <div id="countdown" class="countdown hidden"></div>
+  <div id="flash" class="flash hidden"></div>
+</section>
+
+<!-- 사진 결과 -->
+<div id="photo-modal" class="modal hidden">
+  <div class="modal-card">
+    <img id="photo-img" alt="촬영된 아바타 사진">
+    <p class="save-note">사진이 저장되었어요 (다운로드 폴더)</p>
+    <button id="btn-photo-close" class="btn btn-primary">확인</button>
+  </div>
+</div>
+
+<!-- 로딩 -->
+<div id="loading" class="loading">
+  <div class="spinner"></div>
+  <p id="loading-text">아바타를 불러오는 중…</p>
+</div>
+
+<!-- 샘플 아바타 안내 -->
+<div id="sample-badge" class="sample-badge hidden">
+  지금은 테스트용 아바타예요 — 이 폴더에 <b>character.vrm</b> 파일을 넣으면 내 아바타로 바뀝니다
+</div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

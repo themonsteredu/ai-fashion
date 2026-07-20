@@ -1,0 +1,225 @@
+/* ── 패션 박람회 키오스크 ─ 밝은 스튜디오 + 포인트 색 1개(브론즈) ── */
+:root {
+  --bg-top: #f7f5f1;
+  --bg-bottom: #e9e5de;
+  --ink: #17150f;
+  --ink-soft: #6d675c;
+  --accent: #a8794a;          /* 포인트 색상: 브론즈 */
+  --accent-ink: #ffffff;
+  --card: rgba(255, 255, 255, 0.82);
+  --line: rgba(23, 21, 15, 0.1);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  font-family: "Pretendard", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+  color: var(--ink);
+  background: radial-gradient(120% 90% at 50% 0%, var(--bg-top) 55%, var(--bg-bottom) 100%);
+  user-select: none;
+}
+
+button { font-family: inherit; cursor: pointer; border: none; }
+
+/* 3D 캔버스 */
+#stage { position: fixed; inset: 0; z-index: 0; }
+#stage canvas { display: block; }
+
+/* 화면 전환 */
+.screen {
+  position: fixed; inset: 0; z-index: 10;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.45s ease;
+}
+.screen.active { opacity: 1; pointer-events: auto; }
+
+/* ───────── 화면 1: 시작 ───────── */
+#screen-start {
+  display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(120% 90% at 50% 0%, rgba(247,245,241,0.94) 55%, rgba(233,229,222,0.96) 100%);
+  text-align: center;
+}
+.brand {
+  letter-spacing: 0.42em; font-size: clamp(14px, 1.4vw, 20px);
+  color: var(--accent); font-weight: 700; margin-bottom: 4vh;
+}
+#screen-start h1 {
+  font-size: clamp(40px, 6.5vw, 96px);
+  line-height: 1.18; font-weight: 800; letter-spacing: -0.02em;
+}
+#screen-start .sub {
+  margin-top: 3.2vh; font-size: clamp(18px, 2vw, 28px);
+  line-height: 1.6; color: var(--ink-soft);
+}
+#btn-start { margin-top: 6vh; }
+
+/* 버튼 공통 — 터치 키오스크용 큰 버튼 */
+.btn {
+  border-radius: 999px; font-weight: 700;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.2s;
+}
+.btn:active { transform: scale(0.96); }
+.btn-primary {
+  background: var(--ink); color: #fff;
+  padding: 20px 44px; font-size: 22px;
+  box-shadow: 0 10px 30px rgba(23,21,15,0.22);
+}
+.btn-primary:active { background: #000; }
+.btn-xl { padding: 28px 84px; font-size: clamp(24px, 2.6vw, 34px); }
+.btn-lg { padding: 22px 52px; font-size: 24px; }
+.btn-ghost {
+  background: rgba(255,255,255,0.85); color: var(--ink);
+  border: 1.5px solid var(--line);
+  padding: 20px 44px; font-size: 22px;
+}
+.btn-text {
+  background: none; color: var(--ink-soft);
+  padding: 16px; font-size: 18px; text-decoration: underline;
+}
+
+/* ───────── 화면 2: 꾸미기 ───────── */
+.panel {
+  position: absolute; top: 3vh; right: 3vh; bottom: 3vh;
+  width: min(420px, 38vw);
+  background: var(--card);
+  backdrop-filter: blur(14px);
+  border: 1px solid var(--line);
+  border-radius: 28px;
+  padding: 34px 30px;
+  display: flex; flex-direction: column; gap: 14px;
+  box-shadow: 0 24px 60px rgba(23,21,15,0.12);
+  overflow-y: auto;
+}
+.panel h2 { font-size: 30px; font-weight: 800; margin-bottom: 6px; }
+.field-label {
+  font-size: 15px; font-weight: 700; letter-spacing: 0.14em;
+  color: var(--accent); margin-top: 8px;
+}
+
+/* 세그먼트 버튼 (부위/패턴) */
+.seg { display: flex; gap: 8px; }
+.seg-btn {
+  flex: 1; padding: 16px 8px; font-size: 19px; font-weight: 600;
+  border-radius: 16px; background: rgba(255,255,255,0.7);
+  border: 1.5px solid var(--line); color: var(--ink-soft);
+}
+.seg-btn.active {
+  background: var(--ink); color: #fff; border-color: var(--ink);
+}
+
+/* 색상 팔레트 */
+.palette {
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  gap: 14px; padding: 4px 2px;
+}
+.swatch {
+  width: 100%; aspect-ratio: 1; border-radius: 50%;
+  border: 3px solid rgba(255,255,255,0.9);
+  box-shadow: 0 3px 10px rgba(23,21,15,0.18);
+  transition: transform 0.12s ease;
+}
+.swatch:active { transform: scale(0.9); }
+.swatch.active {
+  outline: 3.5px solid var(--accent); outline-offset: 3px;
+}
+
+.panel-spacer { flex: 1; }
+
+.drag-hint {
+  position: absolute; left: 4vw; bottom: 4vh;
+  font-size: 17px; color: var(--ink-soft);
+  background: rgba(255,255,255,0.7); border-radius: 999px;
+  padding: 12px 22px; backdrop-filter: blur(8px);
+}
+
+.toast {
+  position: absolute; left: 50%; bottom: 6vh; transform: translateX(-50%);
+  background: var(--ink); color: #fff; border-radius: 999px;
+  padding: 14px 28px; font-size: 18px;
+  opacity: 0; transition: opacity 0.3s; pointer-events: none;
+  white-space: nowrap;
+}
+.toast.show { opacity: 1; }
+
+/* ───────── 화면 3: 모션 체험 ───────── */
+.guide-msg {
+  position: absolute; top: 6vh; left: 50%; transform: translateX(-50%);
+  background: rgba(23,21,15,0.82); color: #fff;
+  font-size: clamp(22px, 2.4vw, 32px); font-weight: 700;
+  padding: 20px 44px; border-radius: 999px;
+  backdrop-filter: blur(6px);
+  transition: opacity 0.4s; white-space: nowrap;
+}
+.guide-msg.hidden { opacity: 0; }
+
+.cam-preview {
+  position: absolute; right: 3vh; bottom: 3vh;
+  width: min(280px, 22vw); aspect-ratio: 4/3; object-fit: cover;
+  border-radius: 20px; border: 3px solid rgba(255,255,255,0.9);
+  box-shadow: 0 14px 40px rgba(23,21,15,0.28);
+  transform: scaleX(-1);           /* 거울 모드 */
+  background: #222;
+}
+
+.motion-bar {
+  position: absolute; bottom: 4vh; left: 50%; transform: translateX(-50%);
+  display: flex; gap: 18px;
+}
+
+.countdown {
+  position: absolute; inset: 0; z-index: 30;
+  display: flex; align-items: center; justify-content: center;
+  font-size: clamp(160px, 30vw, 380px); font-weight: 800;
+  color: var(--accent);
+  text-shadow: 0 10px 60px rgba(255,255,255,0.9);
+  pointer-events: none;
+}
+.flash {
+  position: absolute; inset: 0; z-index: 31; background: #fff;
+  pointer-events: none; animation: flashout 0.5s ease forwards;
+}
+@keyframes flashout { from { opacity: 1; } to { opacity: 0; } }
+
+/* 사진 모달 */
+.modal {
+  position: fixed; inset: 0; z-index: 40;
+  background: rgba(23,21,15,0.55); backdrop-filter: blur(8px);
+  display: flex; align-items: center; justify-content: center;
+}
+.modal-card {
+  background: #fff; border-radius: 28px; padding: 28px;
+  display: flex; flex-direction: column; align-items: center; gap: 18px;
+  max-width: 88vw; max-height: 90vh;
+  box-shadow: 0 30px 90px rgba(0,0,0,0.35);
+}
+#photo-img {
+  max-width: 80vw; max-height: 62vh; border-radius: 16px;
+  border: 1px solid var(--line);
+}
+.save-note { font-size: 18px; color: var(--ink-soft); }
+
+/* 로딩 */
+.loading {
+  position: fixed; inset: 0; z-index: 50;
+  background: radial-gradient(120% 90% at 50% 0%, var(--bg-top) 55%, var(--bg-bottom) 100%);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 26px;
+  transition: opacity 0.5s;
+}
+.loading.hidden, .hidden { display: none !important; }
+.loading p { font-size: 22px; color: var(--ink-soft); }
+.spinner {
+  width: 64px; height: 64px; border-radius: 50%;
+  border: 5px solid var(--line); border-top-color: var(--accent);
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* 샘플 아바타 안내 배지 */
+.sample-badge {
+  position: fixed; left: 50%; top: 2.5vh; transform: translateX(-50%);
+  z-index: 20; background: rgba(168,121,74,0.95); color: #fff;
+  font-size: 16px; padding: 12px 24px; border-radius: 999px;
+  box-shadow: 0 8px 24px rgba(23,21,15,0.2);
+}
