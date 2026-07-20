@@ -907,7 +907,9 @@ function solveHand(side, arm) {
   if (t.state === 'LOST' || !arm) {
     _q3.copy(targets[side + 'Hand']).slerp(IDENTITY, 0.05);
     setTargetSafe(side + 'Hand', _q3);
-    setFingerTargets(side, (f) => smoothCurl(curls, f, HAND_PRESETS.relaxed[f]));
+    const relaxedAngles = {};
+    for (const f of FINGERS) relaxedAngles[f] = anglesFromCurl(HAND_PRESETS.relaxed[f], f);
+    setFingerTargetsByAngles(side, relaxedAngles, curls);
     return;
   }
   // 잠시 놓침(HOLD 구간): 마지막 정상 자세 그대로 유지
@@ -942,6 +944,15 @@ function solveHand(side, arm) {
     setTargetSafe(side + 'Hand', IDENTITY);
   }
 
+  // 손가락: 관절별(MCP/PIP/DIP) 굽힘 각도를 각각 계산 (한 값 분배 방식 아님)
+  const trackedAngles = {
+    Index: fingerJointAngles(world, 5),
+    Middle: fingerJointAngles(world, 9),
+    Ring: fingerJointAngles(world, 13),
+    Little: fingerJointAngles(world, 17),
+    Thumb: thumbJointAngles(world),
+  };
+  // 제스처 감지용 요약 굽힘값
   const raw = {
     Index: fingerCurl(world, 5),
     Middle: fingerCurl(world, 9),
@@ -949,11 +960,41 @@ function solveHand(side, arm) {
     Little: fingerCurl(world, 17),
     Thumb: thumbCurl(world),
   };
-  // 제스처 프리셋 혼합: V 포즈(손가락 조건 감지) + 머리 위 하트
   const vBlend = t.v.update(raw, world, dtCur);
-  let mixed = vBlend > 0.01 ? blendHandPose(raw, HAND_PRESETS.victory, vBlend * (1 - heartBlendCur)) : raw;
-  if (heartBlendCur > 0.01) mixed = blendHandPose(mixed, HAND_PRESETS.overheadHeart, heartBlendCur);
-  setFingerTargets(side, (f) => smoothCurl(curls, f, mixed[f]));
+
+  // 혼합: 추적 70% + relaxed 프리셋 30%(안정화) → V/하트 프리셋 blend
+  const finalAngles = {};
+  for (const f of FINGERS) {
+    let a = mixAngles(trackedAngles[f], anglesFromCurl(HAND_PRESETS.relaxed[f], f), 0.3);
+    if (vBlend > 0.01) a = mixAngles(a, anglesFromCurl(HAND_PRESETS.victory[f], f), vBlend * (1 - heartBlendCur));
+    if (heartBlendCur > 0.01) a = mixAngles(a, anglesFromCurl(HAND_PRESETS.overheadHeart[f], f), heartBlendCur);
+    finalAngles[f] = a;
+  }
+  setFingerTargetsByAngles(side, finalAngles, curls);
+}
+
+// 관절별 굽힘 각도 (라디안): [MCP, PIP, DIP]
+function fingerJointAngles(w, mcp) {
+  return [
+    segAngle(w, 0, mcp, mcp + 1),          // 손바닥(손목→MCP) 대비 첫마디
+    segAngle(w, mcp, mcp + 1, mcp + 2),    // PIP
+    segAngle(w, mcp + 1, mcp + 2, mcp + 3),// DIP
+  ];
+}
+function thumbJointAngles(w) {
+  return [
+    segAngle(w, 0, 1, 2) * 0.8,
+    segAngle(w, 1, 2, 3),
+    segAngle(w, 2, 3, 4),
+  ];
+}
+// 프리셋 굽힘값(0~1) → 관절별 각도
+function anglesFromCurl(curl, finger) {
+  if (finger === 'Thumb') return [curl * 0.7, curl * 0.7, curl * 0.55];
+  return [curl * 0.95, curl * 1.5, curl * 0.9];
+}
+function mixAngles(a, b, w) {
+  return [a[0] + (b[0] - a[0]) * w, a[1] + (b[1] - a[1]) * w, a[2] + (b[2] - a[2]) * w];
 }
 
 function smoothCurl(store, finger, target) {
@@ -980,23 +1021,33 @@ function segAngle(w, a, b, c) {
 }
 
 const _axisZ = new THREE.Vector3(0, 0, 1);
-const _axisY = new THREE.Vector3(0, 1, 0);
+// 엄지 굽힘 축: rest 자세에서 엄지는 대각선(±X와 +Z 사이)을 향하므로
+// 순수 Y축이 아닌 [엄지 방향 × 손바닥 법선] 대각 축으로 굽혀야 뒤틀리지 않음
+const THUMB_AXIS = {
+  right: new THREE.Vector3(0.707, 0, 0.707),
+  left: new THREE.Vector3(0.707, 0, -0.707),
+};
+// 관절별 최대 굽힘 (라디안): [MCP, PIP, DIP]
+const FINGER_LIMITS = [1.6, 1.9, 1.3];
+const THUMB_LIMITS = [1.0, 1.1, 1.0];
 
-function setFingerTargets(side, curlOf) {
-  const zSign = side === 'right' ? 1 : -1;
-  const ySign = side === 'right' ? -1 : 1;
+// VRM normalized rest pose 기준 상대 Quaternion을 관절별로 생성해 적용
+function setFingerTargetsByAngles(side, angles, store) {
+  const zSign = side === 'right' ? 1 : -1;   // 좌우 미러: 굽힘 축 부호 반대
+  const thumbAxis = THUMB_AXIS[side];
   for (const f of FINGERS) {
-    const curl = curlOf(f);
-    if (!Number.isFinite(curl)) continue;
-    if (f === 'Thumb') {
-      const a = curl * 0.55;
-      targets[side + 'ThumbMetacarpal'].setFromAxisAngle(_axisY, ySign * a);
-      targets[side + 'ThumbProximal'].setFromAxisAngle(_axisY, ySign * a);
-      targets[side + 'ThumbDistal'].setFromAxisAngle(_axisY, ySign * curl * 0.4);
-    } else {
-      targets[side + f + 'Proximal'].setFromAxisAngle(_axisZ, zSign * curl * 1.1);
-      targets[side + f + 'Intermediate'].setFromAxisAngle(_axisZ, zSign * curl * 1.3);
-      targets[side + f + 'Distal'].setFromAxisAngle(_axisZ, zSign * curl * 0.8);
+    const a = angles[f];
+    if (!a) continue;
+    const joints = f === 'Thumb' ? FINGER_JOINTS.Thumb : FINGER_JOINTS.other;
+    const limits = f === 'Thumb' ? THUMB_LIMITS : FINGER_LIMITS;
+    for (let j = 0; j < 3; j++) {
+      let v = a[j];
+      if (!Number.isFinite(v)) continue;
+      v = smoothCurl(store, f + j, v);                 // 관절별 개별 스무딩
+      v = THREE.MathUtils.clamp(v, -0.08, limits[j]);  // 관절 각도 제한
+      const bone = side + f + joints[j];
+      if (f === 'Thumb') targets[bone].setFromAxisAngle(thumbAxis, v);
+      else targets[bone].setFromAxisAngle(_axisZ, zSign * v);
     }
   }
 }
