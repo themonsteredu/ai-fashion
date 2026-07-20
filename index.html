@@ -52,6 +52,9 @@
     <div class="field-label">색상</div>
     <div class="palette" id="palette"></div>
 
+    <div class="field-label">배경</div>
+    <div class="bg-row" id="bg-row"></div>
+
     <div class="field-label">패턴</div>
     <div class="seg" id="pattern-tabs">
       <button class="seg-btn active" data-pattern="solid">단색</button>
@@ -73,6 +76,13 @@
   <div id="guide-msg" class="guide-msg">카메라 앞에 서 주세요</div>
   <div id="cam-wrap" class="cam-preview">
     <video id="cam" playsinline muted></video>
+    <canvas id="cam-view" class="hidden"></canvas>
+  </div>
+  <div id="cambg-tabs" class="cambg-tabs">
+    <span class="cambg-label">내 배경</span>
+    <button class="chip active" data-cambg="off">그대로</button>
+    <button class="chip" data-cambg="blur">흐리게</button>
+    <button class="chip" data-cambg="replace">아바타 배경</button>
   </div>
   <div class="motion-bar">
     <button id="btn-photo" class="btn btn-primary btn-lg">📷 사진 찍기</button>

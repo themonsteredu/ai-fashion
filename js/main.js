@@ -3,6 +3,8 @@ import * as THREE from 'three';
 import * as Avatar from './avatar.js';
 import * as Motion from './motion.js';
 import { Debug } from './debug.js';
+import { BACKGROUNDS, getBackground } from './backgrounds.js';
+import * as CamBG from './cambg.js';
 
 const IDLE_RESET_MS = 60 * 1000; // 60초 무조작 시 처음 화면으로
 
@@ -26,6 +28,7 @@ let motionReady = false;
 let cameraFailed = false;
 let selectedPart = 'top';
 let selectedPattern = 'solid';
+let selectedBgId = 'studio';
 let countdownBusy = false;
 
 // ── 초기화 ──
@@ -49,6 +52,7 @@ async function boot() {
   $('#loading').classList.add('hidden');
 
   buildPalette();
+  buildBgRow();
   bindUI();
   Avatar.enableDragRotate($('#stage'));
   Debug.init((on) => Avatar.toggleSkeletonHelper(on));
@@ -57,6 +61,7 @@ async function boot() {
   // 모션 인식은 백그라운드에서 미리 준비 (화면 3 진입이 빨라짐)
   Motion.initTrackers().then(() => { motionReady = true; })
     .catch((e) => { console.error('모션 인식 초기화 실패', e); });
+  CamBG.init().catch((e) => { console.error('배경 분리 초기화 실패', e); });
 }
 
 // ── 렌더 루프 ──
@@ -68,9 +73,12 @@ function startRenderLoop() {
     const { renderer, scene, camera, vrm } = Avatar.state;
 
     if (current === 'motion' && motionReady) {
-      Motion.detect(performance.now());
+      const nowMs = performance.now();
+      Motion.detect(nowMs);
       Motion.applyToVRM(vrm, dt);
       updateCamMatch(dt); // 웹캠 표시 배율을 아바타 크기에 맞춤
+      CamBG.process($('#cam'), nowMs);
+      updateCamView();
       updateGuide();
       if (Debug.enabled) Debug.update(Motion.getDebugInfo(), $('#cam'));
     }
@@ -94,6 +102,14 @@ async function goStart() {
   $('#video-choice').classList.add('hidden');
   resetCamMatch();
   Motion.stopCamera();
+  // 다음 관람객을 위해 배경/웹캠 효과 초기화
+  applyBackground('studio');
+  CamBG.setMode('off');
+  for (const c of document.querySelectorAll('#cambg-tabs .chip')) {
+    c.classList.toggle('active', c.dataset.cambg === 'off');
+  }
+  $('#cam-view').classList.add('hidden');
+  $('#cam').style.visibility = 'visible';
   Avatar.resetLook();          // 다음 관람객을 위해 초기화
   Avatar.resetAvatarRotation();
   if (Avatar.state.vrm) Avatar.applyNeutralArms(Avatar.state.vrm);
@@ -155,6 +171,23 @@ function updateCamMatch(dt) {
   wrap.style.transform = 'none';
 }
 
+// 웹캠 배경 효과가 켜져 있으면 합성 캔버스를 표시
+function updateCamView() {
+  const camEl = $('#cam');
+  const view = $('#cam-view');
+  const effectOn = CamBG.getMode() !== 'off' && CamBG.isReady();
+  view.classList.toggle('hidden', !effectOn);
+  camEl.style.visibility = effectOn ? 'hidden' : 'visible';
+  if (!effectOn) return;
+
+  const wrap = $('#cam-wrap');
+  const w = Math.max(2, Math.round(wrap.clientWidth));
+  const h = Math.max(2, Math.round(wrap.clientHeight));
+  if (view.width !== w) view.width = w;
+  if (view.height !== h) view.height = h;
+  CamBG.draw(view.getContext('2d'), w, h, camEl, getBackground(selectedBgId).paint);
+}
+
 function resetCamMatch() {
   camMatch.s = 1;
   camMatch.top = null;
@@ -208,6 +241,29 @@ function adaptPartTabs() {
   if (firstAvailable && !Avatar.partAvailable(selectedPart)) {
     selectedPart = firstAvailable.dataset.part;
     for (const b of btns) b.classList.toggle('active', b === firstAvailable);
+  }
+}
+
+// ── 배경 선택 ──
+function buildBgRow() {
+  const row = $('#bg-row');
+  for (const bg of BACKGROUNDS) {
+    const b = document.createElement('button');
+    b.className = 'bg-swatch' + (bg.id === selectedBgId ? ' active' : '');
+    b.style.background = bg.css;
+    b.dataset.bg = bg.id;
+    b.title = bg.name;
+    b.setAttribute('aria-label', '배경 ' + bg.name);
+    b.addEventListener('click', () => applyBackground(bg.id));
+    row.appendChild(b);
+  }
+}
+
+function applyBackground(id) {
+  selectedBgId = id;
+  document.body.style.background = getBackground(id).css;
+  for (const el of document.querySelectorAll('.bg-swatch')) {
+    el.classList.toggle('active', el.dataset.bg === id);
   }
 }
 
@@ -284,6 +340,15 @@ function bindUI() {
   $('#btn-rec-cancel').addEventListener('click', () => {
     $('#video-choice').classList.add('hidden');
   });
+
+  // 내 배경: 그대로 / 흐리게 / 아바타 배경
+  for (const el of document.querySelectorAll('#cambg-tabs .chip')) {
+    el.addEventListener('click', () => {
+      CamBG.setMode(el.dataset.cambg);
+      for (const c of document.querySelectorAll('#cambg-tabs .chip')) c.classList.toggle('active', c === el);
+      if (el.dataset.cambg !== 'off' && !CamBG.isReady()) toast('배경 효과 준비 중이에요, 잠시만요');
+    });
+  }
   $('#btn-photo-close').addEventListener('click', () => {
     $('#photo-modal').classList.add('hidden');
     const v = $('#video-preview');
@@ -353,7 +418,7 @@ async function takePhoto() {
   flash.classList.remove('hidden');
   setTimeout(() => flash.classList.add('hidden'), 550);
 
-  const dataUrl = Avatar.capturePhoto();
+  const dataUrl = Avatar.capturePhoto(getBackground(selectedBgId).paint);
   $('#photo-img').src = dataUrl;
   $('#photo-img').classList.remove('hidden');
   $('#video-preview').classList.add('hidden');
@@ -400,27 +465,29 @@ function startVideo(mode) {
   // 렌더 화면에서 아바타가 있는 위치 (가운데에서 왼쪽으로 밀려 있음)
   const avatarCx = (0.5 - Avatar.MOTION_SHIFT) * src.width;
 
+  const bgPaint = getBackground(selectedBgId).paint;
   const copyFrame = () => {
-    rctx.fillStyle = '#f2efe9';
-    rctx.fillRect(0, 0, rec.width, rec.height);
+    bgPaint(rctx, rec.width, rec.height);
 
     if (mode === 'both') {
       const half = Math.round(rec.width / 2);
       // 왼쪽: 아바타
       const sxA = Math.min(Math.max(0, Math.round(avatarCx - half / 2)), Math.max(0, src.width - half));
       rctx.drawImage(src, sxA, 0, half, h, 0, 0, half, h);
-      // 오른쪽: 웹캠 (거울 모드, 꽉 차게 잘라서)
-      if (cam.videoWidth > 0) {
+      // 오른쪽: 웹캠 (배경 효과가 켜져 있으면 합성 화면, 거울 모드)
+      const camSrc = CamBG.getMode() !== 'off' && CamBG.isReady() ? $('#cam-view') : cam;
+      const cw = camSrc.videoWidth || camSrc.width, ch2 = camSrc.videoHeight || camSrc.height;
+      if (cw > 0 && ch2 > 0) {
         const targetAspect = half / h;
-        let sw = cam.videoHeight * targetAspect, sh = cam.videoHeight, sx = (cam.videoWidth - sw) / 2, sy = 0;
-        if (sw > cam.videoWidth) {
-          sw = cam.videoWidth; sh = cam.videoWidth / targetAspect;
-          sx = 0; sy = (cam.videoHeight - sh) / 2;
+        let sw = ch2 * targetAspect, sh = ch2, sx = (cw - sw) / 2, sy = 0;
+        if (sw > cw) {
+          sw = cw; sh = cw / targetAspect;
+          sx = 0; sy = (ch2 - sh) / 2;
         }
         rctx.save();
         rctx.translate(rec.width, 0);
         rctx.scale(-1, 1);
-        rctx.drawImage(cam, sx, sy, sw, sh, 0, 0, half, h);
+        rctx.drawImage(camSrc, sx, sy, sw, sh, 0, 0, half, h);
         rctx.restore();
       }
       // 가운데 구분선

@@ -436,7 +436,7 @@ export function resetAvatarRotation() {
 
 // 사진 캡처: 3D 화면만 합성 (웹캠 영상은 절대 포함하지 않음)
 // 아바타를 가운데 두고 세로형(패션 화보 비율)으로 잘라서 저장
-export function capturePhoto() {
+export function capturePhoto(bgPaint) {
   const { renderer, scene, camera } = state;
 
   // 캡처하는 동안만 아바타를 화면 정중앙으로
@@ -454,14 +454,18 @@ export function capturePhoto() {
   out.width = outW; out.height = outH;
   const ctx = out.getContext('2d');
 
-  const g = ctx.createRadialGradient(
-    out.width / 2, 0, out.height * 0.1,
-    out.width / 2, 0, out.height * 1.1
-  );
-  g.addColorStop(0, '#f7f5f1');
-  g.addColorStop(1, '#e9e5de');
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, out.width, out.height);
+  if (bgPaint) {
+    bgPaint(ctx, out.width, out.height);
+  } else {
+    const g = ctx.createRadialGradient(
+      out.width / 2, 0, out.height * 0.1,
+      out.width / 2, 0, out.height * 1.1
+    );
+    g.addColorStop(0, '#f7f5f1');
+    g.addColorStop(1, '#e9e5de');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, out.width, out.height);
+  }
   ctx.drawImage(src, sx, 0, outW, outH, 0, 0, outW, outH);
 
   // 원래 화면 배치로 복구

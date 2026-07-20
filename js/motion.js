@@ -634,20 +634,40 @@ function computeTargets(vrm, now, dt) {
       applyGated(sh, IDENTITY, 'timeout');
       return null;
     }
-    const upperDir = safeNormalize(_v1.copy(p(iEl)).sub(p(iSh)), side === 'right' ? REST_R_ARM : REST_L_ARM);
+    const upperDir = safeNormalize(_v1.copy(p(iEl)).sub(p(iSh)), side === 'right' ? REST_R_ARM : REST_L_ARM).clone();
     const elev = Math.max(0, upperDir.y);
     const shoulderQ = _q3.setFromAxisAngle(_axisZ, (side === 'right' ? -1 : 1) * elev * 0.3);
     clampRotation(shoulderQ, 0.35);
     applyGated(sh, shoulderQ, gate);
 
+    const wristOk = vis(iWr) >= VIS_SOFT;
+    const lowerDir = wristOk
+      ? safeNormalize(_v2.copy(p(iWr)).sub(p(iEl)), upperDir).clone()
+      : null;
+
+    // 위팔 회전: 방향 + (팔꿈치가 굽었을 때) 굽힘 평면에 맞춘 비틀림 보정
+    // → 머리 위 하트처럼 팔을 접는 포즈가 제대로 나오게 함
     const qUpperWorld = new THREE.Quaternion().setFromUnitVectors(rest, upperDir);
+    if (lowerDir) {
+      const bend = Math.acos(THREE.MathUtils.clamp(upperDir.dot(lowerDir), -1, 1));
+      const tw = THREE.MathUtils.smoothstep(bend, 0.35, 0.9);
+      if (tw > 0.01) {
+        const nT = _v3.copy(upperDir).cross(lowerDir);
+        if (nT.lengthSq() > 1e-6) {
+          nT.normalize();
+          // 기본 자세에서 팔꿈치는 앞(+Z)으로 굽음 → 그때의 굽힘 평면 법선
+          const nR = new THREE.Vector3(0, side === 'right' ? 1 : -1, 0);
+          const qFull = basisQuat(rest, nR, upperDir, nT);
+          if (qFull) qUpperWorld.slerp(qFull, tw);
+        }
+      }
+    }
     applyGated(ua, _q3.copy(parentWorld).invert().multiply(qUpperWorld), gate);
 
-    if (vis(iWr) < VIS_SOFT) {
+    if (!lowerDir) {
       applyGated(la, IDENTITY, gate);
       return { lowerWorld: qUpperWorld, gate };
     }
-    const lowerDir = safeNormalize(_v2.copy(p(iWr)).sub(p(iEl)), upperDir);
     const qLowerWorld = new THREE.Quaternion().setFromUnitVectors(rest, lowerDir);
     const relLower = new THREE.Quaternion().copy(qUpperWorld).invert().multiply(qLowerWorld);
     clampRotation(relLower, 2.7); // 팔꿈치 과도한 접힘 제한
@@ -866,6 +886,21 @@ function setFingerTargets(side, curlOf) {
 }
 
 function clampAbs(v, limit) { return Math.min(limit, Math.max(-limit, v)); }
+
+// 두 기저(방향+평면법선) 사이의 회전 계산: {a1,a2} → {b1,b2}
+function basisQuat(a1, a2, b1, b2) {
+  const a2o = a2.clone().sub(a1.clone().multiplyScalar(a2.dot(a1)));
+  const b2o = b2.clone().sub(b1.clone().multiplyScalar(b2.dot(b1)));
+  if (a2o.lengthSq() < 1e-6 || b2o.lengthSq() < 1e-6) return null;
+  a2o.normalize(); b2o.normalize();
+  const a3 = a1.clone().cross(a2o);
+  const b3 = b1.clone().cross(b2o);
+  const mA = new THREE.Matrix4().makeBasis(a1, a2o, a3);
+  const mB = new THREE.Matrix4().makeBasis(b1, b2o, b3);
+  const qA = new THREE.Quaternion().setFromRotationMatrix(mA);
+  const qB = new THREE.Quaternion().setFromRotationMatrix(mB);
+  return qB.multiply(qA.invert());
+}
 
 // ── H. 디버그 정보 ──
 export function getDebugInfo() {
