@@ -1007,8 +1007,6 @@ function solveHand(side, arm) {
 // 사람 손은 쫙 펴도 관절 사이에 기본 각도가 있으므로(특히 엄지 뿌리),
 // rest 기준 각도를 빼서 "펴면 0"이 되도록 만든다
 const MCP_REST = 0.12;
-const THUMB_CMC_REST = 0.7;
-const THUMB_MP_REST = 0.15;
 function fingerJointAngles(w, mcp) {
   return [
     Math.max(0, segAngle(w, 0, mcp, mcp + 1) - MCP_REST),
@@ -1017,11 +1015,11 @@ function fingerJointAngles(w, mcp) {
   ];
 }
 function thumbJointAngles(w) {
-  return [
-    Math.max(0, segAngle(w, 0, 1, 2) - THUMB_CMC_REST) * 1.1,
-    Math.max(0, segAngle(w, 1, 2, 3) - THUMB_MP_REST),
-    segAngle(w, 2, 3, 4),
-  ];
+  // 엄지는 관절별 각도가 작고 노이즈가 커서, "접힘 총량"을 계산해
+  // 세 마디(모으기+접기)에 배분하는 방식이 훨씬 또렷하게 반응한다
+  const bend = segAngle(w, 1, 2, 3) + segAngle(w, 2, 3, 4);
+  const curl = clamp01((bend - 0.5) / 1.3);
+  return [curl * 0.9, curl * 0.85, curl * 0.9];
 }
 // 프리셋 굽힘값(0~1) → 관절별 각도
 function anglesFromCurl(curl, finger) {
@@ -1066,7 +1064,7 @@ const THUMB_AXIS = {
 };
 // 관절별 최대 굽힘 (라디안): [MCP, PIP, DIP]
 const FINGER_LIMITS = [1.6, 1.9, 1.3];
-const THUMB_LIMITS = [1.0, 1.1, 1.0];
+const THUMB_LIMITS = [1.0, 1.1, 1.1];
 
 // VRM normalized rest pose 기준 상대 Quaternion을 관절별로 생성해 적용
 function setFingerTargetsByAngles(side, angles, store) {
