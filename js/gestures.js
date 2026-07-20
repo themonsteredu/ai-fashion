@@ -24,37 +24,28 @@ export function blendHandPose(trackedCurls, presetCurls, blendWeight) {
   return out;
 }
 
-// ── V 포즈 감지 (손가락 관절 각도 기반, 프레임 유지 조건) ──
-export class VPoseDetector {
-  constructor() {
-    this.onCount = 0;
-    this.offCount = 0;
-    this.active = false;
-    this.blend = 0;
+// ── 범용 제스처 감지기: 조건 함수 + 프레임 유지(디바운스) + 부드러운 blend ──
+export class GestureDetector {
+  constructor(condition, onFrames = 4, offFrames = 5, rampSec = 0.22) {
+    this.condition = condition;
+    this.onFrames = onFrames;
+    this.offFrames = offFrames;
+    this.rampSec = rampSec;
+    this.reset();
   }
   reset() { this.onCount = 0; this.offCount = 0; this.active = false; this.blend = 0; }
 
-  // curls: 손가락 굽힘값, world: 손 21점 랜드마크(월드)
-  update(curls, world, dt) {
+  // ctx: {curls, world}  curls: 손가락 굽힘값(0~1), world: 손 21점 랜드마크
+  update(ctx, dt) {
     let cond = false;
-    if (curls && world) {
-      const idxExt = curls.Index < 0.3;
-      const midExt = curls.Middle < 0.3;
-      const ringFold = curls.Ring > 0.5;
-      const littleFold = curls.Little > 0.5;
-      if (idxExt && midExt && ringFold && littleFold) {
-        // 검지·중지가 벌어져 V자를 이루는지 (방향 벡터 각도)
-        const iDir = dir(world, 5, 8), mDir = dir(world, 9, 12);
-        const angle = Math.acos(THREE.MathUtils.clamp(iDir.dot(mDir), -1, 1));
-        cond = angle > 0.12 && angle < 1.1;
-      }
-    }
+    try { cond = !!(ctx.curls && ctx.world && this.condition(ctx)); } catch (e) {}
     if (cond) { this.onCount++; this.offCount = 0; }
-    else { this.offCount++; if (this.offCount > 5) { this.onCount = 0; this.active = false; } }
-    if (this.onCount >= 4) this.active = true;
+    else { this.offCount++; if (this.offCount > this.offFrames) { this.onCount = 0; this.active = false; } }
+    if (this.onCount >= this.onFrames) this.active = true;
 
-    const k = Math.min(1, dt / 0.22);
+    const k = Math.min(1, dt / this.rampSec);
     this.blend += ((this.active ? 1 : 0) - this.blend) * k;
+    if (this.blend < 0.005) this.blend = 0;
     return this.blend;
   }
 }
@@ -62,6 +53,43 @@ export class VPoseDetector {
 function dir(w, a, b) {
   return new THREE.Vector3(w[b].x - w[a].x, w[b].y - w[a].y, w[b].z - w[a].z).normalize();
 }
+function tipDist(w, a, b) {
+  return Math.hypot(w[a].x - w[b].x, w[a].y - w[b].y, w[a].z - w[b].z);
+}
+
+// ── 손 제스처 정의 (위가 우선순위 높음) ──
+// weight: 감지 시 프리셋 반영 비율 (실시간 추적과 혼합)
+export const HAND_GESTURE_DEFS = [
+  {
+    name: 'fingerHeart', preset: 'fingerHeart', weight: 0.9,
+    condition: ({ curls, world }) =>
+      curls.Index > 0.25 && curls.Index < 0.85 &&
+      curls.Middle > 0.55 && curls.Ring > 0.55 && curls.Little > 0.55 &&
+      curls.Thumb > 0.2 &&
+      tipDist(world, 4, 8) < 0.05, // 엄지 끝-검지 끝이 맞닿음
+  },
+  {
+    name: 'victory', preset: 'victory', weight: 0.9,
+    condition: ({ curls, world }) => {
+      if (!(curls.Index < 0.3 && curls.Middle < 0.3 && curls.Ring > 0.5 && curls.Little > 0.5)) return false;
+      const iDir = dir(world, 5, 8), mDir = dir(world, 9, 12);
+      const angle = Math.acos(THREE.MathUtils.clamp(iDir.dot(mDir), -1, 1));
+      return angle > 0.12 && angle < 1.1;
+    },
+  },
+  {
+    name: 'thumbsUp', preset: 'thumbsUp', weight: 0.9,
+    condition: ({ curls }) =>
+      curls.Index > 0.6 && curls.Middle > 0.6 && curls.Ring > 0.55 && curls.Little > 0.55 &&
+      curls.Thumb < 0.22,
+  },
+  {
+    name: 'fist', preset: 'fist', weight: 0.85,
+    condition: ({ curls }) =>
+      curls.Index > 0.65 && curls.Middle > 0.65 && curls.Ring > 0.6 && curls.Little > 0.6 &&
+      curls.Thumb > 0.35,
+  },
+];
 
 // ── 머리 위 하트 감지 (디바운스 + 히스테리시스 + 상태머신) ──
 // 상태: NONE → HEART_ENTERING → HEART_ACTIVE → HEART_EXITING → NONE

@@ -74,7 +74,8 @@ export const Debug = {
       `vis 어깨 ${v(L.L_SH)}/${v(L.R_SH)} 손목 ${v(L.L_WR)}/${v(L.R_WR)} 발목 ${v(L.L_ANK)}/${v(L.R_ANK)}\n` +
       (info.hands
         ? `손 L:${info.hands.left.state}(${info.hands.left.conf.toFixed(2)}) R:${info.hands.right.state}(${info.hands.right.conf.toFixed(2)})\n` +
-          `제스처 ${info.gesture.heartState} blend ${info.gesture.heartBlend.toFixed(2)} | V L:${info.hands.left.v.toFixed(2)} R:${info.hands.right.v.toFixed(2)}\n` +
+          `제스처 L:${info.hands.left.gesture || '-'}(${info.hands.left.gBlend.toFixed(2)}) R:${info.hands.right.gesture || '-'}(${info.hands.right.gBlend.toFixed(2)})\n` +
+          `머리하트 ${info.gesture.heartState} ${info.gesture.heartBlend.toFixed(2)}\n` +
           (info.segFps != null ? `세그멘테이션 ${info.segFps.toFixed(1)}fps\n` : '')
         : '') +
       `filter torso(${info.filterParams.torso.minCutoff},${info.filterParams.torso.beta}) ` +

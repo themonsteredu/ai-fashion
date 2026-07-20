@@ -14,7 +14,7 @@
 import * as THREE from 'three';
 import { FilesetResolver, PoseLandmarker, FaceLandmarker, HandLandmarker } from '../lib/mediapipe/vision_bundle.mjs';
 import { OneEuroVec3, safeNormalize, isFiniteVec } from './filters.js';
-import { HAND_PRESETS, blendHandPose, VPoseDetector, HeartDetector, HEART_ARM_PRESET, HEART_ARM_MIX } from './gestures.js';
+import { HAND_PRESETS, blendHandPose, GestureDetector, HAND_GESTURE_DEFS, HeartDetector, HEART_ARM_PRESET, HEART_ARM_MIX } from './gestures.js';
 
 // ── 필터 파라미터 (부위별 One Euro) ──
 export const FILTER_PARAMS = {
@@ -85,7 +85,9 @@ function newHandTrack() {
   return {
     state: 'LOST', lastSeenMs: 0, recoverStartMs: 0, conf: 0, has: false,
     filters: null, filtered: [], lastWrist: null, outlierCount: 0,
-    v: new VPoseDetector(),
+    // 손별 제스처 감지기 (주먹/엄지척/브이/손가락하트) + 현재 활성 제스처명
+    gestures: HAND_GESTURE_DEFS.map((d) => ({ def: d, det: new GestureDetector(d.condition) })),
+    activeGesture: null, activeBlend: 0,
   };
 }
 const handTrack = { left: newHandTrack(), right: newHandTrack() };
@@ -473,7 +475,11 @@ function processHand(side, rawWorld, conf, now, dt) {
     t.has = false;
     t.lastWrist = null;
     if (now - t.lastSeenMs > HAND_HOLD_MS) {
-      if (t.state !== 'LOST') { t.state = 'LOST'; t.v.reset(); }
+      if (t.state !== 'LOST') {
+        t.state = 'LOST';
+        for (const g of t.gestures) g.det.reset();
+        t.activeGesture = null; t.activeBlend = 0;
+      }
     }
     // HOLD 시간 내에는 상태·목표값 유지 (손이 화면 밖으로 나가도 갑자기 안 풀림)
   }
@@ -990,13 +996,25 @@ function solveHand(side, arm) {
     Little: fingerCurl(world, 17),
     Thumb: thumbCurl(world),
   };
-  const vBlend = t.v.update(raw, world, dtCur);
+  // 손 제스처 감지 (우선순위 순: 손가락하트 > 브이 > 엄지척 > 주먹).
+  // 매 프레임 모두 업데이트하되(blend 유지), 우선순위 높은 활성 제스처 하나만 적용.
+  const ctx = { curls: raw, world };
+  let topGesture = null, topBlend = 0;
+  for (const g of t.gestures) {
+    const b = g.det.update(ctx, dtCur);
+    if (!topGesture && b > 0.01) { topGesture = g.def; topBlend = b; }
+  }
+  t.activeGesture = topGesture ? topGesture.name : null;
+  t.activeBlend = topBlend;
 
-  // 혼합: 추적 70% + relaxed 프리셋 30%(안정화) → V/하트 프리셋 blend
+  // 혼합: 추적 70% + relaxed 프리셋 30%(안정화) → 손 제스처 → 머리 위 하트(최우선)
   const finalAngles = {};
   for (const f of FINGERS) {
     let a = mixAngles(trackedAngles[f], anglesFromCurl(HAND_PRESETS.relaxed[f], f), 0.3);
-    if (vBlend > 0.01) a = mixAngles(a, anglesFromCurl(HAND_PRESETS.victory[f], f), vBlend * (1 - heartBlendCur));
+    if (topGesture && heartBlendCur < 0.99) {
+      const preset = HAND_PRESETS[topGesture.preset];
+      a = mixAngles(a, anglesFromCurl(preset[f], f), topBlend * topGesture.weight * (1 - heartBlendCur));
+    }
     if (heartBlendCur > 0.01) a = mixAngles(a, anglesFromCurl(HAND_PRESETS.overheadHeart[f], f), heartBlendCur);
     finalAngles[f] = a;
   }
@@ -1135,8 +1153,8 @@ export function getDebugInfo() {
       right: { locked: feet.right.locked, vy: feet.right.vy },
     },
     hands: {
-      left: { state: handTrack.left.state, conf: handTrack.left.conf, v: handTrack.left.v.blend },
-      right: { state: handTrack.right.state, conf: handTrack.right.conf, v: handTrack.right.v.blend },
+      left: { state: handTrack.left.state, conf: handTrack.left.conf, gesture: handTrack.left.activeGesture, gBlend: handTrack.left.activeBlend },
+      right: { state: handTrack.right.state, conf: handTrack.right.conf, gesture: handTrack.right.activeGesture, gBlend: handTrack.right.activeBlend },
     },
     handsImg: latestHandsImg,
     gesture: { heartState: heart.state, heartBlend: heartBlendCur },
