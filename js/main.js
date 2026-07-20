@@ -122,38 +122,49 @@ async function goMotion() {
   updateGuide();
 }
 
-// ── 웹캠 표시 배율 맞춤: 아바타는 그대로, 내 모습의 크기·눈높이를 아바타에 맞춤 ──
-const camMatch = { s: 1, ty: 0 };
+// ── 웹캠 표시 배율 맞춤: 아바타는 그대로, 웹캠 "카드" 자체가 내 모습 크기에 맞춰
+//    줄어들어 아바타 눈높이 옆에 떠 있음 (검은 여백 없음) ──
+const camMatch = { s: 1, top: null };
 
 function updateCamMatch(dt) {
-  const camEl = $('#cam');
   const wrap = $('#cam-wrap');
   const hint = motionReady ? Motion.getHeadHint() : null;
-  let targetS = 1, targetTy = 0;
+  const vh = window.innerHeight, vw = window.innerWidth;
+  const H0 = vh * 0.74, W0 = vw * 0.40; // 기본 카드 크기
+  let targetS = 1;
+  let targetTop = vh * 0.46 - H0 / 2;
 
   const eye = hint ? Avatar.getAvatarEyeScreen() : null;
   if (hint && eye && eye.px > 1) {
-    const rect = wrap.getBoundingClientRect();
-    const userEyePx = hint.eyeFrac * rect.height; // 웹캠은 세로 기준으로 표시됨
-    if (userEyePx > 2) {
-      targetS = THREE.MathUtils.clamp(eye.px / userEyePx, 0.3, 1.2);
-      // 눈높이 정렬: 배율 적용 후 내 눈 위치를 아바타 눈 위치에 맞춤
-      const originY = rect.top + rect.height * 0.3; // transform-origin 50% 30%
-      const eyeYAfter = originY + (hint.eyeY - 0.3) * rect.height * targetS;
-      targetTy = THREE.MathUtils.clamp(eye.y - eyeYAfter, -rect.height * 0.45, rect.height * 0.45);
+    const userEyePx0 = hint.eyeFrac * H0; // 기본 크기일 때 내 눈 사이 픽셀
+    if (userEyePx0 > 2) {
+      targetS = THREE.MathUtils.clamp(eye.px / userEyePx0, 0.28, 1.1);
+      const h = H0 * targetS;
+      // 내 눈높이가 아바타 눈높이와 같은 화면 높이에 오도록 카드 위치 조정
+      targetTop = THREE.MathUtils.clamp(eye.y - hint.eyeY * h, vh * 0.03, vh * 0.95 - h);
     }
   }
   const k = 1 - Math.exp(-dt * 3);
   camMatch.s += (targetS - camMatch.s) * k;
-  camMatch.ty += (targetTy - camMatch.ty) * k;
-  camEl.style.transform = `translateY(${camMatch.ty.toFixed(1)}px) scale(${camMatch.s.toFixed(3)}) scaleX(-1)`;
+  if (camMatch.top == null) camMatch.top = targetTop;
+  camMatch.top += (targetTop - camMatch.top) * k;
+
+  wrap.style.height = (H0 * camMatch.s).toFixed(1) + 'px';
+  wrap.style.width = (W0 * camMatch.s).toFixed(1) + 'px';
+  wrap.style.top = camMatch.top.toFixed(1) + 'px';
+  wrap.style.transform = 'none';
 }
 
 function resetCamMatch() {
   camMatch.s = 1;
-  camMatch.ty = 0;
-  const camEl = $('#cam');
-  if (camEl) camEl.style.transform = '';
+  camMatch.top = null;
+  const wrap = $('#cam-wrap');
+  if (wrap) {
+    wrap.style.height = '';
+    wrap.style.width = '';
+    wrap.style.top = '';
+    wrap.style.transform = '';
+  }
 }
 
 function updateGuide() {
@@ -425,21 +436,29 @@ function startVideo(mode) {
   copyFrame();
 
   const recStream = rec.captureStream(30);
-  let mime = 'video/webm;codecs=vp9';
-  if (!MediaRecorder.isTypeSupported(mime)) mime = 'video/webm;codecs=vp8';
-  if (!MediaRecorder.isTypeSupported(mime)) mime = 'video/webm';
+  // MP4 우선, 미지원 브라우저에서만 webm으로 대체
+  const candidates = [
+    'video/mp4;codecs=avc1.42E01E',
+    'video/mp4;codecs=avc1',
+    'video/mp4',
+    'video/webm;codecs=vp9',
+    'video/webm;codecs=vp8',
+    'video/webm',
+  ];
+  const mime = candidates.find((c) => MediaRecorder.isTypeSupported(c)) || 'video/webm';
+  const isMp4 = mime.startsWith('video/mp4');
   const chunks = [];
   recorder = new MediaRecorder(recStream, { mimeType: mime, videoBitsPerSecond: 8_000_000 });
   recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
   recorder.onstop = () => {
-    const blob = new Blob(chunks, { type: 'video/webm' });
+    const blob = new Blob(chunks, { type: isMp4 ? 'video/mp4' : 'video/webm' });
     const url = URL.createObjectURL(blob);
 
     const a = document.createElement('a');
     const t = new Date();
     const pad = (n) => String(n).padStart(2, '0');
     const prefix = mode === 'both' ? 'avatar_with_me' : 'avatar_video';
-    a.download = `${prefix}_${t.getFullYear()}${pad(t.getMonth() + 1)}${pad(t.getDate())}_${pad(t.getHours())}${pad(t.getMinutes())}${pad(t.getSeconds())}.webm`;
+    a.download = `${prefix}_${t.getFullYear()}${pad(t.getMonth() + 1)}${pad(t.getDate())}_${pad(t.getHours())}${pad(t.getMinutes())}${pad(t.getSeconds())}.${isMp4 ? 'mp4' : 'webm'}`;
     a.href = url;
     a.click();
 
@@ -447,7 +466,9 @@ function startVideo(mode) {
     const v = $('#video-preview');
     v.classList.remove('hidden');
     v.src = url;
-    $('#save-note').textContent = '영상이 저장되었어요 (다운로드 폴더)';
+    $('#save-note').textContent = isMp4
+      ? '영상이 MP4로 저장되었어요 (다운로드 폴더)'
+      : '영상이 저장되었어요 (다운로드 폴더, webm)';
     $('#photo-modal').classList.remove('hidden');
   };
   recorder.start(250);
