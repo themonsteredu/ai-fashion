@@ -287,28 +287,78 @@ button { font-family: inherit; cursor: pointer; border: none; }
 #mission-root.hidden { display: none; }
 #mission-root > * { pointer-events: auto; }
 
-/* 학생 진행 카드 — 왼쪽 아바타 영역 위에 얹힘 */
+/* 학생 진행 카드 — 파스텔 테마, 포즈별 색상 (--mm-* 인라인 변수) */
 .mm-card {
-  position: absolute; left: 3vw; top: 50%; transform: translateY(-50%);
-  width: min(430px, 42vw);
-  background: var(--card); backdrop-filter: blur(14px);
-  border: 1px solid var(--line); border-radius: 28px;
-  padding: 30px 28px; text-align: center;
-  box-shadow: 0 24px 60px rgba(23,21,15,0.14);
+  --mm-bg1: #ffe7f0; --mm-bg2: #ffcfe0; --mm-accent: #e05b93; --mm-ink: #8a2a54;
+  position: absolute; left: 2.5vw; top: 50%; transform: translateY(-50%);
+  width: min(440px, 42vw);
+  background: linear-gradient(160deg, var(--mm-bg1), var(--mm-bg2));
+  border: 3px solid rgba(255,255,255,0.9); border-radius: 32px;
+  padding: 20px 22px 22px; text-align: center;
+  box-shadow: 0 24px 60px rgba(23,21,15,0.16), inset 0 2px 12px rgba(255,255,255,0.6);
 }
-.mm-top { display: flex; justify-content: space-between; font-size: 17px; font-weight: 700; color: var(--accent); }
-.mm-silhouette { font-size: 72px; margin: 10px 0 4px; }
-.mm-title { font-size: 30px; font-weight: 800; }
-.mm-instruction { font-size: 22px; margin-top: 8px; line-height: 1.4; }
-.mm-hint { font-size: 16px; color: var(--ink-soft); margin-top: 10px; min-height: 20px; }
-.mm-gauge { margin-top: 18px; height: 20px; border-radius: 999px; background: rgba(23,21,15,0.08); overflow: hidden; }
-.mm-gauge-fill { height: 100%; width: 0; border-radius: 999px; background: var(--accent); transition: width 0.15s ease; }
-.mm-gauge-fill.holding { background: #3fb56a; }
-.mm-feedback { min-height: 30px; margin-top: 14px; font-size: 22px; font-weight: 800; opacity: 0; transition: opacity 0.2s; }
+.mm-card.pop { animation: mm-card-pop 0.5s cubic-bezier(.34,1.56,.64,1); }
+@keyframes mm-card-pop { 0% { transform: translateY(-50%) scale(0.92); } 60% { transform: translateY(-50%) scale(1.03); } 100% { transform: translateY(-50%) scale(1); } }
+
+.mm-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.mm-badge-num {
+  background: #fff; color: var(--mm-ink); font-weight: 800; font-size: 15px;
+  padding: 6px 14px; border-radius: 999px; box-shadow: 0 3px 8px rgba(23,21,15,0.1);
+}
+.mm-stars { font-size: 18px; letter-spacing: 1px; }
+.mm-stars .off { opacity: 0.28; }
+.mm-timer-chip {
+  background: #fff; color: var(--mm-ink); font-weight: 800; font-size: 15px;
+  padding: 6px 12px; border-radius: 999px; box-shadow: 0 3px 8px rgba(23,21,15,0.1); min-width: 52px;
+}
+.mm-mid { margin-top: 6px; }
+.mm-silhouette {
+  width: 92px; height: 92px; margin: 4px auto 2px; color: var(--mm-accent);
+  filter: drop-shadow(0 4px 8px rgba(23,21,15,0.12));
+}
+.mm-silhouette svg { width: 100%; height: 100%; }
+.mm-headrow { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.mm-title { font-size: 28px; font-weight: 800; color: var(--mm-ink); }
+.mm-diff { font-size: 13px; font-weight: 700; color: var(--mm-accent); }
+.mm-diff .off { opacity: 0.25; }
+.mm-instruction { font-size: 21px; font-weight: 700; margin-top: 6px; line-height: 1.35; color: #3a3128; }
+.mm-tipbubble {
+  display: inline-block; margin-top: 12px; background: rgba(255,255,255,0.75);
+  border-radius: 16px; padding: 10px 16px; font-size: 15px; color: #5a5148; line-height: 1.4;
+  box-shadow: 0 3px 10px rgba(23,21,15,0.06);
+}
+.mm-tipbubble b { color: var(--mm-accent); margin-right: 4px; }
+
+.mm-gauge-wrap { margin-top: 16px; }
+.mm-gauge {
+  position: relative; height: 22px; border-radius: 999px;
+  background: rgba(255,255,255,0.6); overflow: visible;
+  box-shadow: inset 0 2px 5px rgba(23,21,15,0.08);
+}
+.mm-gauge-fill {
+  height: 100%; width: 0; border-radius: 999px; background: #c9c4bd;
+  transition: width 0.15s ease, background 0.3s;
+}
+.mm-gauge-fill.holding { background: linear-gradient(90deg, var(--mm-accent), #ffb0cf); }
+.mm-gauge-fill.hot { background: linear-gradient(90deg, #ffd24d, var(--mm-accent)); box-shadow: 0 0 14px var(--mm-accent); }
+.mm-gauge-star { position: absolute; top: -4px; left: -12px; font-size: 24px; transition: left 0.15s ease, opacity 0.3s; opacity: 0; }
+.mm-fbtext { margin-top: 8px; font-size: 17px; font-weight: 700; color: var(--mm-accent); min-height: 22px; }
+.mm-fbtext.warm { color: #e0913f; }
+.mm-fbtext.hot { color: #3fb56a; }
+
+.mm-feedback { min-height: 0; font-size: 22px; font-weight: 800; opacity: 0; transition: opacity 0.2s; position: absolute; left: 0; right: 0; bottom: 22px; }
 .mm-feedback.show { opacity: 1; }
 .mm-feedback.success { color: #3fb56a; }
-.mm-feedback.retry { color: var(--accent); }
-.mm-warn { margin-top: 10px; font-size: 14px; color: #c0362c; display: none; }
+.mm-feedback.retry { color: var(--mm-accent); }
+.mm-warn { margin-top: 8px; font-size: 13px; color: #c0362c; display: none; }
+
+/* 성공 파티클 */
+.mm-particle { position: absolute; z-index: 63; pointer-events: none; animation: mm-particle-fly 1.2s ease-out forwards; }
+@keyframes mm-particle-fly {
+  0% { transform: translate(0,0) scale(0.4); opacity: 0; }
+  20% { opacity: 1; }
+  100% { transform: translate(var(--dx), var(--dy)) scale(1.2) rotate(30deg); opacity: 0; }
+}
 
 .mm-banner {
   position: absolute; top: 5vh; left: 27%; transform: translateX(-50%);
@@ -459,13 +509,17 @@ body.mission-on #guide-msg { display: none !important; }
   /* ── 미션: 카드 → 하단 시트 ── */
   .mm-card {
     left: 0; right: 0; bottom: 0; top: auto; transform: none;
-    width: 100%; border-radius: 24px 24px 0 0;
-    padding: 18px 18px calc(16px + env(safe-area-inset-bottom));
+    width: 100%; border-radius: 28px 28px 0 0;
+    padding: 14px 16px calc(14px + env(safe-area-inset-bottom));
+    max-height: 46vh; overflow-y: auto;
   }
-  .mm-silhouette { font-size: 48px; margin: 2px 0; }
-  .mm-title { font-size: 24px; }
-  .mm-instruction { font-size: 18px; }
-  .mm-hint { font-size: 14px; }
+  .mm-card.pop { animation: none; }
+  .mm-silhouette { width: 64px; height: 64px; margin: 2px auto; }
+  .mm-title { font-size: 23px; }
+  .mm-instruction { font-size: 18px; margin-top: 4px; }
+  .mm-tipbubble { margin-top: 8px; font-size: 13px; padding: 8px 14px; }
+  .mm-gauge-wrap { margin-top: 12px; }
+  .mm-fbtext { font-size: 15px; }
   .mm-banner { left: 50%; top: 2vh; font-size: 16px; padding: 12px 20px; white-space: normal; max-width: 90vw; text-align: center; }
   .mm-result-title { font-size: clamp(32px, 9vw, 48px); }
   .mm-result-sub { font-size: 19px; }
@@ -474,15 +528,11 @@ body.mission-on #guide-msg { display: none !important; }
   .mm-fields { grid-template-columns: repeat(2, 1fr); }
   .mm-test { right: 2vw; left: 2vw; width: auto; top: 1vh; }
 
-  /* 미션 진행 중(학생): 웹캠은 작은 PiP, 카드 높이 제한 */
+  /* 미션 진행 중(학생): 웹캠은 작은 PiP */
   body.mission-on .cam-preview {
     top: 1.2vh; bottom: auto; left: auto; right: 2vw;
     width: 26vw; height: 35vw; border-radius: 16px; z-index: 61;
   }
-  .mm-card { max-height: 42vh; overflow-y: auto; padding-top: 14px; }
-  .mm-card .mm-silhouette { font-size: 40px; margin: 0; }
-  .mm-card .mm-title { font-size: 22px; }
-  .mm-card .mm-gauge { margin-top: 12px; height: 16px; }
 }
 
 /* 가로 모바일(낮은 높이): 시작 문구 축소 */

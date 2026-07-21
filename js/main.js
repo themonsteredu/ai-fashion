@@ -82,7 +82,10 @@ function startRenderLoop() {
     if (current === 'motion' && motionReady) {
       const nowMs = performance.now();
       Motion.detect(nowMs);
-      Motion.applyToVRM(vrm, dt);
+      // 미션 준비 단계면 아바타가 목표 포즈를 시범으로 보여줌, 아니면 웹캠 따라 움직임
+      const demo = MissionUI.isActive() ? MissionUI.getDemoPose() : null;
+      if (demo) Avatar.applyDemoPose(demo, dt);
+      else Motion.applyToVRM(vrm, dt);
       updateCamMatch(dt); // 웹캠 표시 배율을 아바타 크기에 맞춤
       CamBG.process($('#cam'), nowMs);
       updateCamView();

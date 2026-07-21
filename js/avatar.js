@@ -396,6 +396,54 @@ function drawPattern(ctx, pattern, w, h) {
   }
 }
 
+// ── 미션 시범 포즈: 아바타를 목표 포즈로 부드럽게 세팅 (판정과 무관, 시각용) ──
+const _demoNeutral = {};
+const _tmpQuat = new THREE.Quaternion();
+const _tmpAxis = new THREE.Vector3();
+function demoNeutralQuat(name) {
+  if (_demoNeutral[name]) return _demoNeutral[name];
+  const drop = THREE.MathUtils.degToRad(68);
+  let q = new THREE.Quaternion();
+  if (name === 'leftUpperArm') q.setFromAxisAngle(new THREE.Vector3(0, 0, 1), -drop);
+  else if (name === 'rightUpperArm') q.setFromAxisAngle(new THREE.Vector3(0, 0, 1), drop);
+  _demoNeutral[name] = q;
+  return q;
+}
+// spec: [[boneName,[ax,ay,az],angle], ...]. dt로 부드럽게 보간. 명시 안 된 팔/몸통은 차렷.
+const DEMO_BONES = ['leftUpperArm', 'leftLowerArm', 'rightUpperArm', 'rightLowerArm', 'spine', 'chest', 'neck', 'head'];
+// 거울 모드: 시범 포즈를 학생이 볼 때(=플레이 시 미러 결과)와 같게 좌우 반전
+function mirrorBoneName(name) {
+  if (name.startsWith('left')) return 'right' + name.slice(4);
+  if (name.startsWith('right')) return 'left' + name.slice(5);
+  return name; // spine/chest/neck/head 등 중앙 본
+}
+export function applyDemoPose(spec, dt) {
+  if (!state.vrm) return;
+  const h = state.vrm.humanoid;
+  const targets = {};
+  for (const [bone, axis, angle] of (spec || [])) {
+    // 좌우 반전 + 각도 부호 반전 (거울 대칭)
+    const mBone = mirrorBoneName(bone);
+    targets[mBone] = _tmpQuat.clone().setFromAxisAngle(_tmpAxis.set(axis[0], axis[1], axis[2]), -angle).clone();
+  }
+  const k = 1 - Math.exp(-dt * 16);
+  for (const name of DEMO_BONES) {
+    const node = h.getNormalizedBoneNode(name);
+    if (!node) continue;
+    const tgt = targets[name] || demoNeutralQuat(name); // 명시 안 됨 → 차렷/기본
+    node.quaternion.slerp(tgt, k);
+  }
+  // 손가락은 편 상태로
+  for (const side of ['left', 'right']) {
+    for (const f of ['Thumb', 'Index', 'Middle', 'Ring', 'Little']) {
+      for (const j of (f === 'Thumb' ? ['Metacarpal', 'Proximal', 'Distal'] : ['Proximal', 'Intermediate', 'Distal'])) {
+        const n = h.getNormalizedBoneNode(side + f + j);
+        if (n) n.quaternion.slerp(_tmpQuat.identity(), k);
+      }
+    }
+  }
+}
+
 // ── 아바타 골격 치수 측정 (모션 캘리브레이션용) ──
 export function getSkeletonMeasures() {
   if (!state.vrm) return null;

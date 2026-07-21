@@ -1,6 +1,16 @@
 // 랜덤 포즈 미션 UI: 학생 진행 화면 · 결과 · 운영자 패널 · 포즈 테스트 모드 · 단축키
 import { POSE_DEFS, POSE_BY_ID, CATEGORY_LABELS, DIFFICULTY_LABELS } from './poses.js';
 import * as Engine from './mission.js';
+import { visualFor, demoFor, themeOf, SILHOUETTES } from './missionvisuals.js';
+
+// 미션 시범: 준비 단계에서 큰 아바타가 이 포즈를 취해 보여줌 (main 렌더 루프가 사용)
+export function getDemoPose() {
+  if (!active || !game || !game.poses) return null;
+  if (game.phase === 'ready' || game.phase === 'demo') {
+    return demoFor(game.poses[game.index].id);
+  }
+  return null;
+}
 
 let deps = null;      // { getSnapshot, capturePhoto, onExit, onManualPhoto }
 let root = null;      // 오버레이 루트
@@ -46,6 +56,16 @@ export function tick(nowMs) {
 
   const r = judge.update(snap, dt, nowMs);
   setGauge(r.progress, r.state);
+  // 남은 시간
+  const remainSec = Math.max(0, Math.ceil((settings.timeoutMs - r.elapsed) / 1000));
+  q('#mm-timer').textContent = '⏱ ' + remainSec;
+  // 실시간 피드백 문구 (완성도에 따라)
+  const c = r.confidence;
+  const fb = q('#mm-fbtext');
+  if (c >= 0.85) { fb.textContent = '좋아요! 그대로! ✨'; fb.className = 'mm-fbtext hot'; }
+  else if (c >= 0.6) { fb.textContent = '거의 됐어요!'; fb.className = 'mm-fbtext warm'; }
+  else if (c >= 0.35) { fb.textContent = '조금만 더!'; fb.className = 'mm-fbtext'; }
+  else { fb.textContent = '포즈를 따라 해볼까요?'; fb.className = 'mm-fbtext'; }
 
   if (r.state === 'success') return finishMission('success', r.elapsed);
   if (r.state === 'timeout') return onTimeout();
@@ -73,19 +93,41 @@ function showMissionCard() {
   const cur = game.poses[game.index];
   game.phase = 'ready';
   judge = null;
+  const v = visualFor(cur.id);
+  const t = themeOf(v.theme);
+  // 포즈별 테마색 적용 (카드 배경·포인트)
+  const card = q('#mm-card');
+  card.style.setProperty('--mm-bg1', t.bg1);
+  card.style.setProperty('--mm-bg2', t.bg2);
+  card.style.setProperty('--mm-accent', t.accent);
+  card.style.setProperty('--mm-ink', t.ink);
+
   q('#mm-num').textContent = `미션 ${game.index + 1} / ${game.poses.length}`;
-  q('#mm-score').textContent = `⭐ ${game.success}개 성공`;
+  q('#mm-stars').innerHTML = successStars();
   q('#mm-title').textContent = cur.name;
-  q('#mm-instruction').textContent = cur.shortInstruction;
-  q('#mm-hint').textContent = cur.hintText || '';
-  q('#mm-silhouette').textContent = poseEmoji(cur);
+  q('#mm-diff').innerHTML = '난이도 ' + '⭐'.repeat(v.diff) + '<span class="off">' + '⭐'.repeat(3 - v.diff) + '</span>';
+  q('#mm-instruction').textContent = v.main;
+  q('#mm-hint').textContent = v.tip || cur.hintText || '';
+  q('#mm-silhouette').innerHTML = SILHOUETTES[v.sil] || SILHOUETTES.neutral;
   setGauge(0, 'waiting');
   setBanner('');
   q('#mm-feedback').className = 'mm-feedback';
   q('#mm-feedback').textContent = '';
+  q('#mm-fbtext').textContent = '';
+  q('#mm-timer').textContent = '';
   q('#mm-countdown').classList.add('hidden');
-  // 사람이 화면에 보이기 시작하면 그때부터 카운트다운 시작
+  // 카드 등장 튕김 애니메이션
+  card.classList.remove('pop'); void card.offsetWidth; card.classList.add('pop');
+  // 사람이 화면에 보이기 시작하면 그때부터 카운트다운 시작 (아바타 시범 포즈 보여주며)
   game.readyStart = null;
+}
+
+// 성공 개수를 별로 (목표 개수만큼 칸)
+function successStars() {
+  const need = settings.passCount;
+  let s = '';
+  for (let i = 0; i < need; i++) s += i < game.success ? '⭐' : '<span class="off">⭐</span>';
+  return s;
 }
 // 준비 단계: 사람이 보이면 3-2-1 카운트다운 후 시작 (자리 잡을 시간 확보)
 function updateReady(snap) {
@@ -141,7 +183,7 @@ function finishMission(outcome, elapsed) {
   game.success++;
   celebrate();
   showFeedback('성공! 잘했어요! ⭐', 'success');
-  q('#mm-score').textContent = `⭐ ${game.success}개 성공`;
+  q('#mm-stars').innerHTML = successStars();
   setTimeout(() => nextMission(), 1200);
 }
 
@@ -156,7 +198,7 @@ export function forceSuccess() {
   game.success++;
   celebrate();
   showFeedback('성공! ⭐', 'success');
-  q('#mm-score').textContent = `⭐ ${game.success}개 성공`;
+  q('#mm-stars').innerHTML = successStars();
   q('#mm-countdown').classList.add('hidden');
   setTimeout(() => nextMission(), 900);
 }
@@ -198,9 +240,16 @@ function showResult() {
 
 // ── 피드백 / 게이지 / 배너 ──
 function setGauge(p, state) {
+  const pct = Math.round(p * 100);
   const fill = q('#mm-gauge-fill');
-  fill.style.width = Math.round(p * 100) + '%';
-  fill.className = 'mm-gauge-fill' + (state === 'holding' ? ' holding' : '');
+  fill.style.width = pct + '%';
+  // 완성도 단계별 색: 인식중(회색) → 파스텔 → 성공직전(반짝)
+  let cls = 'mm-gauge-fill';
+  if (p >= 0.85) cls += ' hot';
+  else if (state === 'holding' || p >= 0.5) cls += ' holding';
+  fill.className = cls;
+  const star = q('#mm-gauge-star');
+  if (star) { star.style.left = 'calc(' + Math.min(96, pct) + '% - 12px)'; star.style.opacity = p > 0.05 ? 1 : 0; }
 }
 function setBanner(txt) {
   const b = q('#mm-banner');
@@ -212,20 +261,27 @@ function showFeedback(txt, kind) {
   f.textContent = txt;
   f.className = 'mm-feedback show ' + kind;
 }
+// 성공 파티클: 별·하트가 아바타 주변에서 흩날림
+const PARTICLE_EMOJIS = ['⭐', '💖', '✨', '🌟', '💫', '💛'];
 function celebrate() {
   const c = q('#mm-confetti');
   c.classList.remove('play'); void c.offsetWidth; c.classList.add('play');
-}
-
-function poseEmoji(p) {
-  const map = {
-    both_up: '🙌', left_up: '🙋', right_up: '🙋', both_side: '🛫', airplane: '🛫',
-    superhero: '🦸', cheer: '📣', point_left: '👈', point_right: '👉', point_up: '☝️',
-    overhead_heart: '🫶', v_left: '✌️', v_right: '✌️', v_both: '✌️', thumbsup_left: '👍',
-    thumbsup_right: '👍', wave_left: '👋', wave_right: '👋', wave_both: '🙌',
-    hands_hip: '🧍', attention: '🧍', robot: '🤖', surprise: '😲', chin_rest: '🤔',
-  };
-  return map[p.id] || '🕺';
+  // 개별 파티클 뿌리기 (왼쪽 아바타 영역 중심)
+  const cx = window.innerWidth <= 700 ? 50 : 27;
+  for (let i = 0; i < 16; i++) {
+    const s = document.createElement('span');
+    s.className = 'mm-particle';
+    s.textContent = PARTICLE_EMOJIS[i % PARTICLE_EMOJIS.length];
+    const ang = (i / 16) * Math.PI * 2;
+    s.style.left = cx + 'vw';
+    s.style.top = '42vh';
+    s.style.setProperty('--dx', (Math.cos(ang) * (30 + (i % 4) * 12)) + 'px');
+    s.style.setProperty('--dy', (Math.sin(ang) * (30 + (i % 4) * 12) - 60) + 'px');
+    s.style.fontSize = (18 + (i % 3) * 8) + 'px';
+    s.style.animationDelay = (i % 5) * 0.03 + 's';
+    c.appendChild(s);
+    setTimeout(() => s.remove(), 1300);
+  }
 }
 
 // ── 종료 (다음 참가자) ──
@@ -403,14 +459,25 @@ function buildDOM() {
     <div id="mm-banner" class="mm-banner"></div>
     <div id="mm-countdown" class="mm-countdown hidden"></div>
     <div id="mm-card" class="mm-card">
-      <div class="mm-top"><span id="mm-num">미션 1 / 3</span><span id="mm-score">⭐ 0개 성공</span></div>
-      <div id="mm-silhouette" class="mm-silhouette">🕺</div>
-      <div id="mm-title" class="mm-title"></div>
-      <div id="mm-instruction" class="mm-instruction"></div>
-      <div id="mm-hint" class="mm-hint"></div>
-      <div class="mm-gauge"><div id="mm-gauge-fill" class="mm-gauge-fill"></div></div>
+      <div class="mm-top">
+        <span id="mm-num" class="mm-badge-num">미션 1 / 3</span>
+        <span id="mm-stars" class="mm-stars">☆☆☆</span>
+        <span id="mm-timer" class="mm-timer-chip">⏱ 8</span>
+      </div>
+      <div class="mm-mid">
+        <div id="mm-silhouette" class="mm-silhouette"></div>
+        <div class="mm-headrow">
+          <div id="mm-title" class="mm-title"></div>
+          <div id="mm-diff" class="mm-diff"></div>
+        </div>
+        <div id="mm-instruction" class="mm-instruction"></div>
+        <div class="mm-tipbubble"><b>TIP</b> <span id="mm-hint"></span></div>
+      </div>
+      <div class="mm-gauge-wrap">
+        <div class="mm-gauge"><div id="mm-gauge-fill" class="mm-gauge-fill"></div><span id="mm-gauge-star" class="mm-gauge-star">⭐</span></div>
+        <div id="mm-fbtext" class="mm-fbtext"></div>
+      </div>
       <div id="mm-feedback" class="mm-feedback"></div>
-      <div id="mm-timer" class="mm-timer"></div>
       <div id="mm-warn" class="mm-warn"></div>
     </div>
     <div id="mm-result" class="mm-result" style="display:none">
