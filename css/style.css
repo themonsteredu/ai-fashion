@@ -281,3 +281,120 @@ button { font-family: inherit; cursor: pointer; border: none; }
   font-size: 16px; padding: 12px 24px; border-radius: 999px;
   box-shadow: 0 8px 24px rgba(23,21,15,0.2);
 }
+
+/* ═════════ 랜덤 포즈 미션 ═════════ */
+#mission-root { position: fixed; inset: 0; z-index: 60; pointer-events: none; }
+#mission-root.hidden { display: none; }
+#mission-root > * { pointer-events: auto; }
+
+/* 학생 진행 카드 — 왼쪽 아바타 영역 위에 얹힘 */
+.mm-card {
+  position: absolute; left: 3vw; top: 50%; transform: translateY(-50%);
+  width: min(430px, 42vw);
+  background: var(--card); backdrop-filter: blur(14px);
+  border: 1px solid var(--line); border-radius: 28px;
+  padding: 30px 28px; text-align: center;
+  box-shadow: 0 24px 60px rgba(23,21,15,0.14);
+}
+.mm-top { display: flex; justify-content: space-between; font-size: 17px; font-weight: 700; color: var(--accent); }
+.mm-silhouette { font-size: 72px; margin: 10px 0 4px; }
+.mm-title { font-size: 30px; font-weight: 800; }
+.mm-instruction { font-size: 22px; margin-top: 8px; line-height: 1.4; }
+.mm-hint { font-size: 16px; color: var(--ink-soft); margin-top: 10px; min-height: 20px; }
+.mm-gauge { margin-top: 18px; height: 20px; border-radius: 999px; background: rgba(23,21,15,0.08); overflow: hidden; }
+.mm-gauge-fill { height: 100%; width: 0; border-radius: 999px; background: var(--accent); transition: width 0.15s ease; }
+.mm-gauge-fill.holding { background: #3fb56a; }
+.mm-feedback { min-height: 30px; margin-top: 14px; font-size: 22px; font-weight: 800; opacity: 0; transition: opacity 0.2s; }
+.mm-feedback.show { opacity: 1; }
+.mm-feedback.success { color: #3fb56a; }
+.mm-feedback.retry { color: var(--accent); }
+.mm-warn { margin-top: 10px; font-size: 14px; color: #c0362c; display: none; }
+
+.mm-banner {
+  position: absolute; top: 5vh; left: 27%; transform: translateX(-50%);
+  background: rgba(23,21,15,0.82); color: #fff; font-size: 24px; font-weight: 700;
+  padding: 18px 40px; border-radius: 999px; display: none; white-space: nowrap;
+}
+
+/* 축하 반짝이 */
+#mm-confetti { position: absolute; inset: 0; pointer-events: none; }
+#mm-confetti.play::before, #mm-confetti.play::after {
+  content: '✨🎉⭐💖✨🎉⭐'; position: absolute; left: 0; right: 0; top: -40px;
+  font-size: 40px; text-align: center; letter-spacing: 30px;
+  animation: mm-fall 1.2s ease-in forwards;
+}
+#mm-confetti.play::after { animation-delay: 0.2s; content: '🌟💫🎊💛🌟💫'; }
+@keyframes mm-fall { to { transform: translateY(105vh) rotate(40deg); opacity: 0; } }
+
+/* 결과 화면 */
+.mm-result {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 16px;
+  background: radial-gradient(120% 90% at 50% 0%, rgba(247,245,241,0.96), rgba(233,229,222,0.98));
+}
+.mm-result-title { font-size: clamp(40px, 6vw, 80px); font-weight: 800; }
+.mm-result.pass .mm-result-title { color: #3fb56a; }
+.mm-result-sub { font-size: 26px; color: var(--ink-soft); }
+.mm-result-score { font-size: 32px; font-weight: 800; margin: 10px 0; }
+.mm-result-btns { display: flex; gap: 16px; margin-top: 14px; }
+
+/* 포즈 테스트 모드 */
+.mm-test {
+  position: absolute; right: 3vw; top: 3vh; width: 340px;
+  background: rgba(10,10,12,0.88); color: #cfe; border-radius: 14px;
+  padding: 16px; font: 14px/1.5 Consolas, monospace;
+}
+.mm-test.hidden { display: none; }
+.mm-test-head { display: flex; justify-content: space-between; align-items: center; color: #fff; font-weight: 700; margin-bottom: 8px; }
+.mm-test-bar { height: 14px; border-radius: 999px; background: rgba(255,255,255,0.12); overflow: hidden; margin-bottom: 8px; }
+.mm-test-bar > div { height: 100%; width: 0; background: #a8794a; transition: width 0.1s; }
+.mm-test-row { margin: 3px 0; }
+.mm-test-row .ok { color: #9ef59e; }
+
+/* 운영자 패널 */
+.mm-admin {
+  position: absolute; inset: 0; z-index: 70; display: flex; align-items: center; justify-content: center;
+  background: rgba(23,21,15,0.5); backdrop-filter: blur(6px);
+}
+.mm-admin.hidden { display: none; }
+.mm-admin-card {
+  background: #fff; border-radius: 22px; padding: 24px 26px;
+  width: min(880px, 94vw); max-height: 90vh; overflow-y: auto;
+  box-shadow: 0 30px 90px rgba(0,0,0,0.35);
+}
+.mm-admin-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.mm-admin-head h2 { font-size: 26px; font-weight: 800; }
+.mm-admin-sec { margin-bottom: 22px; }
+.mm-admin-sec h3 { font-size: 19px; font-weight: 700; margin-bottom: 10px; }
+.mm-help { font-size: 13px; color: var(--ink-soft); margin-bottom: 8px; }
+.mm-fields { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 10px; }
+.mm-fld { display: flex; flex-direction: column; font-size: 14px; gap: 4px; }
+.mm-fld input { padding: 8px 10px; border: 1.5px solid var(--line); border-radius: 8px; font-size: 15px; }
+.mm-chk { display: block; margin: 6px 0; font-size: 15px; }
+.mm-admin-btns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.mm-admin-btns .btn { padding: 12px 18px; font-size: 15px; }
+.mm-preset-hint { margin-top: 10px; font-size: 14px; }
+.mm-mini { padding: 6px 12px; font-size: 13px; border-radius: 8px; background: var(--ink); color: #fff; border: none; margin: 0 2px; cursor: pointer; }
+.mm-table-wrap { max-height: 320px; overflow-y: auto; border: 1px solid var(--line); border-radius: 10px; }
+.mm-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.mm-table th, .mm-table td { padding: 7px 9px; text-align: left; border-bottom: 1px solid var(--line); }
+.mm-table th { position: sticky; top: 0; background: #f4f1ea; }
+.mm-rel { font-size: 11px; padding: 2px 7px; border-radius: 6px; font-weight: 700; }
+.mm-rel.stable { background: #dbeee2; color: #2b6b47; }
+.mm-rel.experimental { background: #f5e7cf; color: #8a5a1a; }
+.mm-rel.disabled { background: #eee; color: #888; }
+.mm-flag { font-size: 11px; padding: 1px 6px; border-radius: 6px; margin-left: 4px; }
+.mm-flag.good { background: #dbeee2; color: #2b6b47; }
+.mm-flag.watch { background: #f5e7cf; color: #8a5a1a; }
+.mm-flag.poor { background: #f6d5d1; color: #b03328; }
+.mm-toast {
+  position: absolute; left: 50%; bottom: 6vh; transform: translateX(-50%);
+  background: var(--ink); color: #fff; border-radius: 999px; padding: 12px 24px;
+  font-size: 16px; opacity: 0; transition: opacity 0.3s; pointer-events: none;
+}
+.mm-toast.show { opacity: 1; }
+
+/* 학생 미션 전체화면: 운영 컨트롤 숨김 (Esc로 운영자 패널만 접근) */
+body.mission-on .motion-bar,
+body.mission-on .cambg-tabs,
+body.mission-on #guide-msg { display: none !important; }

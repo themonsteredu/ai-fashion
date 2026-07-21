@@ -124,6 +124,41 @@ const feet = {
 
 export function isTracking() { return tracked; }
 
+// ── 랜덤 포즈 미션용 스냅샷 ──
+// 정규화된 관절 좌표(어깨너비 기준) + 신뢰도 + 손 제스처 상태를 한 번에 제공.
+// 미션 모듈은 이 함수만 사용하고 내부 파이프라인은 건드리지 않는다.
+export function getPoseSnapshot() {
+  if (!tracked || !latestPose || !latestVis) {
+    return { present: false, calibrated: !!calib };
+  }
+  const need = [LM.L_SH, LM.R_SH, LM.L_HIP, LM.R_HIP];
+  for (const i of need) if (!latestPose.get(i)) return { present: false, calibrated: !!calib };
+
+  const lsh = latestPose.get(LM.L_SH), rsh = latestPose.get(LM.R_SH);
+  const shoulderW = lsh.distanceTo(rsh) || 0.3;
+  const pts = {};
+  const vis = {};
+  for (const [k, idx] of Object.entries(LM)) {
+    const p = latestPose.get(idx);
+    if (p) { pts[k] = { x: p.x, y: p.y, z: p.z }; vis[k] = latestVis.get(idx) || 0; }
+  }
+  // 전신이 충분히 보이는지 (다리 판정용)
+  const fullBody = (vis.L_ANK || 0) > 0.5 && (vis.R_ANK || 0) > 0.5;
+  return {
+    present: true,
+    calibrated: !!calib,
+    shoulderW,
+    pts, vis,
+    fullBody,
+    hands: {
+      left: { state: handTrack.left.state, gesture: handTrack.left.activeGesture, gBlend: handTrack.left.activeBlend },
+      right: { state: handTrack.right.state, gesture: handTrack.right.activeGesture, gBlend: handTrack.right.activeBlend },
+    },
+    heart: { state: heart.state, blend: heartBlendCur },
+    LM_KEYS: Object.keys(LM),
+  };
+}
+
 // 상태: 'idle' | 'noperson' | 'calibrating' | 'ok'
 export function getStatus() {
   if (!stream) return 'idle';

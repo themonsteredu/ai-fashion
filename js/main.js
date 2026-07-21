@@ -5,6 +5,7 @@ import * as Motion from './motion.js';
 import { Debug } from './debug.js';
 import { BACKGROUNDS, getBackground, setCustomBackground, getCustom, setCustomVisible } from './backgrounds.js';
 import * as CamBG from './cambg.js';
+import * as MissionUI from './mission-ui.js';
 
 const IDLE_RESET_MS = 60 * 1000; // 60초 무조작 시 처음 화면으로
 
@@ -56,6 +57,11 @@ async function boot() {
   bindUI();
   Avatar.enableDragRotate($('#stage'));
   Debug.init((on) => Avatar.toggleSkeletonHelper(on));
+  MissionUI.init({
+    getSnapshot: () => Motion.getPoseSnapshot(),
+    onExit: goStart,
+    onManualPhoto: takePhoto,
+  });
   startRenderLoop();
 
   // 모션 인식은 백그라운드에서 미리 준비 (화면 3 진입이 빨라짐)
@@ -80,7 +86,8 @@ function startRenderLoop() {
       updateCamMatch(dt); // 웹캠 표시 배율을 아바타 크기에 맞춤
       CamBG.process($('#cam'), nowMs);
       updateCamView();
-      updateGuide();
+      MissionUI.tick(nowMs);
+      if (!MissionUI.isActive()) updateGuide();
       if (Debug.enabled) Debug.update({ ...Motion.getDebugInfo(), segFps: CamBG.getSegFps() }, $('#cam'));
     }
     if (vrm) vrm.update(dt);
@@ -101,6 +108,7 @@ function show(name) {
 async function goStart() {
   cancelVideo(); // 녹화 중이었다면 저장 없이 중단
   $('#video-choice').classList.add('hidden');
+  MissionUI.forceStop();
   resetCamMatch();
   Motion.stopCamera();
   // 다음 관람객을 위해 배경/웹캠 효과 초기화
@@ -125,7 +133,7 @@ function goCustom() {
   show('custom');
 }
 
-async function goMotion() {
+async function goMotion(missionMode) {
   Avatar.resetAvatarRotation();
   Avatar.setFraming('motion');
   show('motion');
@@ -136,6 +144,7 @@ async function goMotion() {
     console.error('카메라 오류', e);
     cameraFailed = true;
   }
+  if (missionMode) MissionUI.start();
   updateGuide();
 }
 
@@ -330,7 +339,8 @@ function syncPaletteUI() {
 
 function bindUI() {
   $('#btn-start').addEventListener('click', goCustom);
-  $('#btn-done').addEventListener('click', goMotion);
+  $('#btn-done').addEventListener('click', () => goMotion(false));
+  $('#btn-mission').addEventListener('click', () => goMotion(true));
   $('#btn-home-2').addEventListener('click', goStart);
   $('#btn-home-3').addEventListener('click', goStart);
   $('#btn-reset-color').addEventListener('click', () => {
