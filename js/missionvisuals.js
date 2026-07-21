@@ -26,19 +26,52 @@ const bentArm = (sx, sy, ex, ey, hx, hy, r = 7) =>
   `<path d="M${sx} ${sy} L${ex} ${ey} L${hx} ${hy}" stroke="currentColor" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" fill="none"/>${hand(hx, hy, r)}`;
 const armL = (hx, hy) => arm(40, 56, hx, hy);
 const armR = (hx, hy) => arm(60, 56, hx, hy);
-function CH(arms, extra = '', rot = 0) {
+
+// ── 얼굴 표정 (머리 중심 50,29 / 반지름 16 / 흰색으로 대비) ──
+const W = '#fff';
+function face(id = 'happy') {
+  const dot = (x, y = 26) => `<circle cx="${x}" cy="${y}" r="2.4" fill="${W}"/>`;
+  const up = (x) => `<path d="M${x - 3.2} 27 Q${x} 23.4 ${x + 3.2} 27" stroke="${W}" stroke-width="2.2" fill="none" stroke-linecap="round"/>`; // ^ 웃는 눈
+  const smile = `<path d="M44.5 33 Q50 37.6 55.5 33" stroke="${W}" stroke-width="2.3" fill="none" stroke-linecap="round"/>`;
+  const smileBig = `<path d="M43 32 Q50 40 57 32" stroke="${W}" stroke-width="2.6" fill="none" stroke-linecap="round"/>`;
+  const blush = `<circle cx="39.5" cy="33" r="2.6" fill="${W}" opacity="0.5"/><circle cx="60.5" cy="33" r="2.6" fill="${W}" opacity="0.5"/>`;
+  switch (id) {
+    case 'grin':     return up(44) + up(56) + smileBig;
+    case 'surprise': return dot(44) + dot(56) + `<ellipse cx="50" cy="35" rx="3.2" ry="4" fill="${W}"/>`;
+    case 'wink':     return `<path d="M41 26 Q44 23.8 47 26" stroke="${W}" stroke-width="2.2" fill="none" stroke-linecap="round"/>` + dot(56) + smile;
+    case 'shy':      return up(44) + up(56) + blush + `<path d="M46 34 Q50 36.6 54 34" stroke="${W}" stroke-width="2" fill="none" stroke-linecap="round"/>`;
+    case 'cool':     return `<rect x="38.5" y="23.5" width="9" height="5" rx="2.2" fill="${W}"/><rect x="52.5" y="23.5" width="9" height="5" rx="2.2" fill="${W}"/><path d="M47.5 25.8 L52.5 25.8" stroke="${W}" stroke-width="1.6"/>` + smile;
+    case 'tongue':   return up(44) + up(56) + `<path d="M45 33 Q50 36 55 33" stroke="${W}" stroke-width="2.2" fill="none" stroke-linecap="round"/><ellipse cx="52" cy="35.6" rx="2.2" ry="3" fill="${W}"/>`;
+    case 'think':    return dot(45, 25) + dot(57, 25) + `<path d="M46 34 L54 34" stroke="${W}" stroke-width="2.2" stroke-linecap="round"/>`;
+    case 'happy':
+    default:         return dot(44) + dot(56) + smile;
+  }
+}
+
+// ── 다리 모양 ──
+const shoe = (x, y = 113) => `<ellipse cx="${x}" cy="${y}" rx="7" ry="4" fill="currentColor"/>`;
+const legLine = (x1, y1, x2, y2, x3, y3) => x3 === undefined
+  ? `<path d="M${x1} ${y1} L${x2} ${y2}" stroke="currentColor" stroke-width="9" stroke-linecap="round" fill="none"/>`
+  : `<path d="M${x1} ${y1} L${x2} ${y2} L${x3} ${y3}" stroke="currentColor" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" fill="none"/>`;
+const LEGS = {
+  stand: legLine(45, 92, 43, 110) + legLine(55, 92, 57, 110) + shoe(42) + shoe(58),
+  wide:  legLine(45, 92, 33, 110) + legLine(55, 92, 67, 110) + shoe(32) + shoe(68),
+  one:   legLine(45, 92, 44, 110) + shoe(43) + legLine(55, 92, 64, 100, 53, 103) + `<ellipse cx="51" cy="104" rx="6" ry="4" fill="currentColor"/>`,
+  squat: legLine(45, 93, 37, 101, 40, 112) + legLine(55, 93, 63, 101, 60, 112) + shoe(39, 114) + shoe(61, 114),
+};
+
+function CH(arms, extra = '', rot = 0, opts = {}) {
   const g = rot ? ` transform="rotate(${rot} 50 62)"` : '';
+  const legs = LEGS[opts.legs] || LEGS.stand;
   return `<svg viewBox="0 0 100 122" fill="none"><g${g}>
     <!-- 다리 -->
-    <path d="M45 92 L43 110" stroke="currentColor" stroke-width="9" stroke-linecap="round"/>
-    <path d="M55 92 L57 110" stroke="currentColor" stroke-width="9" stroke-linecap="round"/>
-    <ellipse cx="42" cy="113" rx="7" ry="4" fill="currentColor"/>
-    <ellipse cx="58" cy="113" rx="7" ry="4" fill="currentColor"/>
+    ${legs}
     <!-- 원피스 (A라인) -->
     <path d="M37 50 Q50 45 63 50 L72 92 Q50 100 28 92 Z" fill="currentColor"/>
     <!-- 머리카락(뒤) + 머리 -->
     <path d="M31 30 Q31 8 50 8 Q69 8 69 30 Q69 46 61 50 L39 50 Q31 46 31 30Z" fill="currentColor" opacity="0.55"/>
     <circle cx="50" cy="29" r="16" fill="currentColor"/>
+    ${face(opts.face)}
     <!-- 팔 -->
     ${arms}${extra}
   </g></svg>`;
@@ -50,29 +83,33 @@ export const SILHOUETTES = {
   armsOut:  CH(armL(14, 52) + armR(86, 52)),
   diagUp:   CH(armL(20, 26) + armR(80, 26)),
   heart:    CH(armL(38, 24) + armR(62, 24),
-              '<path d="M50 9 C47 3 39 3 39 10 C39 16 50 22 50 22 C50 22 61 16 61 10 C61 3 53 3 50 9Z" fill="currentColor" stroke="#fff" stroke-width="2.5"/>'),
+              '<path d="M50 9 C47 3 39 3 39 10 C39 16 50 22 50 22 C50 22 61 16 61 10 C61 3 53 3 50 9Z" fill="currentColor" stroke="#fff" stroke-width="2.5"/>', 0, { face: 'shy' }),
   vsign:    CH(armL(30, 22) + armR(70, 22),
-              '<path d="M25 20 L21 7 M31 20 L35 8" stroke="#fff" stroke-width="3" stroke-linecap="round"/><path d="M69 20 L65 8 M75 20 L79 7" stroke="#fff" stroke-width="3" stroke-linecap="round"/>'),
+              '<path d="M25 20 L21 7 M31 20 L35 8" stroke="#fff" stroke-width="3" stroke-linecap="round"/><path d="M69 20 L65 8 M75 20 L79 7" stroke="#fff" stroke-width="3" stroke-linecap="round"/>', 0, { face: 'grin' }),
   thumbsUp: CH(armL(30, 74) + armR(66, 42),
-              '<path d="M66 40 L66 26" stroke="currentColor" stroke-width="6" stroke-linecap="round"/><circle cx="66" cy="24" r="4" fill="currentColor" stroke="#fff" stroke-width="1.5"/>'),
+              '<path d="M66 40 L66 26" stroke="currentColor" stroke-width="6" stroke-linecap="round"/><circle cx="66" cy="24" r="4" fill="currentColor" stroke="#fff" stroke-width="1.5"/>', 0, { face: 'grin' }),
   pointL:   CH(armL(12, 52) + armR(70, 68)),
   pointR:   CH(armL(30, 68) + armR(88, 52)),
   lean:     CH(armL(30, 60) + armR(70, 60), '', -14),
   wave:     CH(armR(76, 16) + armL(30, 62),
-              '<path d="M82 12 Q86 16 82 20 M84 18 Q88 22 84 26" stroke="currentColor" stroke-width="3" stroke-linecap="round" fill="none"/>'),
-  cheer:    CH(armL(22, 20) + armR(78, 20)),
-  hero:     CH(armR(78, 14) + armL(34, 60)),
+              '<path d="M82 12 Q86 16 82 20 M84 18 Q88 22 84 26" stroke="currentColor" stroke-width="3" stroke-linecap="round" fill="none"/>', 0, { face: 'wink' }),
+  cheer:    CH(armL(22, 20) + armR(78, 20), '', 0, { face: 'grin' }),
+  hero:     CH(armR(78, 14) + armL(34, 60), '', 0, { face: 'cool' }),
   neutral:  CH(armL(30, 74) + armR(70, 74)),
   // 웃음 포인트 포즈
-  muscle:   CH(bentArm(40, 56, 22, 52, 34, 28) + bentArm(60, 56, 78, 52, 66, 28)),
+  muscle:   CH(bentArm(40, 56, 22, 52, 34, 28) + bentArm(60, 56, 78, 52, 66, 28), '', 0, { face: 'grin' }),
   disco:    CH(armR(84, 16) + armL(20, 90),
-              '<path d="M84 15 L90 7" stroke="currentColor" stroke-width="6" stroke-linecap="round"/>'),
-  trex:     CH(bentArm(40, 56, 35, 66, 47, 70, 5) + bentArm(60, 56, 65, 66, 53, 70, 5)),
-  selfhug:  CH(arm(40, 56, 61, 48) + arm(60, 56, 39, 48)),
-  dab:      CH(armR(85, 22) + bentArm(40, 56, 54, 42, 76, 28)),
-  robot:    CH(bentArm(40, 56, 26, 56, 42, 64, 6) + bentArm(60, 56, 74, 56, 58, 64, 6)),
-  surprise: CH(bentArm(40, 56, 28, 44, 39, 30) + bentArm(60, 56, 72, 44, 61, 30)),
-  think:    CH(bentArm(60, 56, 74, 54, 53, 35) + armL(30, 72), '', -8),
+              '<path d="M84 15 L90 7" stroke="currentColor" stroke-width="6" stroke-linecap="round"/>', 0, { face: 'cool' }),
+  trex:     CH(bentArm(40, 56, 35, 66, 47, 70, 5) + bentArm(60, 56, 65, 66, 53, 70, 5), '', 0, { face: 'tongue' }),
+  selfhug:  CH(arm(40, 56, 61, 48) + arm(60, 56, 39, 48), '', 0, { face: 'shy' }),
+  dab:      CH(armR(85, 22) + bentArm(40, 56, 54, 42, 76, 28), '', 0, { face: 'cool' }),
+  robot:    CH(bentArm(40, 56, 26, 56, 42, 64, 6) + bentArm(60, 56, 74, 56, 58, 64, 6), '', 0, { face: 'surprise' }),
+  surprise: CH(bentArm(40, 56, 28, 44, 39, 30) + bentArm(60, 56, 72, 44, 61, 30), '', 0, { face: 'surprise' }),
+  think:    CH(bentArm(60, 56, 74, 54, 53, 35) + armL(30, 72), '', -8, { face: 'think' }),
+  // 다리 쓰는 포즈
+  wideStand: CH(armL(16, 54) + armR(84, 54), '', 0, { face: 'grin', legs: 'wide' }),
+  oneLeg:    CH(armL(16, 50) + armR(84, 50), '', 0, { face: 'happy', legs: 'one' }),
+  squat:     CH(armL(20, 62) + armR(80, 62), '', 0, { face: 'grin', legs: 'squat' }),
 };
 
 // ── 아바타 시범 포즈 (팔/몸통 본 회전) ──
@@ -134,6 +171,10 @@ export const DEMO = {
   trex:    [['leftUpperArm',[0,0,1],-0.75],['leftLowerArm',[0,1,0],-1.95],['rightUpperArm',[0,0,1],0.75],['rightLowerArm',[0,1,0],1.95]],
   selfhug: [['leftUpperArm',[0,0,1],0.3],['leftLowerArm',[0,1,0],-2.1],['rightUpperArm',[0,0,1],-0.3],['rightLowerArm',[0,1,0],2.1]],
   dab:     [['rightUpperArm',[0,0,1],-1.05],['leftUpperArm',[0,0,1],-0.5],['leftLowerArm',[0,1,0],-1.3]],
+  // 다리 쓰는 포즈 시범
+  wide_stand: [['leftUpperLeg',[0,0,1],0.22],['rightUpperLeg',[0,0,1],-0.22],OUT_L,OUT_R],
+  one_leg:    [['rightUpperLeg',[0,0,1],-0.5],['rightLowerLeg',[1,0,0],0.9],['leftUpperArm',[0,0,1],0.9],['rightUpperArm',[0,0,1],-0.9]],
+  squat:      [['leftUpperLeg',[0,0,1],0.36],['rightUpperLeg',[0,0,1],-0.36],['leftLowerLeg',[1,0,0],1.25],['rightLowerLeg',[1,0,0],1.25],['spine',[1,0,0],0.22]],
 };
 
 // ── 포즈별 시각 메타 (테마색·실루엣·문구·난이도) ──
@@ -173,6 +214,9 @@ export const VISUALS = {
   trex:   { theme: 'mint', sil: 'trex', diff: 1, main: '티라노 공룡이 됐어요! 🦖', tip: '팔은 작게 앞으로 오므려요', ok: '어흥~ 공룡! 🦖' },
   selfhug:{ theme: 'pink', sil: 'selfhug', diff: 1, main: '나를 꼬옥 안아줘요! 🤗', tip: '두 손을 반대쪽 어깨에', ok: '포근포근 🤗' },
   dab:    { theme: 'sky', sil: 'dab', diff: 2, main: '댑! 한쪽으로 쭉! 🙆', tip: '두 팔 같은 쪽, 얼굴은 팔에 쏙', ok: '요즘 최고 유행! 🙆' },
+  wide_stand: { theme: 'mint', sil: 'wideStand', diff: 1, main: '두 발을 넓게 벌려요!', tip: '어깨보다 넓게 쫙', ok: '튼튼하게 섰어요! 💪' },
+  one_leg:    { theme: 'sky', sil: 'oneLeg', diff: 2, main: '한 발 들어 홍학처럼! 🦩', tip: '한 발을 살짝 들어 균형', ok: '균형 최고! 🦩' },
+  squat:      { theme: 'coral', sil: 'squat', diff: 2, main: '무릎 굽혀 살짝 앉아요!', tip: '엉덩이를 살짝 내려요', ok: '스쿼트 성공! 💪' },
   lean_left:  { theme: 'lavender', sil: 'lean', diff: 2, main: '몸을 왼쪽으로 기울여요!', tip: '상체를 왼쪽으로', ok: '살짝만 기울여요' },
   lean_right: { theme: 'lavender', sil: 'lean', diff: 2, main: '몸을 오른쪽으로 기울여요!', tip: '상체를 오른쪽으로', ok: '살짝만 기울여요' },
   sway: { theme: 'peach', sil: 'wave', diff: 2, main: '몸을 좌우로 흔들어요!', tip: '상체를 왔다갔다', ok: '리듬을 타요 🎵' },

@@ -120,28 +120,28 @@ export function process(video, now) {
 // 대상 캔버스에 합성해 그리기 (cover 방식)
 // bgPaint: 배경을 그려 주는 함수 (ctx, w, h) — 'replace' 모드에서 사용
 export function draw(ctx, w, h, video, bgPaint) {
-  if (mode === 'blur') {
-    ctx.filter = 'blur(16px)';
-    drawCover(ctx, video, video.videoWidth, video.videoHeight, w, h);
-    ctx.filter = 'none';
-  } else if (mode === 'replace') {
+  ctx.clearRect(0, 0, w, h); // 여백은 투명 → 뒤의 흐린 배경(#cam-bg)이 비침
+  if (mode === 'replace') {
     bgPaint(ctx, w, h);
-  } else {
-    drawCover(ctx, video, video.videoWidth, video.videoHeight, w, h);
+    if (maskReady) drawContain(ctx, personCanvas, personCanvas.width, personCanvas.height, w, h);
     return;
   }
-  if (maskReady) {
-    drawCover(ctx, personCanvas, personCanvas.width, personCanvas.height, w, h);
+  if (mode === 'blur') {
+    // 배경은 CSS(#cam-bg)로 이미 흐리게 깔려 있음 → 여기선 선명한 사람만 얹는다
+    if (maskReady) { drawContain(ctx, personCanvas, personCanvas.width, personCanvas.height, w, h); return; }
+    ctx.filter = 'blur(16px)';
+    drawContain(ctx, video, video.videoWidth, video.videoHeight, w, h);
+    ctx.filter = 'none';
+    return;
   }
+  // off (보통 캔버스 미사용) — 안전용: 전신이 다 보이게 contain
+  drawContain(ctx, video, video.videoWidth, video.videoHeight, w, h);
 }
 
-function drawCover(ctx, src, sw, sh, dw, dh) {
+// 전체 프레임이 다 보이도록(잘림 없이) 대상 안에 맞춰 그림 (여백은 투명)
+function drawContain(ctx, src, sw, sh, dw, dh) {
   if (!sw || !sh) return;
-  const targetAspect = dw / dh;
-  let cw = sh * targetAspect, ch = sh, cx = (sw - cw) / 2, cy = 0;
-  if (cw > sw) {
-    cw = sw; ch = sw / targetAspect;
-    cx = 0; cy = (sh - ch) / 2;
-  }
-  ctx.drawImage(src, cx, cy, cw, ch, 0, 0, dw, dh);
+  const scale = Math.min(dw / sw, dh / sh);
+  const w = sw * scale, h = sh * scale;
+  ctx.drawImage(src, 0, 0, sw, sh, (dw - w) / 2, (dh - h) / 2, w, h);
 }

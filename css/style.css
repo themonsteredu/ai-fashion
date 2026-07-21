@@ -172,8 +172,16 @@ button { font-family: inherit; cursor: pointer; border: none; }
   background: #1c1a17;
   overflow: hidden;
 }
+/* 흐릿한 배경 채움: 전신 표시(contain)의 빈 여백을 자연스럽게 메움 */
+#cam-bg {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+  filter: blur(26px) brightness(0.7) saturate(1.1);
+}
 #cam {
-  width: 100%; height: 100%; object-fit: cover;
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: contain;              /* 전신이 다 보이도록 축소 */
   transform: scaleX(-1);            /* 거울 모드 */
 }
 #cam-view {

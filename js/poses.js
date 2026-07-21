@@ -399,6 +399,38 @@ export const POSE_DEFS = [
     ]),
   },
 
+  // ───────── 다리 쓰는 포즈 (STABLE — 전신 인식 필요) ─────────
+  {
+    id: 'wide_stand', name: '다리 벌려 서기', shortInstruction: '두 발을 넓게 벌려요!',
+    category: 'FULL_BODY', difficulty: 'EASY', reliability: 'STABLE',
+    cooldownGroup: 'legs', hintText: '두 발을 어깨보다 넓게 쫙 벌려요', needsFullBody: true,
+    requiredLandmarks: ['L_ANK', 'R_ANK', 'L_HIP', 'R_HIP'],
+    detect: (s) => judge(s, [
+      { name: '두 발 넓게', weight: 65, vis: ['L_ANK', 'R_ANK'], score: (m) => atLeast(Math.abs(m.dx('L_ANK', 'R_ANK')), 1.2, 0.7) },
+      { name: '바르게 서기', weight: 35, vis: ['L_ANK', 'R_ANK'], score: (m) => atMost(Math.abs(m.dy('L_ANK', 'R_ANK')), 0.4, 0.4) },
+    ], 0.6),
+  },
+  {
+    id: 'one_leg', name: '한 발 들기', shortInstruction: '한 발을 들어 홍학처럼! 🦩',
+    category: 'FULL_BODY', difficulty: 'NORMAL', reliability: 'STABLE',
+    cooldownGroup: 'legs', hintText: '한 발을 옆으로 살짝 들어 균형! 🦩', needsFullBody: true,
+    requiredLandmarks: ['L_ANK', 'R_ANK', 'L_KNEE', 'R_KNEE'],
+    detect: (s) => judge(s, [
+      { name: '한 발 들기', weight: 70, vis: ['L_ANK', 'R_ANK'], score: (m) => atLeast(Math.abs(m.dy('L_ANK', 'R_ANK')), 0.45, 0.4) },
+      { name: '균형 잡기', weight: 30, score: () => 1 },
+    ], 0.6),
+  },
+  {
+    id: 'squat', name: '앉았다 스쿼트', shortInstruction: '무릎 굽혀 살짝 앉아요!',
+    category: 'FULL_BODY', difficulty: 'NORMAL', reliability: 'STABLE',
+    cooldownGroup: 'legs2', hintText: '무릎을 굽혀 엉덩이를 살짝 내려 앉아요', needsFullBody: true,
+    requiredLandmarks: ['L_HIP', 'R_HIP', 'L_KNEE', 'R_KNEE', 'L_ANK', 'R_ANK'],
+    detect: (s) => judge(s, [
+      { name: '무릎 굽혀 앉기', weight: 70, vis: ['L_KNEE', 'R_KNEE', 'L_HIP', 'R_HIP'], score: (m) => (atMost(m.dy('L_HIP', 'L_KNEE'), 0.85, 0.5) + atMost(m.dy('R_HIP', 'R_KNEE'), 0.85, 0.5)) / 2 },
+      { name: '두 발 지지', weight: 30, vis: ['L_ANK', 'R_ANK'], score: (m) => atLeast(Math.abs(m.dx('L_ANK', 'R_ANK')), 0.5, 0.5) },
+    ], 0.58),
+  },
+
   // ───────── 다리 포함 (EXPERIMENTAL) ─────────
   {
     id: 'knee_left', name: '왼쪽 무릎 굽히기', shortInstruction: '왼쪽 무릎을 살짝 굽혀요!',

@@ -414,7 +414,7 @@ function demoNeutralQuat(name) {
   return q;
 }
 // spec: [[boneName,[ax,ay,az],angle], ...]. dt로 부드럽게 보간. 명시 안 된 팔/몸통은 차렷.
-const DEMO_BONES = ['leftUpperArm', 'leftLowerArm', 'rightUpperArm', 'rightLowerArm', 'spine', 'chest', 'neck', 'head'];
+const DEMO_BONES = ['leftUpperArm', 'leftLowerArm', 'rightUpperArm', 'rightLowerArm', 'spine', 'chest', 'neck', 'head', 'leftUpperLeg', 'leftLowerLeg', 'rightUpperLeg', 'rightLowerLeg'];
 // 거울 모드: 시범 포즈를 학생이 볼 때(=플레이 시 미러 결과)와 같게 좌우 반전
 function mirrorBoneName(name) {
   if (name.startsWith('left')) return 'right' + name.slice(4);

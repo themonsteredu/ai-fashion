@@ -131,6 +131,9 @@ async function goMotion(missionMode) {
   cameraFailed = false;
   try {
     await Motion.startCamera($('#cam'));
+    // 흐릿한 배경 채움용 영상: 같은 스트림 공유 (전신이 다 보이도록 앞 영상은 contain)
+    const bg = $('#cam-bg');
+    if (bg && $('#cam').srcObject) { bg.srcObject = $('#cam').srcObject; bg.play().catch(() => {}); }
   } catch (e) {
     console.error('카메라 오류', e);
     cameraFailed = true;
