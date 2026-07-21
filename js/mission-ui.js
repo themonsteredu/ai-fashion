@@ -203,12 +203,12 @@ export function forceSuccess() {
   setTimeout(() => nextMission(), 900);
 }
 export function restartMission() {
-  if (!active || !game) return;
+  if (!active || !game || game.phase === 'result' || game.index >= game.poses.length) return;
   game.retriesLeft = settings.retries;
   showMissionCard();
 }
 export function skipMission() {
-  if (!active || !game) return;
+  if (!active || !game || game.phase === 'result' || game.index >= game.poses.length) return;
   game.phase = 'feedback';
   judge = null;
   const cur = game.poses[game.index];

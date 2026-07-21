@@ -8,8 +8,8 @@ const LS_LASTPOSES = 'fas_mission_lastposes_v1'; // 직전 학생들에게 나�
 
 // ── 기본 박람회 설정 ──
 export const DEFAULT_SETTINGS = {
-  totalMissions: 3,
-  passCount: 2,
+  totalMissions: 5,
+  passCount: 3,
   timeoutMs: 8000,
   holdMs: 700,
   passScore: 0.68,      // 이 confidence 이상 유지 시 성공
@@ -106,19 +106,35 @@ function loadLastPoses() {
 }
 function pushLastPoses(ids) {
   const prev = loadLastPoses();
-  const merged = [...ids, ...prev].slice(0, 8);
+  const merged = [...ids, ...prev].slice(0, 20); // 최근 20개 기억 → 연속 게임 반복 방지
   localStorage.setItem(LS_LASTPOSES, JSON.stringify(merged));
 }
 
-// 난이도 목표 배분: 대체로 EASY→NORMAL→CHALLENGE
+// 자주 보여줄 "재밌는/개성 있는" 포즈 (가중치 ↑)
+const FUN_BOOST = new Set([
+  'muscle', 'disco', 'trex', 'selfhug', 'dab', 'robot', 'surprise', 'hands_face',
+  'chin_rest', 'sway', 'wide_stand', 'one_leg', 'squat', 'superhero',
+  'lean_left', 'lean_right', 'point_left', 'point_right', 'hands_hip',
+]);
+// 서로 비슷해 보이는 "팔 올리기/벌리기"류 (가중치 ↓ — 덜 나오게)
+const PLAIN_ARMS = new Set([
+  'both_up', 'left_up', 'right_up', 'both_side', 'raise_both', 'cheer',
+  'wave_left', 'wave_right', 'wave_both', 'point_up', 'both_diag_up',
+  'airplane', 'left_side', 'right_side',
+]);
+function funWeight(id) {
+  if (FUN_BOOST.has(id)) return 2.4;
+  if (PLAIN_ARMS.has(id)) return 0.6;
+  return 1;
+}
+
+// 난이도 목표 배분: 첫 미션은 쉽게, 이후는 매 게임 다르게 섞어 예측 불가·다양성 확보
 function difficultyPlan(n) {
   if (n <= 1) return ['EASY'];
-  if (n === 2) return ['EASY', 'NORMAL'];
-  if (n === 3) return ['EASY', 'EASY', 'NORMAL'];
-  const plan = [];
-  for (let i = 0; i < n; i++) {
-    const t = i / (n - 1);
-    plan.push(t < 0.4 ? 'EASY' : t < 0.8 ? 'NORMAL' : 'CHALLENGE');
+  const plan = ['EASY']; // 첫 판은 부담 없이
+  for (let i = 1; i < n; i++) {
+    const r = Math.random();
+    plan.push(r < 0.28 ? 'EASY' : r < 0.86 ? 'NORMAL' : 'CHALLENGE');
   }
   return plan;
 }
@@ -153,11 +169,11 @@ export function buildMissionSet(settings, enabled) {
     for (let relax = 0; relax <= 3 && !cands; relax++) cands = tryPick(relax);
     if (!cands) cands = pool.slice();
 
-    // 가중치: 포즈 weight × 직전 학생 등장 페널티
+    // 가중치: 포즈 weight × 재미 가중 × 최근 등장 페널티
     const weighted = cands.map((p) => {
-      let w = p.weight || 1;
+      let w = (p.weight || 1) * funWeight(p.id);
       const recentIdx = lastStudent.indexOf(p.id);
-      if (recentIdx >= 0) w *= 0.35 + 0.08 * recentIdx; // 최근일수록 확률 낮춤
+      if (recentIdx >= 0) w *= Math.min(1, 0.12 + 0.045 * recentIdx); // 최근일수록 강하게 억제
       return { p, w };
     });
     const pick = weightedRandom(weighted);
