@@ -223,7 +223,14 @@ function updateGuide() {
   }
   const status = Motion.getStatus();
   if (status === 'ok') {
-    guide.classList.add('hidden');
+    // 전신(발목)이 안 보이면 뒤로 물러나도록 부드럽게 안내
+    const snap = Motion.getPoseSnapshot();
+    if (snap && snap.present && !snap.fullBody) {
+      guide.textContent = '🦶 전신이 다 보이게 두세 걸음 뒤로 서보세요';
+      guide.classList.remove('hidden');
+    } else {
+      guide.classList.add('hidden');
+    }
     resetIdleTimer(); // 사람이 움직이는 동안은 초기화하지 않음
   } else if (status === 'calibrating') {
     guide.textContent = `그대로 편하게 서 주세요… ${Math.round(Motion.getCalibProgress() * 100)}%`;

@@ -264,11 +264,15 @@ let delegateMode = '-';
 
 export async function startCamera(videoEl) {
   video = videoEl;
-  // 고해상도 요청: 웹캠에 따라 더 넓은 화각으로 잡혀 몸이 더 많이 나옴
-  stream = await navigator.mediaDevices.getUserMedia({
-    video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
-    audio: false,
-  });
+  // 세로 화각을 넓게(4:3) 요청 → 16:9보다 위·아래가 더 잡혀 전신이 잘 들어옴.
+  // 4:3을 지원 안 하는 웹캠이면 기본값으로 폴백.
+  const get = (c) => navigator.mediaDevices.getUserMedia({ video: c, audio: false });
+  try {
+    stream = await get({ width: { ideal: 1280 }, height: { ideal: 960 }, aspectRatio: { ideal: 4 / 3 }, facingMode: 'user' });
+  } catch (e) {
+    try { stream = await get({ width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' }); }
+    catch (e2) { stream = await get({ facingMode: 'user' }); }
+  }
   video.srcObject = stream;
   await video.play();
   resetTracking();
