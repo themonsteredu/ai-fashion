@@ -26,49 +26,17 @@
   <div class="start-inner">
     <div class="brand">FASHION&nbsp;AVATAR&nbsp;STUDIO</div>
     <h1>나만의 아바타와<br>런웨이에 서 보세요</h1>
-    <p class="sub">옷 색상을 고르고, 카메라 앞에서 움직이면<br>아바타가 실시간으로 따라 해요</p>
-    <button id="btn-start" class="btn btn-primary btn-xl">시작하기</button>
+    <p class="sub">카메라 앞에서 움직이면<br>아바타가 실시간으로 따라 해요</p>
+    <div class="start-buttons">
+      <button id="btn-mission" class="btn btn-primary btn-xl">🎯 포즈 미션 도전!</button>
+      <button id="btn-done" class="btn btn-ghost btn-xl">🕺 자유 체험</button>
+    </div>
     <div class="upload-row">
       <button id="btn-upload" class="btn btn-ghost">📂 내 아바타 불러오기 (.vrm)</button>
       <input type="file" id="vrm-file" accept=".vrm" hidden>
       <p class="upload-hint">VRoid Studio에서 만든 VRM 파일을 선택하면 내 아바타로 체험할 수 있어요</p>
     </div>
   </div>
-</section>
-
-<!-- ───────── 화면 2 : 아바타 꾸미기 ───────── -->
-<section id="screen-custom" class="screen">
-  <div class="drag-hint">아바타를 드래그하면 돌려볼 수 있어요</div>
-  <aside class="panel">
-    <h2>아바타 꾸미기</h2>
-
-    <div class="field-label">부위 선택</div>
-    <div class="seg" id="part-tabs">
-      <button class="seg-btn active" data-part="top">상의</button>
-      <button class="seg-btn" data-part="bottom">하의</button>
-      <button class="seg-btn" data-part="hair">헤어</button>
-    </div>
-
-    <div class="field-label">색상</div>
-    <div class="palette" id="palette"></div>
-
-    <div class="field-label">배경</div>
-    <div class="bg-row" id="bg-row"></div>
-
-    <div class="field-label">패턴</div>
-    <div class="seg" id="pattern-tabs">
-      <button class="seg-btn active" data-pattern="solid">단색</button>
-      <button class="seg-btn" data-pattern="stripe">줄무늬</button>
-      <button class="seg-btn" data-pattern="dot">도트</button>
-      <button class="seg-btn" data-pattern="check">체크</button>
-    </div>
-
-    <div class="panel-spacer"></div>
-    <button id="btn-reset-color" class="btn btn-ghost">원래대로</button>
-    <button id="btn-done" class="btn btn-primary">완성! 움직여보기</button>
-    <button id="btn-mission" class="btn btn-primary">🎯 포즈 미션 도전!</button>
-    <button id="btn-home-2" class="btn btn-text">처음으로</button>
-  </aside>
   <div class="toast" id="toast"></div>
 </section>
 

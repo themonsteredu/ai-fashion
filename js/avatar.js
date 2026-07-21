@@ -18,17 +18,21 @@ export const state = {
 };
 
 const CAMERA_FRAMING = {
-  custom: { pos: new THREE.Vector3(0, 1.05, 2.5), look: new THREE.Vector3(0, 0.9, 0), shift: 0.16 },
-  // 모션 화면: 카메라를 뒤로 빼서 아바타 위아래 여백 확보 + 왼쪽 절반에 배치(오른쪽은 웹캠)
-  motion: { pos: new THREE.Vector3(0, 0.95, 3.4), look: new THREE.Vector3(0, 0.87, 0), shift: 0.23 },
+  // 시작 화면: 아바타 전신을 화면 중앙에 예쁘게
+  start:  { pos: new THREE.Vector3(0, 0.92, 4.0), look: new THREE.Vector3(0, 0.92, 0), shift: 0 },
+  // 자유 체험(2단): 아바타 왼쪽 절반, 오른쪽 웹캠. 머리 안 잘리게 여유
+  motion: { pos: new THREE.Vector3(0, 0.95, 3.7), look: new THREE.Vector3(0, 0.9, 0), shift: 0.22, shiftY: -0.03 },
+  // 미션(3단): 아바타 왼쪽 1/3, 가운데 미션카드, 오른쪽 웹캠. 팔 든 자세까지 다 보이게
+  mission:{ pos: new THREE.Vector3(0, 0.98, 4.3), look: new THREE.Vector3(0, 0.98, 0), shift: 0.34, shiftY: -0.03 },
 };
-// 모바일 세로 화면: 좌우로 밀지 않고 세로로 위쪽에 배치 (하단은 패널/웹캠)
+CAMERA_FRAMING.custom = CAMERA_FRAMING.start; // 하위호환
+// 모바일 세로: 좌우 밀기 없이 세로 배치 (하단은 카드/웹캠)
 const CAMERA_FRAMING_MOBILE = {
-  // 꾸미기: 상반신(얼굴+의상)이 상단 시트 위에 보이도록
-  custom: { pos: new THREE.Vector3(0, 1.15, 1.95), look: new THREE.Vector3(0, 1.12, 0), shift: 0, shiftY: -0.08 },
-  // 모션: 상반신(팔 든 자세까지) 크게, 위쪽에 배치 — 하단 웹캠/미션카드와 겹치지 않게
-  motion: { pos: new THREE.Vector3(0, 1.1, 3.1), look: new THREE.Vector3(0, 1.05, 0), shift: 0, shiftY: -0.12 },
+  start:  { pos: new THREE.Vector3(0, 0.95, 3.6), look: new THREE.Vector3(0, 0.95, 0), shift: 0, shiftY: -0.05 },
+  motion: { pos: new THREE.Vector3(0, 1.02, 3.5), look: new THREE.Vector3(0, 0.98, 0), shift: 0, shiftY: -0.1 },
+  mission:{ pos: new THREE.Vector3(0, 1.0, 3.7), look: new THREE.Vector3(0, 1.0, 0), shift: 0, shiftY: -0.14 },
 };
+CAMERA_FRAMING_MOBILE.custom = CAMERA_FRAMING_MOBILE.start;
 export const MOTION_SHIFT = CAMERA_FRAMING.motion.shift;
 
 export function isPortrait() {

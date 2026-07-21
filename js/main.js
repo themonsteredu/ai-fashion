@@ -12,7 +12,6 @@ const IDLE_RESET_MS = 60 * 1000; // 60초 무조작 시 처음 화면으로
 const $ = (sel) => document.querySelector(sel);
 const screens = {
   start: $('#screen-start'),
-  custom: $('#screen-custom'),
   motion: $('#screen-motion'),
 };
 
@@ -47,13 +46,10 @@ async function boot() {
     return;
   }
   if (Avatar.state.usingSample) $('#sample-badge').classList.remove('hidden');
-  adaptPartTabs();
   Motion.setAvatar(Avatar.state.vrm, Avatar.getSkeletonMeasures());
 
   $('#loading').classList.add('hidden');
 
-  buildPalette();
-  buildBgRow();
   bindUI();
   Avatar.enableDragRotate($('#stage'));
   Debug.init((on) => Avatar.toggleSkeletonHelper(on));
@@ -122,23 +118,15 @@ async function goStart() {
   }
   $('#cam-view').classList.add('hidden');
   $('#cam').style.visibility = 'visible';
-  Avatar.resetLook();          // 다음 관람객을 위해 초기화
   Avatar.resetAvatarRotation();
   if (Avatar.state.vrm) Avatar.applyNeutralArms(Avatar.state.vrm);
-  syncPaletteUI();
-  Avatar.setFraming('custom');
+  Avatar.setFraming('start');
   show('start');
-}
-
-function goCustom() {
-  Motion.stopCamera();
-  Avatar.setFraming('custom');
-  show('custom');
 }
 
 async function goMotion(missionMode) {
   Avatar.resetAvatarRotation();
-  Avatar.setFraming('motion');
+  Avatar.setFraming(missionMode ? 'mission' : 'motion');
   show('motion');
   cameraFailed = false;
   try {
@@ -157,8 +145,8 @@ const camMatch = { s: 1, top: null };
 
 function updateCamMatch(dt) {
   const wrap = $('#cam-wrap');
-  // 모바일 세로: 웹캠은 CSS로 하단 고정 카드. JS 배율 맞춤 끔 (인라인 스타일 제거)
-  if (Avatar.isPortrait()) {
+  // 모바일 세로 또는 미션(3단 고정 레이아웃): JS 배율 맞춤 끔 → CSS 고정 위치 사용
+  if (Avatar.isPortrait() || document.body.classList.contains('mission-on')) {
     if (wrap.style.width) { wrap.style.width = wrap.style.height = wrap.style.top = wrap.style.transform = ''; }
     return;
   }
@@ -245,137 +233,18 @@ function updateGuide() {
 }
 
 // 아바타에 없는 부위 버튼은 숨김 (원피스 아바타면 "상의" → "의상")
-function adaptPartTabs() {
-  const btns = document.querySelectorAll('#part-tabs .seg-btn');
-  let firstAvailable = null;
-  for (const b of btns) {
-    const ok = Avatar.partAvailable(b.dataset.part);
-    b.style.display = ok ? '' : 'none';
-    if (ok && !firstAvailable) firstAvailable = b;
-  }
-  if (!Avatar.partAvailable('bottom') && Avatar.partAvailable('top')) {
-    document.querySelector('#part-tabs .seg-btn[data-part="top"]').textContent = '의상';
-  }
-  if (firstAvailable && !Avatar.partAvailable(selectedPart)) {
-    selectedPart = firstAvailable.dataset.part;
-    for (const b of btns) b.classList.toggle('active', b === firstAvailable);
-  }
-}
-
-// ── 배경 선택 ──
-function buildBgRow() {
-  const row = $('#bg-row');
-  for (const bg of BACKGROUNDS) {
-    const b = document.createElement('button');
-    b.className = 'bg-swatch' + (bg.id === selectedBgId ? ' active' : '');
-    b.style.background = bg.css;
-    b.dataset.bg = bg.id;
-    b.title = bg.name;
-    b.setAttribute('aria-label', '배경 ' + bg.name);
-    b.addEventListener('click', () => applyBackground(bg.id));
-    row.appendChild(b);
-  }
-  // 사진/영상 업로드 배경
-  const up = document.createElement('button');
-  up.className = 'bg-swatch bg-upload';
-  up.textContent = '＋';
-  up.title = '사진·영상 배경 업로드';
-  up.dataset.bg = 'custom';
-  const input = document.createElement('input');
-  input.type = 'file';
-  input.accept = 'image/*,video/*';
-  input.hidden = true;
-  up.addEventListener('click', () => {
-    if (getCustom()) applyBackground('custom'); // 이미 업로드했으면 재선택
-    input.click();
-  });
-  input.addEventListener('change', async (e) => {
-    const file = e.target.files && e.target.files[0];
-    e.target.value = '';
-    if (!file) return;
-    try {
-      await setCustomBackground(file);
-      applyBackground('custom');
-      toast('배경을 불러왔어요');
-    } catch (err) {
-      console.error(err);
-      toast('이 파일은 배경으로 쓸 수 없어요');
-    }
-  });
-  row.appendChild(up);
-  row.appendChild(input);
-}
-
+// 배경 초기화 (기본 스튜디오). 배경 선택 기능은 추후 추가 예정.
 function applyBackground(id) {
   const bg = getBackground(id);
   selectedBgId = bg.id;
   document.body.style.background = bg.css;
   setCustomVisible(bg.id === 'custom' && bg.type === 'video');
-  for (const el of document.querySelectorAll('.bg-swatch')) {
-    el.classList.toggle('active', el.dataset.bg === selectedBgId);
-  }
-}
-
-// ── 꾸미기 UI ──
-function buildPalette() {
-  const wrap = $('#palette');
-  for (const hex of COLORS) {
-    const b = document.createElement('button');
-    b.className = 'swatch';
-    b.style.background = hex;
-    b.dataset.color = hex;
-    b.setAttribute('aria-label', '색상 ' + hex);
-    b.addEventListener('click', () => {
-      const ok = Avatar.applyLook(selectedPart, hex, selectedPattern);
-      if (!ok) { toast('이 아바타에서는 바꿀 수 없는 부위예요'); return; }
-      syncPaletteUI();
-    });
-    wrap.appendChild(b);
-  }
-}
-
-function syncPaletteUI() {
-  const chosen = Avatar.state.chosen[selectedPart];
-  for (const el of document.querySelectorAll('.swatch')) {
-    el.classList.toggle('active', chosen.color === el.dataset.color);
-  }
-  selectedPattern = chosen.pattern || 'solid';
-  for (const el of document.querySelectorAll('#pattern-tabs .seg-btn')) {
-    el.classList.toggle('active', el.dataset.pattern === selectedPattern);
-  }
 }
 
 function bindUI() {
-  $('#btn-start').addEventListener('click', goCustom);
   $('#btn-done').addEventListener('click', () => goMotion(false));
   $('#btn-mission').addEventListener('click', () => goMotion(true));
-  $('#btn-home-2').addEventListener('click', goStart);
   $('#btn-home-3').addEventListener('click', goStart);
-  $('#btn-reset-color').addEventListener('click', () => {
-    Avatar.resetLook();
-    syncPaletteUI();
-    toast('원래 모습으로 되돌렸어요');
-  });
-
-  for (const el of document.querySelectorAll('#part-tabs .seg-btn')) {
-    el.addEventListener('click', () => {
-      selectedPart = el.dataset.part;
-      for (const s of document.querySelectorAll('#part-tabs .seg-btn')) s.classList.toggle('active', s === el);
-      syncPaletteUI();
-      if (!Avatar.partAvailable(selectedPart)) toast('이 아바타에서는 바꿀 수 없는 부위예요');
-    });
-  }
-
-  for (const el of document.querySelectorAll('#pattern-tabs .seg-btn')) {
-    el.addEventListener('click', () => {
-      selectedPattern = el.dataset.pattern;
-      for (const s of document.querySelectorAll('#pattern-tabs .seg-btn')) s.classList.toggle('active', s === el);
-      const chosen = Avatar.state.chosen[selectedPart];
-      const color = chosen.color || '#1a1a1a';
-      Avatar.applyLook(selectedPart, color, selectedPattern);
-      syncPaletteUI();
-    });
-  }
 
   $('#btn-photo').addEventListener('click', takePhoto);
   $('#btn-video').addEventListener('click', toggleVideo);
@@ -422,13 +291,9 @@ function bindUI() {
       });
       Motion.setAvatar(Avatar.state.vrm, Avatar.getSkeletonMeasures());
       $('#sample-badge').classList.add('hidden');
-      selectedPart = 'top';
-      selectedPattern = 'solid';
-      adaptPartTabs();
-      syncPaletteUI();
+      Avatar.setFraming('start');
       loading.classList.add('hidden');
-      goCustom();
-      toast('아바타를 불러왔어요! 이제 꾸며 보세요');
+      toast('아바타를 불러왔어요! 미션이나 자유 체험을 시작해 보세요');
     } catch (err) {
       console.error('VRM 로드 실패', err);
       loading.classList.add('hidden');

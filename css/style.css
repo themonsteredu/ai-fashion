@@ -555,3 +555,38 @@ body.mission-on #guide-msg { display: none !important; }
 .mm-countdown.hidden { display: none; }
 @keyframes mm-cd-pop { from { transform: translate(-50%,-50%) scale(1.4); opacity: 0.2; } to { transform: translate(-50%,-50%) scale(1); opacity: 1; } }
 @media (max-width: 700px) { .mm-countdown { top: 22%; } }
+
+/* 시작 화면 버튼 세로 배치 */
+.start-buttons { display: flex; flex-direction: column; gap: 14px; align-items: center; margin-top: 5vh; }
+.start-buttons .btn { min-width: 340px; }
+
+/* ═══════ 미션 3단 레이아웃 (데스크톱): 아바타 | 미션카드 | 웹캠 ═══════ */
+@media (min-width: 701px) {
+  body.mission-on .mm-card {
+    left: 50%; right: auto; top: 50%; bottom: auto;
+    transform: translate(-50%, -50%);
+    width: min(480px, 35vw); height: 86vh; max-height: 86vh;
+    box-sizing: border-box;
+    display: flex; flex-direction: column; justify-content: space-between;
+  }
+  body.mission-on .mm-card.pop { animation: none; }
+  /* 글은 최소로 — 모양(실루엣)을 크게 강조 */
+  body.mission-on .mm-mid {
+    flex: 1; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 6px; margin: 0;
+  }
+  body.mission-on .mm-silhouette {
+    width: min(460px, 34vw); height: min(460px, 34vw); margin: 0;
+  }
+  body.mission-on .mm-title { font-size: 40px; }
+  body.mission-on .mm-instruction,
+  body.mission-on .mm-diff,
+  body.mission-on .mm-tipbubble { display: none; }
+  body.mission-on .cam-preview {
+    left: auto; right: 2vw; top: 50%; transform: translateY(-50%);
+    width: 31vw; height: 86vh; border-radius: 26px;
+  }
+  body.mission-on #mm-banner { left: 17%; }
+  body.mission-on #mm-countdown { left: 17%; top: 34%; }
+  body.mission-on #mm-confetti { left: 17%; }
+}
