@@ -15,25 +15,51 @@ export const THEMES = {
 
 // ── 실루엣 라인 아이콘 (SVG, currentColor로 테마색 적용) ──
 // 간단한 스틱-피겨. 포즈 형태를 한눈에 보여주는 보조 아이콘.
-const F = (parts) =>
-  `<svg viewBox="0 0 100 120" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
-    <circle cx="50" cy="20" r="12" fill="currentColor" stroke="none"/>${parts}</svg>`;
+// 귀여운 통통 캐릭터(스티커) 실루엣. 큰 머리 + 원피스 + 통통한 팔/손.
+// arms: 어깨→손 팔 path들과 손(작은 원). extra: 하트·브이 표시 등.
+// L 어깨(38,56), R 어깨(62,56). 손은 hand(x,y)로 통통하게.
+const hand = (x, y) => `<circle cx="${x}" cy="${y}" r="7" fill="currentColor"/>`;
+const arm = (sx, sy, hx, hy) =>
+  `<path d="M${sx} ${sy} L${hx} ${hy}" stroke="currentColor" stroke-width="12" stroke-linecap="round" fill="none"/>${hand(hx, hy)}`;
+const armL = (hx, hy) => arm(40, 56, hx, hy);
+const armR = (hx, hy) => arm(60, 56, hx, hy);
+function CH(arms, extra = '', rot = 0) {
+  const g = rot ? ` transform="rotate(${rot} 50 62)"` : '';
+  return `<svg viewBox="0 0 100 122" fill="none"><g${g}>
+    <!-- 다리 -->
+    <path d="M45 92 L43 110" stroke="currentColor" stroke-width="9" stroke-linecap="round"/>
+    <path d="M55 92 L57 110" stroke="currentColor" stroke-width="9" stroke-linecap="round"/>
+    <ellipse cx="42" cy="113" rx="7" ry="4" fill="currentColor"/>
+    <ellipse cx="58" cy="113" rx="7" ry="4" fill="currentColor"/>
+    <!-- 원피스 (A라인) -->
+    <path d="M37 50 Q50 45 63 50 L72 92 Q50 100 28 92 Z" fill="currentColor"/>
+    <!-- 머리카락(뒤) + 머리 -->
+    <path d="M31 30 Q31 8 50 8 Q69 8 69 30 Q69 46 61 50 L39 50 Q31 46 31 30Z" fill="currentColor" opacity="0.55"/>
+    <circle cx="50" cy="29" r="16" fill="currentColor"/>
+    <!-- 팔 -->
+    ${arms}${extra}
+  </g></svg>`;
+}
 export const SILHOUETTES = {
-  armsUp:   F('<path d="M50 32 V78"/><path d="M50 40 L28 12"/><path d="M50 40 L72 12"/><path d="M50 78 L38 108"/><path d="M50 78 L62 108"/>'),
-  leftUp:   F('<path d="M50 32 V78"/><path d="M50 42 L26 14"/><path d="M50 42 L74 60"/><path d="M50 78 L38 108"/><path d="M50 78 L62 108"/>'),
-  rightUp:  F('<path d="M50 32 V78"/><path d="M50 42 L74 14"/><path d="M50 42 L26 60"/><path d="M50 78 L38 108"/><path d="M50 78 L62 108"/>'),
-  armsOut:  F('<path d="M50 32 V78"/><path d="M50 44 L18 44"/><path d="M50 44 L82 44"/><path d="M50 78 L38 108"/><path d="M50 78 L62 108"/>'),
-  diagUp:   F('<path d="M50 32 V78"/><path d="M50 42 L22 20"/><path d="M50 42 L78 20"/><path d="M50 78 L38 108"/><path d="M50 78 L62 108"/>'),
-  heart:    F('<path d="M50 34 V80"/><path d="M50 44 C36 30 20 34 30 16 C40 4 50 22 50 22 C50 22 60 4 70 16 C80 34 64 30 50 44Z" fill="currentColor" stroke="none"/><path d="M50 44 L34 34"/><path d="M50 44 L66 34"/><path d="M50 80 L38 108"/><path d="M50 80 L62 108"/>'),
-  vsign:    F('<path d="M50 32 V78"/><path d="M50 42 L30 22"/><path d="M50 42 L70 22"/><path d="M50 78 L38 108"/><path d="M50 78 L62 108"/><circle cx="26" cy="18" r="4" fill="currentColor" stroke="none"/><circle cx="74" cy="18" r="4" fill="currentColor" stroke="none"/>'),
-  thumbsUp: F('<path d="M50 32 V78"/><path d="M50 44 L34 34 L34 20"/><path d="M50 44 L70 52"/><path d="M50 78 L38 108"/><path d="M50 78 L62 108"/>'),
-  pointL:   F('<path d="M50 32 V78"/><path d="M50 44 L14 44"/><path d="M50 44 L70 58"/><path d="M50 78 L38 108"/><path d="M50 78 L62 108"/>'),
-  pointR:   F('<path d="M50 32 V78"/><path d="M50 44 L86 44"/><path d="M50 44 L30 58"/><path d="M50 78 L38 108"/><path d="M50 78 L62 108"/>'),
-  lean:     F('<g transform="rotate(-14 50 60)"><path d="M50 32 V78"/><path d="M50 44 L30 60"/><path d="M50 44 L70 60"/><path d="M50 78 L40 108"/><path d="M50 78 L60 108"/></g>'),
-  wave:     F('<path d="M50 32 V78"/><path d="M50 42 L74 18"/><path d="M50 44 L30 58"/><path d="M50 78 L38 108"/><path d="M50 78 L62 108"/>'),
-  cheer:    F('<path d="M50 32 V78"/><path d="M50 42 L28 20"/><path d="M50 42 L72 20"/><path d="M50 78 L36 106"/><path d="M50 78 L64 106"/>'),
-  hero:     F('<path d="M50 32 V78"/><path d="M50 42 L72 14"/><path d="M50 44 L32 56"/><path d="M50 78 L38 108"/><path d="M50 78 L62 108"/>'),
-  neutral:  F('<path d="M50 32 V78"/><path d="M50 44 L34 70"/><path d="M50 44 L66 70"/><path d="M50 78 L38 108"/><path d="M50 78 L62 108"/>'),
+  armsUp:   CH(armL(24, 16) + armR(76, 16)),
+  leftUp:   CH(armL(23, 14) + armR(74, 66)),
+  rightUp:  CH(armL(26, 66) + armR(77, 14)),
+  armsOut:  CH(armL(14, 52) + armR(86, 52)),
+  diagUp:   CH(armL(20, 26) + armR(80, 26)),
+  heart:    CH(armL(38, 24) + armR(62, 24),
+              '<path d="M50 9 C47 3 39 3 39 10 C39 16 50 22 50 22 C50 22 61 16 61 10 C61 3 53 3 50 9Z" fill="currentColor" stroke="#fff" stroke-width="2.5"/>'),
+  vsign:    CH(armL(30, 22) + armR(70, 22),
+              '<path d="M25 20 L21 7 M31 20 L35 8" stroke="#fff" stroke-width="3" stroke-linecap="round"/><path d="M69 20 L65 8 M75 20 L79 7" stroke="#fff" stroke-width="3" stroke-linecap="round"/>'),
+  thumbsUp: CH(armL(30, 74) + armR(66, 42),
+              '<path d="M66 40 L66 26" stroke="currentColor" stroke-width="6" stroke-linecap="round"/><circle cx="66" cy="24" r="4" fill="currentColor" stroke="#fff" stroke-width="1.5"/>'),
+  pointL:   CH(armL(12, 52) + armR(70, 68)),
+  pointR:   CH(armL(30, 68) + armR(88, 52)),
+  lean:     CH(armL(30, 60) + armR(70, 60), '', -14),
+  wave:     CH(armR(76, 16) + armL(30, 62),
+              '<path d="M82 12 Q86 16 82 20 M84 18 Q88 22 84 26" stroke="currentColor" stroke-width="3" stroke-linecap="round" fill="none"/>'),
+  cheer:    CH(armL(22, 20) + armR(78, 20)),
+  hero:     CH(armR(78, 14) + armL(34, 60)),
+  neutral:  CH(armL(30, 74) + armR(70, 74)),
 };
 
 // ── 아바타 시범 포즈 (팔/몸통 본 회전) ──
