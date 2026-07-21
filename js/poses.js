@@ -318,13 +318,84 @@ export const POSE_DEFS = [
   },
   {
     id: 'robot', name: '로봇 자세', shortInstruction: '두 팔을 앞으로 접어 로봇!',
-    category: 'FULL_BODY', difficulty: 'NORMAL', reliability: 'EXPERIMENTAL',
+    category: 'FULL_BODY', difficulty: 'NORMAL', reliability: 'STABLE',
     cooldownGroup: 'combo', hintText: '팔꿈치를 90도로 앞으로',
     requiredLandmarks: ['L_WR', 'R_WR', 'L_EL', 'R_EL', 'L_SH', 'R_SH'],
     detect: (s) => judge(s, [
       { name: '왼손 가슴높이', weight: 30, vis: ['L_WR'], score: (m) => band(m.dy('L_WR', 'L_SH'), -0.4, 0.1, 0.35) },
       { name: '오른손 가슴높이', weight: 30, vis: ['R_WR'], score: (m) => band(m.dy('R_WR', 'R_SH'), -0.4, 0.1, 0.35) },
       { name: '팔 앞으로 모음', weight: 40, score: (m) => atMost(m.dist('L_WR', 'R_WR'), 1.0, 0.6) },
+    ]),
+  },
+
+  // ───────── 웃음 포인트 포즈 (STABLE — 큰 관절만 사용) ─────────
+  {
+    id: 'muscle', name: '알통 뽐내기', shortInstruction: '두 팔 접어 알통 뽐내기! 💪',
+    category: 'FULL_BODY', difficulty: 'NORMAL', reliability: 'STABLE',
+    cooldownGroup: 'flex', hintText: '두 주먹을 머리 옆으로 올려 힘 꽉! 💪',
+    requiredLandmarks: ['L_WR', 'R_WR', 'L_SH', 'R_SH', 'L_EL', 'R_EL'],
+    detect: (s) => judge(s, [
+      { name: '왼주먹 위', weight: 28, vis: ['L_WR'], score: (m) => band(m.dy('L_WR', 'L_SH'), 0.1, 0.9, 0.4) },
+      { name: '오른주먹 위', weight: 28, vis: ['R_WR'], score: (m) => band(m.dy('R_WR', 'R_SH'), 0.1, 0.9, 0.4) },
+      { name: '팔꿈치 벌림', weight: 24, vis: ['L_EL', 'R_EL'], score: (m) => (atLeast(Math.abs(m.dx('L_EL', 'L_SH')), 0.2, 0.4) + atLeast(Math.abs(m.dx('R_EL', 'R_SH')), 0.2, 0.4)) / 2 },
+      { name: '주먹 머리 근처', weight: 20, score: (m) => (atMost(Math.abs(m.dx('L_WR', 'L_SH')), 0.75, 0.5) + atMost(Math.abs(m.dx('R_WR', 'R_SH')), 0.75, 0.5)) / 2 },
+    ]),
+  },
+  {
+    id: 'disco', name: '토요일밤 디스코', shortInstruction: '한 손은 하늘! 한 손은 아래! 🕺',
+    category: 'FULL_BODY', difficulty: 'NORMAL', reliability: 'STABLE',
+    cooldownGroup: 'dance', hintText: '한 손가락으로 하늘 콕! 반대 손은 아래로 🕺',
+    requiredLandmarks: ['L_WR', 'R_WR', 'L_SH', 'R_SH'],
+    detect: (s) => judge(s, [
+      { name: '한 손 하늘 대각', weight: 45, vis: ['L_WR', 'R_WR'], score: (m) => {
+        const up = (side) => Math.min(atLeast(m.dy(side + '_WR', side + '_SH'), 0.4, 0.4), atLeast(Math.abs(m.dx(side + '_WR', side + '_SH')), 0.25, 0.4));
+        return Math.max(up('L'), up('R'));
+      } },
+      { name: '반대 손 아래로', weight: 40, vis: ['L_WR', 'R_WR'], score: (m) => {
+        const other = m.dy('L_WR', 'L_SH') > m.dy('R_WR', 'R_SH') ? 'R' : 'L';
+        return atMost(m.dy(other + '_WR', other + '_SH'), -0.1, 0.5);
+      } },
+      { name: '신나게', weight: 15, score: () => 1 },
+    ]),
+  },
+  {
+    id: 'trex', name: '티라노 공룡', shortInstruction: '팔을 작게 오므려 공룡! 🦖',
+    category: 'FULL_BODY', difficulty: 'EASY', reliability: 'STABLE',
+    cooldownGroup: 'dino', hintText: '팔꿈치는 옆구리에 붙이고 손은 앞으로 오므려요 🦖',
+    requiredLandmarks: ['L_WR', 'R_WR', 'L_SH', 'R_SH'],
+    detect: (s) => judge(s, [
+      { name: '왼손 가슴앞', weight: 25, vis: ['L_WR'], score: (m) => band(m.dy('L_WR', 'L_SH'), -0.6, 0.05, 0.35) },
+      { name: '오른손 가슴앞', weight: 25, vis: ['R_WR'], score: (m) => band(m.dy('R_WR', 'R_SH'), -0.6, 0.05, 0.35) },
+      { name: '팔 몸에 붙임', weight: 30, vis: ['L_WR', 'R_WR'], score: (m) => (atMost(Math.abs(m.dx('L_WR', 'L_SH')), 0.45, 0.4) + atMost(Math.abs(m.dx('R_WR', 'R_SH')), 0.45, 0.4)) / 2 },
+      { name: '손 앞으로 오므림', weight: 20, score: (m) => atMost(m.dist('L_WR', 'R_WR'), 0.85, 0.5) },
+    ]),
+  },
+  {
+    id: 'selfhug', name: '셀프 허그', shortInstruction: '두 팔로 나를 꼬옥 안아요! 🤗',
+    category: 'CUTE', difficulty: 'EASY', reliability: 'STABLE',
+    cooldownGroup: 'hug', hintText: '두 손을 반대쪽 어깨에 올려 꼬옥 🤗',
+    requiredLandmarks: ['L_WR', 'R_WR', 'L_SH', 'R_SH'],
+    detect: (s) => judge(s, [
+      { name: '왼손 오른어깨', weight: 40, vis: ['L_WR', 'R_SH'], score: (m) => atMost(m.dist('L_WR', 'R_SH'), 0.8, 0.6) },
+      { name: '오른손 왼어깨', weight: 40, vis: ['R_WR', 'L_SH'], score: (m) => atMost(m.dist('R_WR', 'L_SH'), 0.8, 0.6) },
+      { name: '가슴 높이', weight: 20, vis: ['L_WR', 'R_WR'], score: (m) => (band(m.dy('L_WR', 'L_SH'), -0.5, 0.3, 0.4) + band(m.dy('R_WR', 'R_SH'), -0.5, 0.3, 0.4)) / 2 },
+    ]),
+  },
+  {
+    id: 'dab', name: '댑 댄스', shortInstruction: '한쪽으로 두 팔 쭉! 얼굴은 팔에 쏙! 🙆',
+    category: 'FULL_BODY', difficulty: 'NORMAL', reliability: 'STABLE',
+    cooldownGroup: 'dab', hintText: '두 팔을 같은 쪽 위로 뻗고 고개를 팔에 파묻어요 🙆',
+    requiredLandmarks: ['L_WR', 'R_WR', 'NOSE', 'L_SH', 'R_SH'],
+    detect: (s) => judge(s, [
+      { name: '두 팔 한쪽으로', weight: 45, vis: ['L_WR', 'R_WR', 'NOSE'], score: (m) => {
+        const lp = m.P.L_WR, rp = m.P.R_WR, np = m.P.NOSE, sw = m.sw;
+        if (!lp || !rp || !np) return 0;
+        const dl = (lp.x - np.x) / sw, dr = (rp.x - np.x) / sw;
+        if (dl * dr <= 0) return 0; // 두 손이 서로 반대편이면 실패
+        return Math.min(atLeast(Math.abs(dl), 0.3, 0.4), atLeast(Math.abs(dr), 0.3, 0.4));
+      } },
+      { name: '한 손 머리 위', weight: 35, vis: ['L_WR', 'R_WR'], score: (m) => Math.max(atLeast(m.dy('L_WR', 'NOSE'), -0.1, 0.4), atLeast(m.dy('R_WR', 'NOSE'), -0.1, 0.4)) },
+      { name: '팔 쭉', weight: 20, score: () => 1 },
     ]),
   },
 
@@ -406,7 +477,7 @@ export const POSE_DEFS = [
   },
   {
     id: 'hands_face', name: '양손 얼굴 옆', shortInstruction: '양손을 얼굴 옆에!',
-    category: 'CUTE', difficulty: 'NORMAL', reliability: 'EXPERIMENTAL',
+    category: 'CUTE', difficulty: 'NORMAL', reliability: 'STABLE',
     cooldownGroup: 'face', hintText: '두 손을 볼 옆에 살짝',
     requiredLandmarks: ['L_WR', 'R_WR', 'NOSE'],
     detect: (s) => judge(s, [
@@ -417,7 +488,7 @@ export const POSE_DEFS = [
   },
   {
     id: 'chin_rest', name: '한 손 턱받침', shortInstruction: '한 손으로 턱을 괴어요!',
-    category: 'CUTE', difficulty: 'CHALLENGE', reliability: 'EXPERIMENTAL',
+    category: 'CUTE', difficulty: 'CHALLENGE', reliability: 'STABLE',
     cooldownGroup: 'face', hintText: '한 손을 턱 아래에 살짝',
     requiredLandmarks: ['L_WR', 'R_WR', 'NOSE'],
     detect: (s) => judge(s, [
@@ -447,7 +518,7 @@ export const POSE_DEFS = [
   },
   {
     id: 'surprise', name: '깜짝 놀란 자세', shortInstruction: '양손을 볼에! 깜짝!',
-    category: 'CUTE', difficulty: 'NORMAL', reliability: 'EXPERIMENTAL',
+    category: 'CUTE', difficulty: 'NORMAL', reliability: 'STABLE',
     cooldownGroup: 'face', hintText: '두 손을 볼 옆에 대고 놀란 표정',
     requiredLandmarks: ['L_WR', 'R_WR', 'NOSE'],
     detect: (s) => judge(s, [
@@ -487,7 +558,7 @@ export const POSE_DEFS = [
   },
   {
     id: 'sway', name: '몸 좌우로 흔들기', shortInstruction: '몸을 좌우로 흔들어요!',
-    category: 'MOTION', difficulty: 'NORMAL', reliability: 'EXPERIMENTAL',
+    category: 'MOTION', difficulty: 'NORMAL', reliability: 'STABLE',
     cooldownGroup: 'lean', hintText: '상체를 좌우로 왔다갔다', motion: true,
     requiredLandmarks: ['L_SH', 'R_SH'],
     detect: (s) => judge(s, [

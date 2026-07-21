@@ -18,9 +18,12 @@ export const THEMES = {
 // 귀여운 통통 캐릭터(스티커) 실루엣. 큰 머리 + 원피스 + 통통한 팔/손.
 // arms: 어깨→손 팔 path들과 손(작은 원). extra: 하트·브이 표시 등.
 // L 어깨(38,56), R 어깨(62,56). 손은 hand(x,y)로 통통하게.
-const hand = (x, y) => `<circle cx="${x}" cy="${y}" r="7" fill="currentColor"/>`;
+const hand = (x, y, r = 7) => `<circle cx="${x}" cy="${y}" r="${r}" fill="currentColor"/>`;
 const arm = (sx, sy, hx, hy) =>
   `<path d="M${sx} ${sy} L${hx} ${hy}" stroke="currentColor" stroke-width="12" stroke-linecap="round" fill="none"/>${hand(hx, hy)}`;
+// 팔꿈치가 굽은 팔: 어깨→팔꿈치→손
+const bentArm = (sx, sy, ex, ey, hx, hy, r = 7) =>
+  `<path d="M${sx} ${sy} L${ex} ${ey} L${hx} ${hy}" stroke="currentColor" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" fill="none"/>${hand(hx, hy, r)}`;
 const armL = (hx, hy) => arm(40, 56, hx, hy);
 const armR = (hx, hy) => arm(60, 56, hx, hy);
 function CH(arms, extra = '', rot = 0) {
@@ -60,6 +63,16 @@ export const SILHOUETTES = {
   cheer:    CH(armL(22, 20) + armR(78, 20)),
   hero:     CH(armR(78, 14) + armL(34, 60)),
   neutral:  CH(armL(30, 74) + armR(70, 74)),
+  // 웃음 포인트 포즈
+  muscle:   CH(bentArm(40, 56, 22, 52, 34, 28) + bentArm(60, 56, 78, 52, 66, 28)),
+  disco:    CH(armR(84, 16) + armL(20, 90),
+              '<path d="M84 15 L90 7" stroke="currentColor" stroke-width="6" stroke-linecap="round"/>'),
+  trex:     CH(bentArm(40, 56, 35, 66, 47, 70, 5) + bentArm(60, 56, 65, 66, 53, 70, 5)),
+  selfhug:  CH(arm(40, 56, 61, 48) + arm(60, 56, 39, 48)),
+  dab:      CH(armR(85, 22) + bentArm(40, 56, 54, 42, 76, 28)),
+  robot:    CH(bentArm(40, 56, 26, 56, 42, 64, 6) + bentArm(60, 56, 74, 56, 58, 64, 6)),
+  surprise: CH(bentArm(40, 56, 28, 44, 39, 30) + bentArm(60, 56, 72, 44, 61, 30)),
+  think:    CH(bentArm(60, 56, 74, 54, 53, 35) + armL(30, 72), '', -8),
 };
 
 // ── 아바타 시범 포즈 (팔/몸통 본 회전) ──
@@ -115,6 +128,12 @@ export const DEMO = {
   sway: [['spine',[0,0,1],0.2],['leftUpperArm',[0,0,1],1.0],['rightUpperArm',[0,0,1],-1.0]],
   knee_left: [DOWN_L, DOWN_R],
   knee_right:[DOWN_L, DOWN_R],
+  // 웃음 포인트 포즈 시범
+  muscle:  [['leftUpperArm',[0,0,1],0.9],['leftLowerArm',[0,0,1],1.0],['rightUpperArm',[0,0,1],-0.9],['rightLowerArm',[0,0,1],-1.0]],
+  disco:   [['rightUpperArm',[0,0,1],-1.2],['leftUpperArm',[0,0,1],-0.55]],
+  trex:    [['leftUpperArm',[0,0,1],-0.75],['leftLowerArm',[0,1,0],-1.95],['rightUpperArm',[0,0,1],0.75],['rightLowerArm',[0,1,0],1.95]],
+  selfhug: [['leftUpperArm',[0,0,1],0.3],['leftLowerArm',[0,1,0],-2.1],['rightUpperArm',[0,0,1],-0.3],['rightLowerArm',[0,1,0],2.1]],
+  dab:     [['rightUpperArm',[0,0,1],-1.05],['leftUpperArm',[0,0,1],-0.5],['leftLowerArm',[0,1,0],-1.3]],
 };
 
 // ── 포즈별 시각 메타 (테마색·실루엣·문구·난이도) ──
@@ -143,12 +162,17 @@ export const VISUALS = {
   v_left:  { theme: 'pink', sil: 'vsign', diff: 3, main: '왼손으로 브이!', tip: '얼굴 옆에 브이', ok: '손가락 두 개 쫙' },
   v_right: { theme: 'pink', sil: 'vsign', diff: 3, main: '오른손으로 브이!', tip: '얼굴 옆에 브이', ok: '손가락 두 개 쫙' },
   v_both:  { theme: 'pink', sil: 'vsign', diff: 3, main: '양손으로 브이!', tip: '두 손 모두 브이', ok: '활짝 웃어요 ✌️' },
-  hands_face: { theme: 'peach', sil: 'neutral', diff: 2, main: '양손을 얼굴 옆에!', tip: '두 손을 볼 옆에', ok: '귀엽게 포즈!' },
-  chin_rest: { theme: 'lavender', sil: 'neutral', diff: 3, main: '한 손으로 턱을 괴어요!', tip: '손을 턱 아래에', ok: '생각하는 포즈!' },
-  surprise:  { theme: 'coral', sil: 'neutral', diff: 2, main: '양손을 볼에! 깜짝!', tip: '두 손을 볼에 대고', ok: '놀란 표정으로!' },
+  hands_face: { theme: 'peach', sil: 'surprise', diff: 2, main: '부끄부끄~ 🙈', tip: '두 손을 볼 옆에 살짝', ok: '수줍수줍 🙈' },
+  chin_rest: { theme: 'lavender', sil: 'think', diff: 2, main: '음~ 갸우뚱 궁금이 🤔', tip: '한 손으로 턱을 괴고 갸웃', ok: '골똘히 생각 중! 🤔' },
+  surprise:  { theme: 'coral', sil: 'surprise', diff: 2, main: '헉! 깜짝 놀랐어요! 😱', tip: '두 손을 볼에 대고 놀란 척', ok: '깜짝이야! 😱' },
   thumbsup_left: { theme: 'mint', sil: 'thumbsUp', diff: 3, main: '왼손 엄지척!', tip: '엄지를 위로', ok: '최고예요 👍' },
   thumbsup_right:{ theme: 'mint', sil: 'thumbsUp', diff: 3, main: '오른손 엄지척!', tip: '엄지를 위로', ok: '최고예요 👍' },
-  robot: { theme: 'blue', sil: 'neutral', diff: 2, main: '팔을 접어 로봇처럼!', tip: '팔꿈치를 90도로', ok: '삐빅- 로봇!' },
+  robot: { theme: 'blue', sil: 'robot', diff: 2, main: '삐빅- 나는 로봇! 🤖', tip: '팔꿈치를 90도로 앞으로', ok: '삐빅- 로봇 완성! 🤖' },
+  muscle: { theme: 'coral', sil: 'muscle', diff: 2, main: '두 팔 접어 알통 뽐내기! 💪', tip: '두 주먹을 머리 옆으로', ok: '힘 꽉! 최고예요 💪' },
+  disco:  { theme: 'lavender', sil: 'disco', diff: 2, main: '토요일 밤 디스코! 🕺', tip: '한 손 하늘, 한 손 아래로', ok: '존 트라볼타처럼! 🕺' },
+  trex:   { theme: 'mint', sil: 'trex', diff: 1, main: '티라노 공룡이 됐어요! 🦖', tip: '팔은 작게 앞으로 오므려요', ok: '어흥~ 공룡! 🦖' },
+  selfhug:{ theme: 'pink', sil: 'selfhug', diff: 1, main: '나를 꼬옥 안아줘요! 🤗', tip: '두 손을 반대쪽 어깨에', ok: '포근포근 🤗' },
+  dab:    { theme: 'sky', sil: 'dab', diff: 2, main: '댑! 한쪽으로 쭉! 🙆', tip: '두 팔 같은 쪽, 얼굴은 팔에 쏙', ok: '요즘 최고 유행! 🙆' },
   lean_left:  { theme: 'lavender', sil: 'lean', diff: 2, main: '몸을 왼쪽으로 기울여요!', tip: '상체를 왼쪽으로', ok: '살짝만 기울여요' },
   lean_right: { theme: 'lavender', sil: 'lean', diff: 2, main: '몸을 오른쪽으로 기울여요!', tip: '상체를 오른쪽으로', ok: '살짝만 기울여요' },
   sway: { theme: 'peach', sil: 'wave', diff: 2, main: '몸을 좌우로 흔들어요!', tip: '상체를 왔다갔다', ok: '리듬을 타요 🎵' },
