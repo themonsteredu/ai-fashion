@@ -154,6 +154,7 @@ export const POSE_DEFS = [
   {
     id: 'attention', name: '차렷', shortInstruction: '두 팔을 아래로 차렷!',
     category: 'ARMS', difficulty: 'EASY', reliability: 'STABLE',
+    weight: 0.3, // 기본 서있는 자세라 노력 없이 통과 → 드물게만 출제
     cooldownGroup: 'rest', hintText: '팔을 몸 옆에 붙여요',
     requiredLandmarks: ['L_WR', 'R_WR', 'L_HIP', 'R_HIP'],
     detect: (s) => judge(s, [

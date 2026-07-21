@@ -30,7 +30,7 @@ export function tick(nowMs) {
   const snap = deps.getSnapshot();
 
   if (testMode) { updateTestMode(snap); return; }
-  if (!game || game.phase !== 'playing') { if (game && game.phase === 'intro') updateIntro(snap); return; }
+  if (!game || game.phase !== 'playing') { if (game && game.phase === 'ready') updateReady(snap); return; }
 
   // 전신 필요 포즈인데 전신이 안 보이면 안내 후 타이머 보류
   const cur = game.poses[game.index];
@@ -67,12 +67,14 @@ export function start() {
   q('#mm-warn').style.display = set.warn ? 'block' : 'none';
 }
 
+const READY_MS = 3000; // 준비 카운트다운 3-2-1 (자리 잡을 시간)
+
 function showMissionCard() {
   const cur = game.poses[game.index];
-  game.phase = 'intro';
+  game.phase = 'ready';
   judge = null;
   q('#mm-num').textContent = `미션 ${game.index + 1} / ${game.poses.length}`;
-  q('#mm-score').textContent = `성공 ${game.success} / ${settings.passCount}`;
+  q('#mm-score').textContent = `⭐ ${game.success}개 성공`;
   q('#mm-title').textContent = cur.name;
   q('#mm-instruction').textContent = cur.shortInstruction;
   q('#mm-hint').textContent = cur.hintText || '';
@@ -81,13 +83,32 @@ function showMissionCard() {
   setBanner('');
   q('#mm-feedback').className = 'mm-feedback';
   q('#mm-feedback').textContent = '';
-  q('#mm-timer').textContent = '';
-  // 인트로 1.2초 뒤 자동 시작 (또는 사람 인식되면 바로)
-  game.introStart = performance.now();
+  q('#mm-countdown').classList.add('hidden');
+  // 사람이 화면에 보이기 시작하면 그때부터 카운트다운 시작
+  game.readyStart = null;
 }
-function updateIntro(snap) {
-  const el = performance.now() - (game.introStart || 0);
-  if (el > 1200 || (snap.present && el > 500)) beginPlaying();
+// 준비 단계: 사람이 보이면 3-2-1 카운트다운 후 시작 (자리 잡을 시간 확보)
+function updateReady(snap) {
+  const cd = q('#mm-countdown');
+  if (!snap.present) {
+    // 아직 안 보이면 카운트다운 보류 (기다려 줌)
+    game.readyStart = null;
+    cd.classList.add('hidden');
+    setBanner(snap.calibrated === false ? '잠깐 그대로 서 주세요…' : '카메라 앞에 서 주세요');
+    return;
+  }
+  setBanner('');
+  if (game.readyStart == null) game.readyStart = performance.now();
+  const remain = READY_MS - (performance.now() - game.readyStart);
+  if (remain > 0) {
+    const n = Math.ceil(remain / 1000);
+    cd.textContent = n <= 0 ? '시작!' : String(n);
+    cd.classList.remove('hidden');
+  } else {
+    cd.textContent = '시작!';
+    setTimeout(() => q('#mm-countdown').classList.add('hidden'), 350);
+    beginPlaying();
+  }
 }
 function beginPlaying() {
   game.phase = 'playing';
@@ -96,6 +117,8 @@ function beginPlaying() {
 }
 
 function onTimeout() {
+  game.phase = 'feedback'; // 판정 루프 재진입 방지
+  judge = null;
   const cur = game.poses[game.index];
   if (game.retriesLeft > 0) {
     game.retriesLeft--;
@@ -110,26 +133,31 @@ function onTimeout() {
 }
 
 function finishMission(outcome, elapsed) {
+  game.phase = 'feedback'; // ★ 성공 후 매 프레임 재판정되어 성공이 여러 번 찍히던 버그 방지
+  judge = null;
   const cur = game.poses[game.index];
   Engine.recordResult(cur.id, outcome, elapsed);
   game.results.push({ id: cur.id, outcome });
   game.success++;
   celebrate();
   showFeedback('성공! 잘했어요! ⭐', 'success');
-  q('#mm-score').textContent = `성공 ${game.success} / ${settings.passCount}`;
+  q('#mm-score').textContent = `⭐ ${game.success}개 성공`;
   setTimeout(() => nextMission(), 1200);
 }
 
-// 운영자: 현재 미션 강제 성공
+// 운영자: 현재 미션 강제 성공 (준비/진행 중 모두 허용, 중복 방지)
 export function forceSuccess() {
-  if (!active || !game || game.phase !== 'playing') return;
+  if (!active || !game || (game.phase !== 'playing' && game.phase !== 'ready')) return;
+  game.phase = 'feedback';
+  judge = null;
   const cur = game.poses[game.index];
   Engine.recordResult(cur.id, 'manual', 0);
   game.results.push({ id: cur.id, outcome: 'manual' });
   game.success++;
   celebrate();
   showFeedback('성공! ⭐', 'success');
-  q('#mm-score').textContent = `성공 ${game.success} / ${settings.passCount}`;
+  q('#mm-score').textContent = `⭐ ${game.success}개 성공`;
+  q('#mm-countdown').classList.add('hidden');
   setTimeout(() => nextMission(), 900);
 }
 export function restartMission() {
@@ -139,6 +167,8 @@ export function restartMission() {
 }
 export function skipMission() {
   if (!active || !game) return;
+  game.phase = 'feedback';
+  judge = null;
   const cur = game.poses[game.index];
   game.results.push({ id: cur.id, outcome: 'skip' });
   nextMission();
@@ -162,7 +192,7 @@ function showResult() {
   rc.className = 'mm-result ' + (passed ? 'pass' : 'done');
   q('#mm-result-title').textContent = passed ? '미션 성공! 🎉' : '도전 완료! 👏';
   q('#mm-result-sub').textContent = passed ? '선물을 받아가세요!' : '멋지게 참여했어요!';
-  q('#mm-result-score').textContent = `${game.success} / ${game.poses.length} 성공`;
+  q('#mm-result-score').textContent = `총 ${game.poses.length}개 미션 중 ${game.success}개 성공`;
   if (passed) celebrate();
 }
 
@@ -371,8 +401,9 @@ function buildDOM() {
   root.innerHTML = `
     <div id="mm-confetti"></div>
     <div id="mm-banner" class="mm-banner"></div>
+    <div id="mm-countdown" class="mm-countdown hidden"></div>
     <div id="mm-card" class="mm-card">
-      <div class="mm-top"><span id="mm-num">미션 1 / 3</span><span id="mm-score">성공 0 / 2</span></div>
+      <div class="mm-top"><span id="mm-num">미션 1 / 3</span><span id="mm-score">⭐ 0개 성공</span></div>
       <div id="mm-silhouette" class="mm-silhouette">🕺</div>
       <div id="mm-title" class="mm-title"></div>
       <div id="mm-instruction" class="mm-instruction"></div>
