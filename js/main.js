@@ -154,6 +154,11 @@ const camMatch = { s: 1, top: null };
 
 function updateCamMatch(dt) {
   const wrap = $('#cam-wrap');
+  // 모바일 세로: 웹캠은 CSS로 하단 고정 카드. JS 배율 맞춤 끔 (인라인 스타일 제거)
+  if (Avatar.isPortrait()) {
+    if (wrap.style.width) { wrap.style.width = wrap.style.height = wrap.style.top = wrap.style.transform = ''; }
+    return;
+  }
   const hint = motionReady ? Motion.getHeadHint() : null;
   const vh = window.innerHeight, vw = window.innerWidth;
   const H0 = vh * 0.74, W0 = vw * 0.40; // 기본 카드 크기

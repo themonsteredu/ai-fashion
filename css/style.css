@@ -398,3 +398,96 @@ button { font-family: inherit; cursor: pointer; border: none; }
 body.mission-on .motion-bar,
 body.mission-on .cambg-tabs,
 body.mission-on #guide-msg { display: none !important; }
+
+/* ═══════════════ 모바일 세로 화면 대응 ═══════════════ */
+@media (max-width: 700px) {
+  /* 시작 화면 */
+  #screen-start h1 { font-size: clamp(30px, 8vw, 46px); }
+  #screen-start .sub { font-size: clamp(15px, 4vw, 19px); }
+  .btn-xl { padding: 20px 56px; font-size: 24px; }
+  .btn-lg { padding: 16px 28px; font-size: 19px; }
+  .upload-hint { font-size: 13px; padding: 0 16px; }
+
+  /* ── 꾸미기: 오른쪽 컬럼 → 하단 시트 ── */
+  .panel {
+    top: auto; right: 0; left: 0; bottom: 0;
+    width: 100%; max-height: 60vh;
+    border-radius: 24px 24px 0 0;
+    padding: 18px 18px calc(18px + env(safe-area-inset-bottom));
+    gap: 10px;
+    box-shadow: 0 -12px 40px rgba(23,21,15,0.16);
+  }
+  .panel h2 { font-size: 22px; margin-bottom: 2px; }
+  .field-label { font-size: 13px; margin-top: 4px; }
+  .seg-btn { padding: 12px 6px; font-size: 16px; }
+  .palette { grid-template-columns: repeat(6, 1fr); gap: 10px; }
+  .bg-row { gap: 8px; }
+  .bg-swatch { width: 44px; height: 44px; }
+  .panel .btn { padding: 14px 20px; font-size: 17px; }
+  .panel-spacer { display: none; }
+  .drag-hint { left: 50%; transform: translateX(-50%); bottom: auto; top: 2vh; font-size: 13px; padding: 8px 16px; }
+
+  /* ── 모션: 아바타 위 / 웹캠 아래로 세로 배치 ── */
+  .cam-preview {
+    right: 3vw; left: 3vw; top: 50vh; bottom: 11vh;
+    width: auto; height: auto; transform: none;
+    border-radius: 20px;
+  }
+  .cambg-tabs {
+    right: 2vw; left: 2vw; top: 1.2vh; justify-content: center;
+    padding: 5px 6px; gap: 4px; overflow-x: auto;
+  }
+  .cambg-label { display: none; }
+  .chip { padding: 8px 12px; font-size: 14px; white-space: nowrap; }
+  .guide-msg {
+    left: 50%; top: auto; bottom: calc(12vh + 8px);
+    font-size: 16px; padding: 12px 22px; white-space: normal;
+    max-width: 90vw; text-align: center;
+  }
+  .motion-bar { bottom: 1.5vh; gap: 8px; width: 96vw; justify-content: center; }
+  .motion-bar .btn { padding: 12px 14px; font-size: 15px; white-space: nowrap; flex: 1; text-align: center; }
+  .countdown { font-size: 40vw; }
+
+  /* 사진/영상 모달 세로형 */
+  #photo-img, #video-preview { max-width: 88vw; max-height: 60vh; }
+  .modal-card { padding: 18px; }
+  #video-choice .btn { width: 78vw; }
+
+  /* 샘플 배지 */
+  .sample-badge { font-size: 12px; padding: 8px 14px; max-width: 92vw; text-align: center; line-height: 1.4; }
+
+  /* ── 미션: 카드 → 하단 시트 ── */
+  .mm-card {
+    left: 0; right: 0; bottom: 0; top: auto; transform: none;
+    width: 100%; border-radius: 24px 24px 0 0;
+    padding: 18px 18px calc(16px + env(safe-area-inset-bottom));
+  }
+  .mm-silhouette { font-size: 48px; margin: 2px 0; }
+  .mm-title { font-size: 24px; }
+  .mm-instruction { font-size: 18px; }
+  .mm-hint { font-size: 14px; }
+  .mm-banner { left: 50%; top: 2vh; font-size: 16px; padding: 12px 20px; white-space: normal; max-width: 90vw; text-align: center; }
+  .mm-result-title { font-size: clamp(32px, 9vw, 48px); }
+  .mm-result-sub { font-size: 19px; }
+  .mm-result-btns { flex-direction: column; width: 80vw; }
+  .mm-admin-card { padding: 16px; }
+  .mm-fields { grid-template-columns: repeat(2, 1fr); }
+  .mm-test { right: 2vw; left: 2vw; width: auto; top: 1vh; }
+
+  /* 미션 진행 중(학생): 웹캠은 작은 PiP, 카드 높이 제한 */
+  body.mission-on .cam-preview {
+    top: 1.2vh; bottom: auto; left: auto; right: 2vw;
+    width: 26vw; height: 35vw; border-radius: 16px; z-index: 61;
+  }
+  .mm-card { max-height: 42vh; overflow-y: auto; padding-top: 14px; }
+  .mm-card .mm-silhouette { font-size: 40px; margin: 0; }
+  .mm-card .mm-title { font-size: 22px; }
+  .mm-card .mm-gauge { margin-top: 12px; height: 16px; }
+}
+
+/* 가로 모바일(낮은 높이): 시작 문구 축소 */
+@media (max-height: 480px) and (orientation: landscape) {
+  #screen-start h1 { font-size: clamp(24px, 6vw, 40px); }
+  #btn-start { margin-top: 3vh; }
+  .upload-row { margin-top: 2vh; }
+}

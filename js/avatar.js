@@ -22,10 +22,25 @@ const CAMERA_FRAMING = {
   // 모션 화면: 카메라를 뒤로 빼서 아바타 위아래 여백 확보 + 왼쪽 절반에 배치(오른쪽은 웹캠)
   motion: { pos: new THREE.Vector3(0, 0.95, 3.4), look: new THREE.Vector3(0, 0.87, 0), shift: 0.23 },
 };
+// 모바일 세로 화면: 좌우로 밀지 않고 세로로 위쪽에 배치 (하단은 패널/웹캠)
+const CAMERA_FRAMING_MOBILE = {
+  // 꾸미기: 상반신(얼굴+의상)이 상단 시트 위에 보이도록
+  custom: { pos: new THREE.Vector3(0, 1.15, 1.95), look: new THREE.Vector3(0, 1.12, 0), shift: 0, shiftY: -0.08 },
+  // 모션: 상반신(팔 든 자세까지) 크게, 위쪽에 배치 — 하단 웹캠/미션카드와 겹치지 않게
+  motion: { pos: new THREE.Vector3(0, 1.1, 3.1), look: new THREE.Vector3(0, 1.05, 0), shift: 0, shiftY: -0.12 },
+};
 export const MOTION_SHIFT = CAMERA_FRAMING.motion.shift;
 
+export function isPortrait() {
+  return window.innerWidth <= 700 && window.innerHeight >= window.innerWidth;
+}
+function framingFor(mode) {
+  return isPortrait() ? CAMERA_FRAMING_MOBILE[mode] : CAMERA_FRAMING[mode];
+}
+
 let container = null;
-let viewShift = 0; // 화면 가로 비율만큼 아바타를 왼쪽으로 밀기(꾸미기 화면)
+let viewShift = 0;  // 좌우 밀기(꾸미기·모션 데스크톱)
+let viewShiftY = 0; // 상하 밀기(모바일)
 
 export async function initStage(containerEl) {
   container = containerEl;
@@ -91,15 +106,17 @@ function onResize() {
   const { renderer, camera } = state;
   renderer.setSize(window.innerWidth, window.innerHeight);
   camera.aspect = window.innerWidth / window.innerHeight;
-  applyViewShift();
+  // 화면 회전/크기 변경 시 현재 모드로 재배치 (모바일↔데스크톱 프레이밍 전환)
+  if (state.vrm) setFraming(framingMode);
+  else applyViewShift();
   camera.updateProjectionMatrix();
 }
 
 function applyViewShift() {
   const { camera } = state;
   const w = window.innerWidth, h = window.innerHeight;
-  if (viewShift !== 0) {
-    camera.setViewOffset(w, h, w * viewShift, 0, w, h);
+  if (viewShift !== 0 || viewShiftY !== 0) {
+    camera.setViewOffset(w, h, w * viewShift, h * viewShiftY, w, h);
   } else {
     camera.clearViewOffset();
   }
@@ -111,13 +128,14 @@ const motionCam = { z: 0, lookY: 0, lookX: 0 };
 
 export function setFraming(mode) {
   framingMode = mode;
-  const f = CAMERA_FRAMING[mode];
+  const f = framingFor(mode);
   motionCam.z = f.pos.z;
   motionCam.lookY = f.look.y;
   motionCam.lookX = 0;
   state.camera.position.copy(f.pos);
   state.camera.lookAt(f.look);
   viewShift = f.shift;
+  viewShiftY = f.shiftY || 0;
   applyViewShift();
   state.camera.updateProjectionMatrix();
 }
