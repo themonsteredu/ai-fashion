@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
 <title>패션 아바타 체험</title>
 <link rel="icon" href="data:,">
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
 <link rel="stylesheet" href="css/style.css">
 <script type="importmap">
 {
@@ -23,20 +24,26 @@
 
 <!-- ───────── 화면 1 : 시작 ───────── -->
 <section id="screen-start" class="screen active">
+  <div class="start-grid" aria-hidden="true"></div>
+  <div class="start-edition" aria-hidden="true">
+    <span>INTERACTIVE FASHION LAB</span>
+    <span>SEOUL / 2026</span>
+  </div>
   <div class="start-inner">
-    <div class="brand">FASHION&nbsp;AVATAR&nbsp;STUDIO</div>
-    <h1>나만의 아바타와<br>런웨이에 서 보세요</h1>
-    <p class="sub">카메라 앞에서 움직이면<br>아바타가 실시간으로 따라 해요</p>
+    <div class="brand"><span>FASHION</span> AVATAR STUDIO</div>
+    <h1>나만의 아바타로<br><span>런웨이를 시작해요</span></h1>
+    <p class="sub">카메라 앞에서 움직이면 아바타가 실시간으로 따라 해요.</p>
     <div class="start-buttons">
-      <button id="btn-mission" class="btn btn-primary btn-xl">🎯 포즈 미션 도전!</button>
-      <button id="btn-done" class="btn btn-ghost btn-xl">🕺 자유 체험</button>
+      <button id="btn-mission" class="btn btn-primary btn-xl"><span class="start-btn-no">01</span><span>포즈 미션 시작</span></button>
+      <button id="btn-done" class="btn btn-ghost btn-xl"><span class="start-btn-no">02</span><span>자유 체험</span></button>
     </div>
     <div class="upload-row">
-      <button id="btn-upload" class="btn btn-ghost">📂 내 아바타 불러오기 (.vrm)</button>
+      <button id="btn-upload" class="btn start-upload"><span>내 아바타 불러오기</span><small>VRM FILE</small></button>
       <input type="file" id="vrm-file" accept=".vrm" hidden>
       <p class="upload-hint">VRoid Studio에서 만든 VRM 파일을 선택하면 내 아바타로 체험할 수 있어요</p>
     </div>
   </div>
+  <div class="start-side-copy" aria-hidden="true">MOVE / STYLE / CREATE</div>
   <div class="toast" id="toast"></div>
 </section>
 

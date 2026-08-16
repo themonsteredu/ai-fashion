@@ -18,8 +18,8 @@ export const state = {
 };
 
 const CAMERA_FRAMING = {
-  // 시작 화면: 아바타 전신을 화면 중앙에 예쁘게
-  start:  { pos: new THREE.Vector3(0, 0.92, 4.0), look: new THREE.Vector3(0, 0.92, 0), shift: 0 },
+  // 시작 화면: 에디토리얼 타이포 옆 오른쪽 쇼케이스에 아바타 전신 배치
+  start:  { pos: new THREE.Vector3(0, 0.92, 3.85), look: new THREE.Vector3(0, 0.92, 0), shift: -0.26 },
   // 자유 체험(2단): 아바타 왼쪽 절반, 오른쪽 웹캠. 머리 안 잘리게 여유
   motion: { pos: new THREE.Vector3(0, 0.95, 3.7), look: new THREE.Vector3(0, 0.9, 0), shift: 0.22, shiftY: -0.03 },
   // 미션(3단): 아바타 왼쪽 1/3, 가운데 미션카드, 오른쪽 웹캠. 팔 든 자세까지 다 보이게
