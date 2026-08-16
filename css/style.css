@@ -188,6 +188,23 @@ button { font-family: inherit; cursor: pointer; border: none; }
   position: absolute; inset: 0; width: 100%; height: 100%;
   transform: scaleX(-1);            /* 거울 모드 */
 }
+#cam-pose {
+  position: absolute; inset: 0; z-index: 4; width: 100%; height: 100%;
+  pointer-events: none;
+}
+body.mission-on .cam-preview::before {
+  content: 'LIVE POSE'; position: absolute; z-index: 5; left: 18px; top: 16px;
+  color: #fff; font-size: 10px; font-weight: 800; letter-spacing: 0.2em;
+  text-shadow: 0 1px 8px rgba(0,0,0,0.8); pointer-events: none;
+}
+body.mission-on .cam-preview::after {
+  content: ''; position: absolute; inset: 12px; z-index: 3; pointer-events: none;
+  border: 1px solid rgba(49,92,255,0.34);
+  background-image:
+    linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px);
+  background-size: 36px 36px;
+}
 
 /* 웹캠 배경 선택 */
 .cambg-tabs {
@@ -295,70 +312,111 @@ button { font-family: inherit; cursor: pointer; border: none; }
 #mission-root.hidden { display: none; }
 #mission-root > * { pointer-events: auto; }
 
-/* 학생 진행 카드 — 파스텔 테마, 포즈별 색상 (--mm-* 인라인 변수) */
+/* 학생 미션 HUD — 실제 VRM 아바타가 목표 포즈를 보여주고, 정보만 화면 위에 얹힌다. */
 .mm-card {
-  --mm-bg1: #ffe7f0; --mm-bg2: #ffcfe0; --mm-accent: #e05b93; --mm-ink: #8a2a54;
-  position: absolute; left: 2.5vw; top: 50%; transform: translateY(-50%);
-  width: min(440px, 42vw);
-  background: linear-gradient(160deg, var(--mm-bg1), var(--mm-bg2));
-  border: 3px solid rgba(255,255,255,0.9); border-radius: 32px;
-  padding: 20px 22px 22px; text-align: center;
-  box-shadow: 0 24px 60px rgba(23,21,15,0.16), inset 0 2px 12px rgba(255,255,255,0.6);
+  --mm-accent: #315cff; --mm-ink: #111318;
+  position: absolute; inset: 0; width: auto; height: auto;
+  color: var(--mm-ink); pointer-events: none; overflow: hidden;
 }
-.mm-card.pop { animation: mm-card-pop 0.5s cubic-bezier(.34,1.56,.64,1); }
-@keyframes mm-card-pop { 0% { transform: translateY(-50%) scale(0.92); } 60% { transform: translateY(-50%) scale(1.03); } 100% { transform: translateY(-50%) scale(1); } }
+.mm-card.pop .mm-mid { animation: mm-hud-in 0.42s cubic-bezier(.2,.75,.25,1); }
+@keyframes mm-hud-in { from { opacity: 0; transform: translateY(22px); } to { opacity: 1; transform: translateY(0); } }
 
-.mm-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.mm-top {
+  position: absolute; z-index: 4; left: 3.2vw; right: 3.2vw; top: 3.6vh;
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 18px;
+}
+.mm-mission-meta { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; text-align: left; }
+.mm-eyebrow {
+  color: var(--mm-accent); font-size: 11px; font-weight: 800; letter-spacing: 0.24em;
+}
 .mm-badge-num {
-  background: #fff; color: var(--mm-ink); font-weight: 800; font-size: 15px;
-  padding: 6px 14px; border-radius: 999px; box-shadow: 0 3px 8px rgba(23,21,15,0.1);
+  color: #111318; font-weight: 800; font-size: clamp(22px, 2vw, 32px); letter-spacing: -0.035em;
 }
-.mm-stars { font-size: 18px; letter-spacing: 1px; }
-.mm-stars .off { opacity: 0.28; }
+.mm-status-chips { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 7px; }
+.mm-phase-chip,
 .mm-timer-chip {
-  background: #fff; color: var(--mm-ink); font-weight: 800; font-size: 15px;
-  padding: 6px 12px; border-radius: 999px; box-shadow: 0 3px 8px rgba(23,21,15,0.1); min-width: 52px;
+  border-radius: 999px; padding: 10px 15px; font-size: 13px; font-weight: 800; white-space: nowrap;
 }
-.mm-mid { margin-top: 6px; }
-.mm-silhouette {
-  width: 92px; height: 92px; margin: 4px auto 2px; color: var(--mm-accent);
-  filter: drop-shadow(0 4px 8px rgba(23,21,15,0.12));
-}
-.mm-silhouette svg { width: 100%; height: 100%; }
-.mm-headrow { display: flex; flex-direction: column; align-items: center; gap: 2px; }
-.mm-title { font-size: 28px; font-weight: 800; color: var(--mm-ink); }
-.mm-diff { font-size: 13px; font-weight: 700; color: var(--mm-accent); }
-.mm-diff .off { opacity: 0.25; }
-.mm-instruction { font-size: 21px; font-weight: 700; margin-top: 6px; line-height: 1.35; color: #3a3128; }
-.mm-tipbubble {
-  display: inline-block; margin-top: 12px; background: rgba(255,255,255,0.75);
-  border-radius: 16px; padding: 10px 16px; font-size: 15px; color: #5a5148; line-height: 1.4;
-  box-shadow: 0 3px 10px rgba(23,21,15,0.06);
-}
-.mm-tipbubble b { color: var(--mm-accent); margin-right: 4px; }
+.mm-phase-chip { background: rgba(49,92,255,0.11); color: #2447ce; backdrop-filter: blur(10px); }
+.mm-timer-chip { background: #111318; color: #fff; min-width: 58px; text-align: center; }
+.mm-card[data-phase="playing"] .mm-phase-chip { background: var(--mm-accent); color: #fff; }
+.mm-card[data-phase="success"] .mm-phase-chip { background: #111318; color: #fff; }
+.mm-card[data-phase="retry"] .mm-phase-chip { background: #fff; color: #111318; box-shadow: 0 0 0 1px rgba(17,19,24,0.16); }
 
-.mm-gauge-wrap { margin-top: 16px; }
+.mm-score-row {
+  position: absolute; z-index: 4; left: 3.2vw; top: 13.5vh;
+  display: flex; align-items: center; gap: 8px; color: #5f626c; text-align: left;
+}
+.mm-score-label { font-size: 12px; font-weight: 800; letter-spacing: 0.04em; }
+.mm-stars { color: var(--mm-accent); font-size: 15px; letter-spacing: 1px; }
+.mm-stars .off { opacity: 0.28; }
+.mm-diff { margin-left: 14px; font-size: 11px; font-weight: 700; color: #62656d; }
+.mm-diff .off { opacity: 0.25; }
+
+.mm-mid {
+  position: absolute; z-index: 3; left: 3.2vw; right: 35vw; bottom: 4.5vh;
+  min-height: 222px; padding: 24px 28px 92px; text-align: left;
+  display: flex; flex-direction: column; align-items: flex-start; justify-content: center;
+  color: #fff; background: rgba(10,12,16,0.84); backdrop-filter: blur(14px);
+  border-top: 2px solid var(--mm-accent); box-shadow: 0 24px 70px rgba(0,0,0,0.24);
+}
+.mm-headrow { display: flex; align-items: center; gap: 10px; }
+.mm-title {
+  color: #9fb0ff; font-size: 14px; line-height: 1.2; font-weight: 800;
+  letter-spacing: 0.1em;
+}
+.mm-instruction {
+  max-width: 100%; margin-top: 8px; color: #fff;
+  font-size: clamp(32px, 4.1vw, 62px); line-height: 1.08; font-weight: 800; letter-spacing: -0.045em;
+}
+.mm-command-sub {
+  width: 100%; margin-top: 12px; display: flex; align-items: center; justify-content: space-between; gap: 18px;
+}
+.mm-hold-label {
+  color: var(--mm-accent); font: italic 700 clamp(20px, 2.2vw, 34px)/1 Georgia, serif;
+  letter-spacing: -0.03em; white-space: nowrap;
+}
+.mm-tipbubble {
+  min-width: 0; color: rgba(255,255,255,0.7); font-size: 13px; line-height: 1.35;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.mm-tipbubble b { color: #fff; margin-right: 6px; font-size: 10px; letter-spacing: 0.12em; }
+
+.mm-gauge-wrap {
+  position: absolute; z-index: 4; left: 5.2vw; right: 37vw; bottom: 7.2vh;
+}
+.mm-progress-head {
+  display: flex; align-items: center; justify-content: space-between; margin-bottom: 7px;
+  color: rgba(255,255,255,0.7); font-size: 10px; font-weight: 800; letter-spacing: 0.16em;
+}
+.mm-progress-head strong { color: #fff; font-size: 14px; letter-spacing: 0; }
 .mm-gauge {
-  position: relative; height: 22px; border-radius: 999px;
-  background: rgba(255,255,255,0.6); overflow: visible;
-  box-shadow: inset 0 2px 5px rgba(23,21,15,0.08);
+  position: relative; height: 5px; border-radius: 999px;
+  background: rgba(255,255,255,0.25); overflow: visible;
 }
 .mm-gauge-fill {
-  height: 100%; width: 0; border-radius: 999px; background: #c9c4bd;
+  height: 100%; width: 0; border-radius: 999px; background: rgba(255,255,255,0.4);
   transition: width 0.15s ease, background 0.3s;
 }
-.mm-gauge-fill.holding { background: linear-gradient(90deg, var(--mm-accent), #ffb0cf); }
-.mm-gauge-fill.hot { background: linear-gradient(90deg, #ffd24d, var(--mm-accent)); box-shadow: 0 0 14px var(--mm-accent); }
-.mm-gauge-star { position: absolute; top: -4px; left: -12px; font-size: 24px; transition: left 0.15s ease, opacity 0.3s; opacity: 0; }
-.mm-fbtext { margin-top: 8px; font-size: 17px; font-weight: 700; color: var(--mm-accent); min-height: 22px; }
-.mm-fbtext.warm { color: #e0913f; }
-.mm-fbtext.hot { color: #3fb56a; }
+.mm-gauge-fill.holding,
+.mm-gauge-fill.hot { background: var(--mm-accent); box-shadow: 0 0 12px rgba(49,92,255,0.8); }
+.mm-gauge-star { display: none; }
+.mm-fbtext { margin-top: 7px; min-height: 18px; color: #9fb0ff; font-size: 13px; font-weight: 700; }
+.mm-fbtext.warm, .mm-fbtext.hot { color: #fff; }
 
-.mm-feedback { min-height: 0; font-size: 22px; font-weight: 800; opacity: 0; transition: opacity 0.2s; position: absolute; left: 0; right: 0; bottom: 22px; }
+.mm-feedback {
+  position: absolute; z-index: 5; left: 5.2vw; right: 37vw; bottom: 2.4vh;
+  min-height: 28px; display: flex; align-items: center;
+  color: #fff; font-size: 15px; font-weight: 800; letter-spacing: 0.03em;
+  opacity: 0; transition: opacity 0.2s;
+}
 .mm-feedback.show { opacity: 1; }
-.mm-feedback.success { color: #3fb56a; }
-.mm-feedback.retry { color: var(--mm-accent); }
-.mm-warn { margin-top: 8px; font-size: 13px; color: #c0362c; display: none; }
+.mm-feedback.success { color: #fff; }
+.mm-feedback.retry { color: #d8deff; }
+.mm-warn {
+  position: absolute; z-index: 6; left: 3.2vw; bottom: 1vh;
+  font-size: 12px; color: #fff; display: none;
+}
 
 /* 성공 파티클 */
 .mm-particle { position: absolute; z-index: 63; pointer-events: none; animation: mm-particle-fly 1.2s ease-out forwards; }
@@ -369,9 +427,10 @@ button { font-family: inherit; cursor: pointer; border: none; }
 }
 
 .mm-banner {
-  position: absolute; top: 5vh; left: 27%; transform: translateX(-50%);
-  background: rgba(23,21,15,0.82); color: #fff; font-size: 24px; font-weight: 700;
-  padding: 18px 40px; border-radius: 999px; display: none; white-space: nowrap;
+  position: absolute; top: 2.5vh; left: 50%; transform: translateX(-50%); z-index: 64;
+  background: rgba(23,21,15,0.88); color: #fff; font-size: 18px; font-weight: 700;
+  padding: 13px 24px; border-radius: 999px; display: none; white-space: nowrap;
+  box-shadow: 0 10px 30px rgba(23,21,15,0.2); backdrop-filter: blur(10px);
 }
 
 /* 축하 반짝이 */
@@ -514,20 +573,34 @@ body.mission-on #guide-msg { display: none !important; }
   /* 샘플 배지 */
   .sample-badge { font-size: 12px; padding: 8px 14px; max-width: 92vw; text-align: center; line-height: 1.4; }
 
-  /* ── 미션: 카드 → 하단 시트 ── */
-  .mm-card {
-    left: 0; right: 0; bottom: 0; top: auto; transform: none;
-    width: 100%; border-radius: 28px 28px 0 0;
-    padding: 14px 16px calc(14px + env(safe-area-inset-bottom));
-    max-height: 46vh; overflow-y: auto;
+  /* 미션 HUD: 아바타를 가리지 않고 하단에 반투명 정보만 배치 */
+  .mm-top {
+    left: 4vw; right: auto; top: 2.3vh; flex-direction: column; gap: 8px;
   }
-  .mm-card.pop { animation: none; }
-  .mm-silhouette { width: 64px; height: 64px; margin: 2px auto; }
-  .mm-title { font-size: 23px; }
-  .mm-instruction { font-size: 18px; margin-top: 4px; }
-  .mm-tipbubble { margin-top: 8px; font-size: 13px; padding: 8px 14px; }
-  .mm-gauge-wrap { margin-top: 12px; }
-  .mm-fbtext { font-size: 15px; }
+  .mm-eyebrow { font-size: 8px; }
+  .mm-badge-num { font-size: 20px; }
+  .mm-status-chips { justify-content: flex-start; gap: 5px; }
+  .mm-phase-chip, .mm-timer-chip { padding: 6px 9px; font-size: 10px; }
+  .mm-score-row { left: 4vw; top: 15vh; }
+  .mm-score-label, .mm-diff { font-size: 9px; }
+  .mm-stars { font-size: 12px; }
+  .mm-mid {
+    left: 0; right: 0; bottom: 0; min-height: 235px;
+    padding: 18px 18px calc(86px + env(safe-area-inset-bottom));
+    justify-content: flex-start; border-top-width: 2px;
+  }
+  .mm-title { font-size: 12px; }
+  .mm-instruction { margin-top: 7px; font-size: clamp(28px, 8vw, 38px); }
+  .mm-command-sub { margin-top: 10px; align-items: flex-end; }
+  .mm-hold-label { font-size: 19px; }
+  .mm-tipbubble { max-width: 48vw; font-size: 10px; }
+  .mm-gauge-wrap { left: 18px; right: 18px; bottom: calc(43px + env(safe-area-inset-bottom)); }
+  .mm-progress-head { margin-bottom: 5px; font-size: 8px; }
+  .mm-progress-head strong { font-size: 11px; }
+  .mm-fbtext { margin-top: 5px; min-height: 16px; font-size: 11px; }
+  .mm-feedback {
+    left: 18px; right: 18px; bottom: calc(8px + env(safe-area-inset-bottom)); min-height: 24px; font-size: 12px;
+  }
   .mm-banner { left: 50%; top: 2vh; font-size: 16px; padding: 12px 20px; white-space: normal; max-width: 90vw; text-align: center; }
   .mm-result-title { font-size: clamp(32px, 9vw, 48px); }
   .mm-result-sub { font-size: 19px; }
@@ -539,8 +612,11 @@ body.mission-on #guide-msg { display: none !important; }
   /* 미션 진행 중(학생): 웹캠은 작은 PiP */
   body.mission-on .cam-preview {
     top: 1.2vh; bottom: auto; left: auto; right: 2vw;
-    width: 26vw; height: 35vw; border-radius: 16px; z-index: 61;
+    width: 28vw; height: 40vw; border-radius: 16px; z-index: 61;
+    border: 1px solid rgba(49,92,255,0.72);
   }
+  body.mission-on .cam-preview::before { left: 9px; top: 8px; font-size: 7px; }
+  body.mission-on .cam-preview::after { inset: 7px; background-size: 22px 22px; }
 }
 
 /* 가로 모바일(낮은 높이): 시작 문구 축소 */
@@ -552,49 +628,54 @@ body.mission-on #guide-msg { display: none !important; }
 
 /* 미션 준비 카운트다운 */
 .mm-countdown {
-  position: absolute; left: 50%; top: 26%; transform: translate(-50%, -50%);
-  width: clamp(130px, 26vw, 220px); height: clamp(130px, 26vw, 220px);
+  position: absolute; left: 21%; top: 38%; transform: translate(-50%, -50%);
+  width: clamp(110px, 13vw, 160px); height: clamp(110px, 13vw, 160px);
   display: flex; align-items: center; justify-content: center;
-  font-size: clamp(80px, 16vw, 150px); font-weight: 800; color: #fff;
-  background: rgba(168,121,74,0.92); border-radius: 50%;
-  box-shadow: 0 14px 50px rgba(23,21,15,0.3), 0 0 0 10px rgba(255,255,255,0.55);
+  font-size: clamp(68px, 8vw, 108px); font-weight: 800; color: #fff;
+  background: rgba(12,14,19,0.88); border: 2px solid #315cff; border-radius: 26px;
+  box-shadow: 0 18px 60px rgba(0,0,0,0.28); backdrop-filter: blur(12px);
   z-index: 62; pointer-events: none; animation: mm-cd-pop 0.45s ease;
 }
 .mm-countdown.hidden { display: none; }
+.mm-countdown.go { width: 170px; height: 82px; border-radius: 999px; font-size: 38px; letter-spacing: -0.06em; }
 @keyframes mm-cd-pop { from { transform: translate(-50%,-50%) scale(1.4); opacity: 0.2; } to { transform: translate(-50%,-50%) scale(1); opacity: 1; } }
-@media (max-width: 700px) { .mm-countdown { top: 22%; } }
+@media (max-width: 700px) {
+  .mm-countdown { left: 36%; top: 33%; width: 100px; height: 100px; font-size: 66px; border-radius: 22px; }
+  .mm-countdown.go { width: 140px; height: 68px; font-size: 30px; border-radius: 999px; }
+}
 
 /* 시작 화면 버튼 세로 배치 */
 .start-buttons { display: flex; flex-direction: column; gap: 14px; align-items: center; margin-top: 5vh; }
 .start-buttons .btn { min-width: 340px; }
 
-/* ═══════ 미션 3단 레이아웃 (데스크톱): 아바타 | 미션카드 | 웹캠 ═══════ */
+/* ═══════ 미션 데스크톱: 시범 아바타 | 여백 + HUD | 실시간 웹캠 ═══════ */
 @media (min-width: 701px) {
-  body.mission-on .mm-card {
-    left: 50%; right: auto; top: 50%; bottom: auto;
-    transform: translate(-50%, -50%);
-    width: min(480px, 35vw); height: 86vh; max-height: 86vh;
-    box-sizing: border-box;
-    display: flex; flex-direction: column; justify-content: space-between;
-  }
-  body.mission-on .mm-card.pop { animation: none; }
-  /* 글은 최소로 — 모양(실루엣)을 크게 강조 */
-  body.mission-on .mm-mid {
-    flex: 1; display: flex; flex-direction: column;
-    align-items: center; justify-content: center; gap: 6px; margin: 0;
-  }
-  body.mission-on .mm-silhouette {
-    width: min(460px, 34vw); height: min(460px, 34vw); margin: 0;
-  }
-  body.mission-on .mm-title { font-size: 40px; }
-  body.mission-on .mm-instruction,
-  body.mission-on .mm-diff,
-  body.mission-on .mm-tipbubble { display: none; }
   body.mission-on .cam-preview {
-    left: auto; right: 2vw; top: 50%; transform: translateY(-50%);
-    width: 31vw; height: 86vh; border-radius: 26px;
+    left: auto; right: 2.2vw; top: 50%; transform: translateY(-50%);
+    width: 31vw; height: 88vh; border-radius: 28px;
+    border: 1px solid rgba(49,92,255,0.68);
+    box-shadow: 0 26px 80px rgba(10,12,16,0.28);
   }
-  body.mission-on #mm-banner { left: 17%; }
-  body.mission-on #mm-countdown { left: 17%; top: 34%; }
-  body.mission-on #mm-confetti { left: 17%; }
+  body.mission-on #mm-banner {
+    left: 82.5%; top: 4vh; width: min(420px, 29vw); max-width: 29vw;
+    padding: 12px 18px; font-size: 16px; text-align: center; white-space: normal;
+  }
+}
+
+/* 낮은 가로형 화면에서도 핵심 설명과 진행률은 남긴다. */
+@media (min-width: 701px) and (max-height: 620px) {
+  body.mission-on .mm-mid { min-height: 164px; padding: 14px 20px 70px; }
+  body.mission-on .mm-instruction { margin-top: 4px; font-size: clamp(26px, 3.6vw, 42px); }
+  body.mission-on .mm-command-sub { margin-top: 7px; }
+  body.mission-on .mm-hold-label { font-size: 19px; }
+  body.mission-on .mm-gauge-wrap { bottom: 8.5vh; }
+  body.mission-on .mm-fbtext { min-height: 14px; margin-top: 3px; font-size: 11px; }
+  body.mission-on .mm-feedback { bottom: 1.4vh; min-height: 20px; font-size: 12px; }
+}
+
+@media (max-width: 700px) and (max-height: 600px) {
+  .mm-eyebrow, .mm-tipbubble { display: none; }
+  .mm-score-row { display: none; }
+  .mm-mid { min-height: 205px; padding-top: 14px; }
+  .mm-instruction { font-size: 27px; }
 }

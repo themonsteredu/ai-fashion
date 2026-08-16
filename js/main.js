@@ -85,6 +85,7 @@ function startRenderLoop() {
       updateCamMatch(dt); // 웹캠 표시 배율을 아바타 크기에 맞춤
       CamBG.process($('#cam'), nowMs);
       updateCamView();
+      updateMissionPoseOverlay();
       MissionUI.tick(nowMs);
       if (!MissionUI.isActive()) updateGuide();
       if (Debug.enabled) Debug.update({ ...Motion.getDebugInfo(), segFps: CamBG.getSegFps() }, $('#cam'));
@@ -195,6 +196,63 @@ function updateCamView() {
   if (view.width !== w) view.width = w;
   if (view.height !== h) view.height = h;
   CamBG.draw(view.getContext('2d'), w, h, camEl, getBackground(selectedBgId).paint);
+}
+
+// 미션 중 웹캠 위에 최소한의 포즈 추적 HUD를 표시한다.
+// MediaPipe 결과를 읽어 그리기만 하며 아바타 구동·미션 판정은 건드리지 않는다.
+const MISSION_POSE_CONNECTIONS = [
+  [11, 12], [11, 13], [13, 15], [12, 14], [14, 16],
+  [11, 23], [12, 24], [23, 24],
+  [23, 25], [25, 27], [24, 26], [26, 28],
+];
+const MISSION_POSE_POINTS = [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28];
+
+function updateMissionPoseOverlay() {
+  const canvas = $('#cam-pose');
+  const wrap = $('#cam-wrap');
+  const camEl = $('#cam');
+  if (!canvas || !wrap || !camEl) return;
+
+  const points = MissionUI.isActive() ? Motion.getPoseOverlay() : null;
+  const visible = !!points;
+  canvas.classList.toggle('hidden', !visible);
+  if (!visible) return;
+
+  const w = Math.max(2, Math.round(wrap.clientWidth));
+  const h = Math.max(2, Math.round(wrap.clientHeight));
+  if (canvas.width !== w) canvas.width = w;
+  if (canvas.height !== h) canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, w, h);
+
+  // object-fit: contain의 레터박스를 고려해 비디오 실제 표시 영역에 맞춘다.
+  const videoAspect = (camEl.videoWidth || 640) / (camEl.videoHeight || 480);
+  const boxAspect = w / h;
+  let drawW, drawH, offsetX, offsetY;
+  if (videoAspect > boxAspect) {
+    drawW = w; drawH = w / videoAspect; offsetX = 0; offsetY = (h - drawH) / 2;
+  } else {
+    drawH = h; drawW = h * videoAspect; offsetY = 0; offsetX = (w - drawW) / 2;
+  }
+  const screenPoint = (p) => ({ x: offsetX + (1 - p.x) * drawW, y: offsetY + p.y * drawH });
+  const usable = (p) => p && (p.visibility ?? 1) > 0.35;
+
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  for (const [a, b] of MISSION_POSE_CONNECTIONS) {
+    if (!usable(points[a]) || !usable(points[b])) continue;
+    const pa = screenPoint(points[a]), pb = screenPoint(points[b]);
+    ctx.beginPath(); ctx.moveTo(pa.x, pa.y); ctx.lineTo(pb.x, pb.y);
+    ctx.strokeStyle = 'rgba(5, 8, 16, 0.72)'; ctx.lineWidth = 7; ctx.stroke();
+    ctx.strokeStyle = '#315cff'; ctx.lineWidth = 3; ctx.stroke();
+  }
+  for (const index of MISSION_POSE_POINTS) {
+    if (!usable(points[index])) continue;
+    const p = screenPoint(points[index]);
+    ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+    ctx.fillStyle = '#315cff'; ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+  }
 }
 
 function resetCamMatch() {

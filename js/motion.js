@@ -124,6 +124,17 @@ const feet = {
 
 export function isTracking() { return tracked; }
 
+// 미션 화면의 웹캠 HUD에서만 사용하는 2D 포즈 랜드마크.
+// 판정·아바타 구동 좌표와 분리해 원본 인식 파이프라인에는 영향을 주지 않는다.
+export function getPoseOverlay() {
+  if (!tracked || !poseImg) return null;
+  return poseImg.map((p) => ({
+    x: p.x,
+    y: p.y,
+    visibility: p.visibility ?? 1,
+  }));
+}
+
 // ── 랜덤 포즈 미션용 스냅샷 ──
 // 정규화된 관절 좌표(어깨너비 기준) + 신뢰도 + 손 제스처 상태를 한 번에 제공.
 // 미션 모듈은 이 함수만 사용하고 내부 파이프라인은 건드리지 않는다.

@@ -1,7 +1,7 @@
 // 랜덤 포즈 미션 UI: 학생 진행 화면 · 결과 · 운영자 패널 · 포즈 테스트 모드 · 단축키
 import { POSE_DEFS, POSE_BY_ID, CATEGORY_LABELS, DIFFICULTY_LABELS } from './poses.js';
 import * as Engine from './mission.js';
-import { visualFor, demoFor, themeOf, SILHOUETTES } from './missionvisuals.js';
+import { visualFor, demoFor } from './missionvisuals.js';
 
 // 미션 시범: 준비 단계에서 큰 아바타가 이 포즈를 취해 보여줌 (main 렌더 루프가 사용)
 export function getDemoPose() {
@@ -58,7 +58,7 @@ export function tick(nowMs) {
   setGauge(r.progress, r.state);
   // 남은 시간
   const remainSec = Math.max(0, Math.ceil((settings.timeoutMs - r.elapsed) / 1000));
-  q('#mm-timer').textContent = '⏱ ' + remainSec;
+  q('#mm-timer').textContent = `${remainSec}초`;
   // 실시간 피드백 문구 (완성도에 따라)
   const c = r.confidence;
   const fb = q('#mm-fbtext');
@@ -94,13 +94,8 @@ function showMissionCard() {
   game.phase = 'ready';
   judge = null;
   const v = visualFor(cur.id);
-  const t = themeOf(v.theme);
-  // 포즈별 테마색 적용 (카드 배경·포인트)
   const card = q('#mm-card');
-  card.style.setProperty('--mm-bg1', t.bg1);
-  card.style.setProperty('--mm-bg2', t.bg2);
-  card.style.setProperty('--mm-accent', t.accent);
-  card.style.setProperty('--mm-ink', t.ink);
+  setCardPhase('ready', '포즈 확인');
 
   q('#mm-num').textContent = `미션 ${game.index + 1} / ${game.poses.length}`;
   q('#mm-stars').innerHTML = successStars();
@@ -108,14 +103,14 @@ function showMissionCard() {
   q('#mm-diff').innerHTML = '난이도 ' + '⭐'.repeat(v.diff) + '<span class="off">' + '⭐'.repeat(3 - v.diff) + '</span>';
   q('#mm-instruction').textContent = v.main;
   q('#mm-hint').textContent = v.tip || cur.hintText || '';
-  q('#mm-silhouette').innerHTML = SILHOUETTES[v.sil] || SILHOUETTES.neutral;
   setGauge(0, 'waiting');
   setBanner('');
   q('#mm-feedback').className = 'mm-feedback';
   q('#mm-feedback').textContent = '';
   q('#mm-fbtext').textContent = '';
-  q('#mm-timer').textContent = '';
+  q('#mm-timer').textContent = '준비';
   q('#mm-countdown').classList.add('hidden');
+  q('#mm-countdown').classList.remove('go');
   // 카드 등장 튕김 애니메이션
   card.classList.remove('pop'); void card.offsetWidth; card.classList.add('pop');
   // 사람이 화면에 보이기 시작하면 그때부터 카운트다운 시작 (아바타 시범 포즈 보여주며)
@@ -136,6 +131,7 @@ function updateReady(snap) {
     // 아직 안 보이면 카운트다운 보류 (기다려 줌)
     game.readyStart = null;
     cd.classList.add('hidden');
+    cd.classList.remove('go');
     setBanner(snap.calibrated === false ? '잠깐 그대로 서 주세요…' : '카메라 앞에 서 주세요');
     return;
   }
@@ -145,10 +141,15 @@ function updateReady(snap) {
   if (remain > 0) {
     const n = Math.ceil(remain / 1000);
     cd.textContent = n <= 0 ? '시작!' : String(n);
+    cd.classList.remove('go');
     cd.classList.remove('hidden');
   } else {
     cd.textContent = '시작!';
-    setTimeout(() => q('#mm-countdown').classList.add('hidden'), 350);
+    cd.classList.add('go');
+    setTimeout(() => {
+      q('#mm-countdown').classList.add('hidden');
+      q('#mm-countdown').classList.remove('go');
+    }, 350);
     beginPlaying();
   }
 }
@@ -156,6 +157,8 @@ function beginPlaying() {
   game.phase = 'playing';
   judge = new Engine.MissionJudge(game.poses[game.index], settings);
   game.playStart = performance.now();
+  setCardPhase('playing', '포즈 따라 하기');
+  q('#mm-timer').textContent = `${Math.ceil(settings.timeoutMs / 1000)}초`;
 }
 
 function onTimeout() {
@@ -243,6 +246,8 @@ function setGauge(p, state) {
   const pct = Math.round(p * 100);
   const fill = q('#mm-gauge-fill');
   fill.style.width = pct + '%';
+  const value = q('#mm-gauge-value');
+  if (value) value.textContent = pct + '%';
   // 완성도 단계별 색: 인식중(회색) → 파스텔 → 성공직전(반짝)
   let cls = 'mm-gauge-fill';
   if (p >= 0.85) cls += ' hot';
@@ -260,6 +265,13 @@ function showFeedback(txt, kind) {
   const f = q('#mm-feedback');
   f.textContent = txt;
   f.className = 'mm-feedback show ' + kind;
+  setCardPhase(kind, kind === 'success' ? '포즈 성공' : '다시 도전');
+}
+function setCardPhase(phase, label) {
+  const card = q('#mm-card');
+  if (card) card.dataset.phase = phase;
+  const phaseLabel = q('#mm-phase-label');
+  if (phaseLabel) phaseLabel.textContent = label;
 }
 // 성공 파티클: 별·하트가 아바타 주변에서 흩날림
 const PARTICLE_EMOJIS = ['⭐', '💖', '✨', '🌟', '💫', '💛'];
@@ -456,30 +468,45 @@ function buildDOM() {
   root.className = 'hidden';
   root.innerHTML = `
     <div id="mm-confetti"></div>
-    <div id="mm-banner" class="mm-banner"></div>
-    <div id="mm-countdown" class="mm-countdown hidden"></div>
-    <div id="mm-card" class="mm-card">
+    <div id="mm-banner" class="mm-banner" role="status" aria-live="polite"></div>
+    <div id="mm-countdown" class="mm-countdown hidden" aria-live="assertive"></div>
+    <section id="mm-card" class="mm-card" aria-labelledby="mm-title">
       <div class="mm-top">
-        <span id="mm-num" class="mm-badge-num">미션 1 / 3</span>
-        <span id="mm-stars" class="mm-stars">☆☆☆</span>
-        <span id="mm-timer" class="mm-timer-chip">⏱ 8</span>
+        <div class="mm-mission-meta">
+          <span class="mm-eyebrow">RUNWAY MISSION</span>
+          <span id="mm-num" class="mm-badge-num">미션 1 / 3</span>
+        </div>
+        <div class="mm-status-chips">
+          <span id="mm-phase-label" class="mm-phase-chip">포즈 확인</span>
+          <span id="mm-timer" class="mm-timer-chip">준비</span>
+        </div>
+      </div>
+      <div class="mm-score-row">
+        <span class="mm-score-label">성공</span>
+        <span id="mm-stars" class="mm-stars" aria-label="성공한 미션">☆☆☆</span>
+        <span id="mm-diff" class="mm-diff"></span>
       </div>
       <div class="mm-mid">
-        <div id="mm-silhouette" class="mm-silhouette"></div>
         <div class="mm-headrow">
           <div id="mm-title" class="mm-title"></div>
-          <div id="mm-diff" class="mm-diff"></div>
         </div>
         <div id="mm-instruction" class="mm-instruction"></div>
-        <div class="mm-tipbubble"><b>TIP</b> <span id="mm-hint"></span></div>
+        <div class="mm-command-sub">
+          <span class="mm-hold-label">HOLD THE POSE</span>
+          <div class="mm-tipbubble"><b>TIP</b> <span id="mm-hint"></span></div>
+        </div>
       </div>
       <div class="mm-gauge-wrap">
+        <div class="mm-progress-head">
+          <span>POSE MATCH</span>
+          <strong id="mm-gauge-value">0%</strong>
+        </div>
         <div class="mm-gauge"><div id="mm-gauge-fill" class="mm-gauge-fill"></div><span id="mm-gauge-star" class="mm-gauge-star">⭐</span></div>
-        <div id="mm-fbtext" class="mm-fbtext"></div>
+        <div id="mm-fbtext" class="mm-fbtext" aria-live="polite"></div>
       </div>
-      <div id="mm-feedback" class="mm-feedback"></div>
+      <div id="mm-feedback" class="mm-feedback" aria-live="assertive"></div>
       <div id="mm-warn" class="mm-warn"></div>
-    </div>
+    </section>
     <div id="mm-result" class="mm-result" style="display:none">
       <div id="mm-result-title" class="mm-result-title"></div>
       <div id="mm-result-sub" class="mm-result-sub"></div>
