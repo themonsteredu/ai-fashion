@@ -179,6 +179,8 @@ function makeLoader() {
 
 function setupVrm(gltf) {
   const vrm = gltf.userData.vrm;
+  // glTF로는 읽혔지만 VRM 정보가 없는 파일 (예: 일반 .glb)
+  if (!vrm) throw new VrmFileError('no-vrm-extension');
 
   // 성능 최적화 + VRM0 모델 방향 보정
   try { VRMUtils.removeUnnecessaryVertices(gltf.scene); } catch (e) {}
@@ -222,16 +224,118 @@ export async function loadAvatar(onProgress) {
   return setupVrm(gltf);
 }
 
+// ── 내 아바타(.vrm) 불러오기 ──────────────────────────────────────────
+// 잘못된 파일(특히 VRoid 프로젝트 파일 .vroid)을 골랐을 때 "왜" 안 되는지
+// 정확히 알려 주기 위해, 파싱 전에 파일 내용을 직접 확인한다.
+
+const VRM_FILE_MESSAGES = {
+  'empty':
+    '파일이 비어 있어요. 다른 파일을 선택해 주세요.',
+  'read-failed':
+    '파일을 읽지 못했어요.\nUSB에 있는 파일이라면 바탕화면에 복사한 뒤 다시 선택해 주세요.',
+  'vroid-project':
+    '이 파일은 VRoid Studio "프로젝트 파일(.vroid)"이에요. 아바타 파일이 아니라 작업 파일이라 열 수 없어요.\n\n' +
+    'VRoid Studio에서 아바타를 연 뒤 [내보내기] → [VRM으로 내보내기]를 눌러 저장한 ".vrm" 파일을 선택해 주세요.',
+  'zip':
+    '압축 파일(zip)로 보여요. 압축을 먼저 푼 다음, 그 안에 있는 .vrm 파일을 선택해 주세요.',
+  'gltf-json':
+    '.gltf 파일은 사용할 수 없어요.\nVRoid Studio에서 [VRM으로 내보내기] 한 .vrm 파일을 선택해 주세요.',
+  'not-glb':
+    'VRM 파일이 아니에요.\nVRoid Studio에서 [내보내기] → [VRM으로 내보내기] 한 .vrm 파일이 맞는지 확인해 주세요.',
+  'no-vrm-extension':
+    '3D 모델 파일이지만 아바타(VRM) 정보가 없어요.\nVRoid Studio에서 VRM으로 내보낸 파일을 선택해 주세요.',
+  'broken':
+    '파일이 손상된 것 같아요.\nVRoid Studio에서 다시 내보낸 뒤 선택해 주세요.',
+  'parse-failed':
+    'VRM 파일을 여는 중 문제가 생겼어요.\n파일이 손상되었거나 지원하지 않는 형식일 수 있어요. 다시 내보낸 파일로 시도해 주세요.',
+};
+
+export class VrmFileError extends Error {
+  constructor(reason, detail) {
+    super(detail ? `${reason}: ${detail}` : reason);
+    this.name = 'VrmFileError';
+    this.reason = reason;
+    this.detail = detail || '';
+    this.userMessage = VRM_FILE_MESSAGES[reason] || VRM_FILE_MESSAGES['parse-failed'];
+  }
+}
+
+const GLB_MAGIC = 0x46546c67; // 'glTF'
+const GLB_CHUNK_JSON = 0x4e4f534a; // 'JSON'
+
+// 파일 앞부분을 직접 읽어 진짜 VRM인지 확인 (아니면 이유를 정확히 알려 준다)
+function inspectVrmBuffer(buffer, fileName) {
+  const name = (fileName || '').toLowerCase();
+  if (name.endsWith('.vroid')) throw new VrmFileError('vroid-project');
+  if (!buffer || buffer.byteLength < 20) throw new VrmFileError('empty');
+
+  const bytes = new Uint8Array(buffer);
+  // .vroid / .zip 은 모두 ZIP 컨테이너("PK")
+  if (bytes[0] === 0x50 && bytes[1] === 0x4b) throw new VrmFileError('zip');
+
+  const view = new DataView(buffer);
+  if (view.getUint32(0, true) !== GLB_MAGIC) {
+    // 공백을 건너뛴 첫 글자가 '{' 이면 텍스트형 .gltf
+    let i = 0;
+    while (i < 8 && (bytes[i] === 0x20 || bytes[i] === 0x0a || bytes[i] === 0x0d || bytes[i] === 0x09)) i++;
+    if (bytes[i] === 0x7b) throw new VrmFileError('gltf-json');
+    throw new VrmFileError('not-glb');
+  }
+
+  // GLB 첫 청크(JSON)를 꺼내 VRM 확장이 들어 있는지 확인
+  const jsonLength = view.getUint32(12, true);
+  if (view.getUint32(16, true) !== GLB_CHUNK_JSON || jsonLength === 0 || 20 + jsonLength > buffer.byteLength) {
+    throw new VrmFileError('broken');
+  }
+  let json;
+  try {
+    json = JSON.parse(new TextDecoder('utf-8').decode(bytes.subarray(20, 20 + jsonLength)));
+  } catch (e) {
+    throw new VrmFileError('broken', e && e.message);
+  }
+  const ext = json.extensions || {};
+  const used = json.extensionsUsed || [];
+  const hasVrm = !!ext.VRM || !!ext.VRMC_vrm || used.includes('VRM') || used.includes('VRMC_vrm');
+  if (!hasVrm) throw new VrmFileError('no-vrm-extension');
+
+  return { version: ext.VRMC_vrm ? '1.0' : '0.x' };
+}
+
+function readFileWithProgress(file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onprogress = (ev) => {
+      if (onProgress && ev.lengthComputable && ev.total) onProgress(ev.loaded / ev.total);
+    };
+    reader.onload = () => {
+      if (onProgress) onProgress(1);
+      resolve(reader.result);
+    };
+    reader.onerror = () => reject(new VrmFileError('read-failed', reader.error && reader.error.message));
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function parseGlb(loader, buffer) {
+  return new Promise((resolve, reject) => {
+    loader.parse(buffer, '', resolve, reject);
+  });
+}
+
 // 관람객·학생이 직접 고른 .vrm 파일 불러오기
 export async function loadAvatarFromFile(file, onProgress) {
-  const url = URL.createObjectURL(file);
+  const buffer = await readFileWithProgress(file, onProgress);
+  const info = inspectVrmBuffer(buffer, file.name);
+  console.info(`VRM ${info.version} 파일 확인됨: ${file.name} (${(file.size / 1048576).toFixed(2)}MB)`);
+
+  let gltf;
   try {
-    const gltf = await loadWithProgress(makeLoader(), url, onProgress);
-    state.usingSample = false;
-    return setupVrm(gltf);
-  } finally {
-    URL.revokeObjectURL(url);
+    gltf = await parseGlb(makeLoader(), buffer);
+  } catch (e) {
+    throw new VrmFileError('parse-failed', e && (e.message || String(e)));
   }
+  state.usingSample = false;
+  return setupVrm(gltf);
 }
 
 function loadWithProgress(loader, url, onProgress) {
