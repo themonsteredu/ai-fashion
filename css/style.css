@@ -107,11 +107,13 @@ button { font-family: inherit; cursor: pointer; border: none; }
 #screen-start h1 {
   max-width: 680px; font-size: clamp(46px, 5.35vw, 82px);
   line-height: 1.04; font-weight: 900; letter-spacing: -0.072em; color: #111318;
+  word-break: keep-all; overflow-wrap: break-word;
 }
 #screen-start h1 span { color: var(--start-blue); }
 #screen-start .sub {
   max-width: 510px; margin-top: 2.4vh; padding-left: 16px; border-left: 2px solid var(--start-blue);
   font-size: clamp(14px, 1.25vw, 18px); line-height: 1.65; font-weight: 300; color: #565b66;
+  word-break: keep-all; overflow-wrap: break-word;
 }
 #btn-start { margin-top: 6vh; }
 
@@ -141,6 +143,10 @@ button { font-family: inherit; cursor: pointer; border: none; }
 .upload-hint {
   margin-top: 7px; font-size: 10px; line-height: 1.45; font-weight: 300; color: #777b84;
 }
+/* 한글은 어절 단위로만 줄바꿈 (음절 중간에서 끊기지 않도록) */
+.start-buttons .btn,
+.start-upload,
+.upload-hint { word-break: keep-all; overflow-wrap: break-word; }
 .start-side-copy {
   position: absolute; z-index: 3; right: 1.25vw; top: 50%; transform: translateY(-50%) rotate(90deg);
   color: rgba(255,255,255,0.82); font-size: 9px; font-weight: 700; letter-spacing: 0.28em; white-space: nowrap;
@@ -601,6 +607,14 @@ body.mission-on .cam-preview::after {
 body.mission-on .motion-bar,
 body.mission-on .cambg-tabs,
 body.mission-on #guide-msg { display: none !important; }
+
+/* 좁은 창·태블릿(701~900px): 제목 두 줄이 유지되도록 컬럼 폭·글자 크기 보정 */
+@media (min-width: 701px) and (max-width: 900px) {
+  .start-inner { width: min(590px, 56vw); }
+  #screen-start h1 { font-size: clamp(38px, 5.9vw, 50px); }
+  .start-buttons, .upload-row { width: min(570px, 55vw); }
+  .start-buttons .btn { padding-right: 54px; }
+}
 
 /* ═══════════════ 모바일 세로 화면 대응 ═══════════════ */
 @media (max-width: 700px) {
