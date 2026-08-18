@@ -363,9 +363,10 @@ function bindUI() {
       loading.classList.add('hidden');
       toast('아바타를 불러왔어요! 미션이나 자유 체험을 시작해 보세요');
     } catch (err) {
-      console.error('VRM 로드 실패', err);
+      console.error('VRM 로드 실패', file.name, err);
       loading.classList.add('hidden');
-      alert('이 파일은 열 수 없어요. VRoid Studio에서 내보낸 .vrm 파일인지 확인해 주세요.');
+      const why = (err && err.userMessage) || '이 파일은 열 수 없어요. VRoid Studio에서 내보낸 .vrm 파일인지 확인해 주세요.';
+      alert(`${why}\n\n(선택한 파일: ${file.name})`);
     }
   });
 
