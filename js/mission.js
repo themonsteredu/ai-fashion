@@ -123,6 +123,7 @@ const PLAIN_ARMS = new Set([
   'airplane', 'left_side', 'right_side',
 ]);
 function funWeight(id) {
+  if (POSE_BY_ID[id] && POSE_BY_ID[id].category === 'MODEL') return 2.6; // 패션 모델 포즈는 자주
   if (FUN_BOOST.has(id)) return 2.4;
   if (PLAIN_ARMS.has(id)) return 0.6;
   return 1;

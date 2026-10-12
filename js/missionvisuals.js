@@ -175,6 +175,18 @@ export const DEMO = {
   wide_stand: [['leftUpperLeg',[0,0,1],0.22],['rightUpperLeg',[0,0,1],-0.22],OUT_L,OUT_R],
   one_leg:    [['rightUpperLeg',[0,0,1],-0.5],['rightLowerLeg',[1,0,0],0.9],['leftUpperArm',[0,0,1],0.9],['rightUpperArm',[0,0,1],-0.9]],
   squat:      [['leftUpperLeg',[0,0,1],0.36],['rightUpperLeg',[0,0,1],-0.36],['leftLowerLeg',[1,0,0],1.25],['rightLowerLeg',[1,0,0],1.25],['spine',[1,0,0],0.22]],
+  // 패션 모델 포즈 시범
+  model_one_hip:    [['leftUpperArm',[0,0,1],-0.75],['leftLowerArm',[0,0,1],-1.5], DOWN_R],
+  model_hair:       [['rightUpperArm',[0,0,1],-1.25],['rightLowerArm',[0,1,0],1.7], DOWN_L],
+  model_collar:     [['leftUpperArm',[0,0,1],-1.3],['leftLowerArm',[0,0,1],2.7],['rightUpperArm',[0,0,1],1.3],['rightLowerArm',[0,0,1],-2.7]],
+  model_cross_arms: [['leftUpperArm',[0,0,1],-1.2],['leftLowerArm',[0,1,0],-2.3],['rightUpperArm',[0,0,1],1.2],['rightLowerArm',[0,1,0],2.3]],
+  model_bag:        [['rightUpperArm',[0,0,1],1.1],['rightLowerArm',[0,1,0],2.4], DOWN_L],
+  model_s_line:     [['spine',[0,0,1],0.18],['leftUpperArm',[0,0,1],-0.75],['leftLowerArm',[0,0,1],-1.5], DOWN_R],
+  model_star:       [DIAG_L, DIAG_R, ['leftUpperLeg',[0,0,1],0.3],['rightUpperLeg',[0,0,1],-0.3]],
+  model_cross_legs: [['leftUpperLeg',[0,0,1],-0.15],['rightUpperLeg',[0,0,1],0.12],['leftUpperArm',[0,0,1],-0.75],['leftLowerArm',[0,0,1],-1.5], DOWN_R],
+  // 거울 반전 시 각도 부호가 뒤집히므로 음수 = 화면에서 앞으로 숙임
+  model_bow:        [['spine',[1,0,0],-0.6],['chest',[1,0,0],-0.25],['leftUpperArm',[0,0,1],-1.25],['rightUpperArm',[0,0,1],1.25]],
+  model_glance:     [['head',[0,1,0],0.6],['leftUpperArm',[0,0,1],-0.75],['leftLowerArm',[0,0,1],-1.5], DOWN_R],
 };
 
 // ── 포즈별 시각 메타 (테마색·실루엣·문구·난이도) ──
@@ -225,6 +237,17 @@ export const VISUALS = {
   wave_both:  { theme: 'yellow', sil: 'wave', diff: 1, main: '양손을 흔들어요!', tip: '두 손 들고 흔들흔들', ok: '반가워요 🙌' },
   knee_left:  { theme: 'blue', sil: 'neutral', diff: 3, main: '왼쪽 무릎을 굽혀요!', tip: '왼발을 살짝 들어요', ok: '천천히 굽혀요' },
   knee_right: { theme: 'blue', sil: 'neutral', diff: 3, main: '오른쪽 무릎을 굽혀요!', tip: '오른발을 살짝 들어요', ok: '천천히 굽혀요' },
+  // 패션 모델 포즈
+  model_one_hip:    { theme: 'pink', sil: 'hero', diff: 1, main: '한 손은 허리에! 당당하게! 💁', tip: '한 손 허리, 다른 손은 아래로', ok: '모델 포스 완성! ✨' },
+  model_hair:       { theme: 'lavender', sil: 'think', diff: 2, main: '머리를 쓸어넘겨요! 💇', tip: '한 손을 머리 위에 살짝', ok: '바람에 날리는 머릿결~ 💫' },
+  model_collar:     { theme: 'blue', sil: 'surprise', diff: 2, main: '옷깃을 세워요! 😎', tip: '두 손을 목 옆 어깨 앞으로', ok: '멋짐 폭발! 😎' },
+  model_cross_arms: { theme: 'blue', sil: 'selfhug', diff: 2, main: '팔짱 끼고 시크하게! 🕶️', tip: '두 팔을 가슴 앞에서 겹쳐요', ok: '시크 그 자체! 🕶️' },
+  model_bag:        { theme: 'peach', sil: 'neutral', diff: 1, main: '어깨 가방 메고 출근! 👜', tip: '한 손으로 어깨 앞 가방끈 잡기', ok: '오늘의 데일리룩! 👜' },
+  model_s_line:     { theme: 'pink', sil: 'lean', diff: 2, main: 'S라인 포즈! 💃', tip: '한 손 허리, 몸을 살짝 기울여요', ok: '화보 한 컷 완성! 📸' },
+  model_star:       { theme: 'yellow', sil: 'wideStand', diff: 1, main: '반짝반짝 스타 포즈! ⭐', tip: '팔은 대각선 위, 발은 넓게', ok: '오늘의 주인공! 🌟' },
+  model_cross_legs: { theme: 'lavender', sil: 'hero', diff: 3, main: '다리 꼬고 우아하게! 🦢', tip: '한 발을 다른 발 앞으로 교차', ok: '런웨이 마무리 포즈! ✨' },
+  model_bow:        { theme: 'mint', sil: 'neutral', diff: 2, main: '런웨이 피날레 인사! 🙇', tip: '상체를 앞으로 꾸벅', ok: '박수 짝짝짝! 👏' },
+  model_glance:     { theme: 'sky', sil: 'hero', diff: 3, main: '고개 휙! 시크한 눈빛 😏', tip: '한 손 허리, 고개만 옆으로', ok: '카메라가 반했어요! 📸' },
 };
 
 export function visualFor(poseId) {
