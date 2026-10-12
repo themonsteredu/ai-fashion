@@ -79,9 +79,29 @@ function judge(s, conds, passScore = 0.68) {
   };
 }
 
+// ── 패션 모델 포즈용 헬퍼 ──
+// 한 손을 허리에 올린 정도 (손목이 엉덩이 높이·옆, 팔꿈치는 바깥으로)
+function hipHand(m, side) {
+  // 실제 스냅샷에서 사람의 왼쪽(L_) 관절은 -x 쪽에 있음 → 바깥쪽 부호: L은 -, R은 +
+  const o = side === 'L' ? -1 : 1;
+  const h = band(m.dy(side + '_WR', side + '_HIP'), -0.1, 0.95, 0.3);
+  const near = atMost(Math.abs(m.dx(side + '_WR', side + '_HIP')), 0.6, 0.4);
+  // 팔을 그냥 내리면 손목도 엉덩이 높이라서, 팔꿈치가 옆으로 꺾여 나와야만 인정
+  const elbowOut = m.P[side + '_EL'] ? atLeast(o * m.dx(side + '_EL', side + '_SH'), 0.4, 0.2) : 0;
+  return elbowOut * (h * 0.6 + near * 0.4);
+}
+// 손이 몸 옆에 자연스럽게 내려가 있는 정도
+function downHand(m, side) {
+  return atMost(m.dy(side + '_WR', side + '_SH'), -0.6, 0.4);
+}
+// 한쪽 손이 허리, 반대 손은 다른 동작일 때: 더 잘 맞는 쪽을 고름
+function bestSide(fn) {
+  return (m) => Math.max(fn(m, 'L', 'R'), fn(m, 'R', 'L'));
+}
+
 // ── 포즈 정의 목록 ──
 // reliability: STABLE(기본) | EXPERIMENTAL(테스트 후) | DISABLED
-// category: ARMS | DIRECTION | CUTE | FULL_BODY | MOTION
+// category: ARMS | DIRECTION | CUTE | FULL_BODY | MOTION | MODEL
 // detect(snapshot) → PoseDetectionResult
 export const POSE_DEFS = [
   // ───────── 매우 쉬운 팔 포즈 (STABLE) ─────────
@@ -607,6 +627,128 @@ export const POSE_DEFS = [
       { name: '오른손 위', weight: 50, vis: ['R_WR'], score: (m) => atLeast(m.dy('R_WR', 'R_SH'), 0.2, 0.4) },
     ]),
   },
+  // ───────── 패션 모델 포즈 (MODEL) — 런웨이 테마 ─────────
+  {
+    id: 'model_one_hip', name: '한 손 허리 모델', shortInstruction: '한 손은 허리에! 모델처럼 당당하게!',
+    category: 'MODEL', difficulty: 'EASY', reliability: 'STABLE',
+    cooldownGroup: 'model_hip', hintText: '한 손은 허리에 콕, 다른 손은 자연스럽게 아래로',
+    requiredLandmarks: ['L_WR', 'R_WR', 'L_HIP', 'R_HIP', 'L_EL', 'R_EL'],
+    detect: (s) => judge(s, [
+      { name: '한 손 허리', weight: 60, vis: ['L_WR', 'R_WR'], score: (m) => Math.max(hipHand(m, 'L'), hipHand(m, 'R')) },
+      { name: '반대 손 내림', weight: 40, vis: ['L_WR', 'R_WR'], score: bestSide((m, a, b) => Math.min(hipHand(m, a) > 0.6 ? 1 : 0, downHand(m, b) * (1 - hipHand(m, b)))) },
+    ]),
+  },
+  {
+    id: 'model_hair', name: '머리 쓸어넘기기', shortInstruction: '한 손으로 머리를 쓸어넘겨요!',
+    category: 'MODEL', difficulty: 'NORMAL', reliability: 'STABLE',
+    cooldownGroup: 'model_head', hintText: '한 손을 머리 위에 살짝, 팔꿈치는 옆으로',
+    requiredLandmarks: ['L_WR', 'R_WR', 'NOSE', 'L_EL', 'R_EL'],
+    detect: (s) => judge(s, [
+      { name: '한 손 머리 위', weight: 45, vis: ['L_WR', 'R_WR', 'NOSE'], score: (m) => Math.max(band(m.dy('L_WR', 'NOSE'), 0.05, 0.7, 0.3), band(m.dy('R_WR', 'NOSE'), 0.05, 0.7, 0.3)) },
+      { name: '손이 머리 가까이', weight: 35, vis: ['L_WR', 'R_WR'], score: bestSide((m, a) => m.dy(a + '_WR', 'NOSE') > -0.1 ? atMost(Math.abs(m.dx(a + '_WR', 'NOSE')), 0.6, 0.5) : 0) },
+      { name: '반대 손 아래', weight: 20, vis: ['L_WR', 'R_WR'], score: (m) => Math.max(downHand(m, 'L'), downHand(m, 'R')) },
+    ]),
+  },
+  {
+    id: 'model_collar', name: '옷깃 세우기', shortInstruction: '두 손으로 옷깃을 잡아 세워요!',
+    category: 'MODEL', difficulty: 'NORMAL', reliability: 'STABLE',
+    cooldownGroup: 'model_collar', hintText: '두 손을 양쪽 어깨 앞, 목 옆으로',
+    requiredLandmarks: ['L_WR', 'R_WR', 'L_SH', 'R_SH'],
+    detect: (s) => judge(s, [
+      // 두 손 모두 올라와야 함 (한 손만이면 '어깨 가방 메기')
+      { name: '양손 어깨높이', weight: 50, vis: ['L_WR', 'R_WR'], score: (m) => Math.min(band(m.dy('L_WR', 'L_SH'), -0.3, 0.35, 0.3), band(m.dy('R_WR', 'R_SH'), -0.3, 0.35, 0.3)) },
+      { name: '손이 목 옆', weight: 30, vis: ['L_WR', 'R_WR'], score: (m) => Math.min(atMost(Math.abs(m.dx('L_WR', 'L_SH')), 0.45, 0.4), atMost(Math.abs(m.dx('R_WR', 'R_SH')), 0.45, 0.4)) },
+      { name: '손 교차 안 함', weight: 20, score: (m) => atLeast(m.dx('R_WR', 'L_WR'), 0.3, 0.4) },
+    ]),
+  },
+  {
+    id: 'model_cross_arms', name: '시크한 팔짱', shortInstruction: '팔짱 끼고 시크하게!',
+    category: 'MODEL', difficulty: 'NORMAL', reliability: 'EXPERIMENTAL', // 실제 학생으로 테스트 후 사용
+    cooldownGroup: 'hug', hintText: '두 팔을 가슴 앞에서 겹쳐 팔짱',
+    requiredLandmarks: ['L_WR', 'R_WR', 'L_EL', 'R_EL', 'L_SH', 'R_SH'],
+    detect: (s) => judge(s, [
+      // 팔짱: 왼손목이 오른손목보다 오른쪽(+x)으로 넘어가면 교차
+      { name: '손목 교차', weight: 45, vis: ['L_WR', 'R_WR'], score: (m) => atLeast(m.dx('L_WR', 'R_WR'), 0.0, 0.4) },
+      { name: '가슴 높이', weight: 35, vis: ['L_WR', 'R_WR'], score: (m) => Math.min(band(m.dy('L_WR', 'L_SH'), -0.9, -0.1, 0.35), band(m.dy('R_WR', 'R_SH'), -0.9, -0.1, 0.35)) },
+      { name: '손이 몸 앞', weight: 20, vis: ['L_WR', 'R_WR'], score: (m) => atMost(Math.max(Math.abs(m.dx('L_WR', 'R_SH')), Math.abs(m.dx('R_WR', 'L_SH'))), 0.5, 0.4) },
+    ]),
+  },
+  {
+    id: 'model_bag', name: '어깨 가방 메기', shortInstruction: '한 손으로 가방끈을 잡아요!',
+    category: 'MODEL', difficulty: 'EASY', reliability: 'STABLE',
+    cooldownGroup: 'model_bag', hintText: '한 손을 같은 쪽 어깨 앞에, 다른 손은 아래로',
+    requiredLandmarks: ['L_WR', 'R_WR', 'L_SH', 'R_SH'],
+    detect: (s) => judge(s, [
+      { name: '한 손 어깨 앞', weight: 55, vis: ['L_WR', 'R_WR'], score: bestSide((m, a) => band(m.dy(a + '_WR', a + '_SH'), -0.45, 0.1, 0.3) * atMost(Math.abs(m.dx(a + '_WR', a + '_SH')), 0.4, 0.35)) },
+      { name: '반대 손 아래', weight: 45, vis: ['L_WR', 'R_WR'], score: bestSide((m, a, b) => (m.dy(a + '_WR', a + '_SH') > -0.5 ? 1 : 0) * atMost(m.dy(b + '_WR', b + '_SH'), -0.9, 0.3)) },
+    ]),
+  },
+  {
+    id: 'model_s_line', name: 'S라인 포즈', shortInstruction: '한 손 허리, 몸을 살짝 기울여 S라인!',
+    category: 'MODEL', difficulty: 'NORMAL', reliability: 'STABLE',
+    cooldownGroup: 'model_hip', hintText: '한 손은 허리, 어깨를 한쪽으로 살짝 기울여요',
+    requiredLandmarks: ['L_WR', 'R_WR', 'L_SH', 'R_SH', 'L_HIP', 'R_HIP'],
+    detect: (s) => judge(s, [
+      { name: '한 손 허리', weight: 50, vis: ['L_WR', 'R_WR'], score: (m) => Math.max(hipHand(m, 'L'), hipHand(m, 'R')) },
+      { name: '어깨 기울기', weight: 50, vis: ['L_SH', 'R_SH'], score: (m) => atLeast(Math.abs(m.dy('L_SH', 'R_SH')), 0.12, 0.12) },
+    ]),
+  },
+  {
+    id: 'model_star', name: '스타 포즈', shortInstruction: '팔다리를 쫙! 별처럼 빛나요! ⭐',
+    category: 'MODEL', difficulty: 'EASY', reliability: 'STABLE',
+    cooldownGroup: 'legs', hintText: '두 팔은 대각선 위로, 두 발은 넓게', needsFullBody: true,
+    requiredLandmarks: ['L_WR', 'R_WR', 'L_SH', 'R_SH', 'L_ANK', 'R_ANK'],
+    detect: (s) => judge(s, [
+      { name: '왼팔 대각위', weight: 25, vis: ['L_WR'], score: (m) => atLeast(m.dy('L_WR', 'L_SH'), 0.1, 0.35) },
+      { name: '오른팔 대각위', weight: 25, vis: ['R_WR'], score: (m) => atLeast(m.dy('R_WR', 'R_SH'), 0.1, 0.35) },
+      { name: '양손 벌림', weight: 15, score: (m) => atLeast(m.dist('L_WR', 'R_WR'), 1.3, 0.7) },
+      { name: '두 발 넓게', weight: 35, vis: ['L_ANK', 'R_ANK'], score: (m) => atLeast(Math.abs(m.dx('L_ANK', 'R_ANK')), 1.1, 0.6) },
+    ], 0.62),
+  },
+  {
+    id: 'model_cross_legs', name: '다리 꼬고 서기', shortInstruction: '다리를 살짝 꼬고 한 손은 허리에!',
+    category: 'MODEL', difficulty: 'CHALLENGE', reliability: 'STABLE',
+    cooldownGroup: 'legs2', hintText: '한 발을 다른 발 앞으로 살짝 교차해요', needsFullBody: true,
+    requiredLandmarks: ['L_ANK', 'R_ANK', 'L_WR', 'R_WR', 'L_HIP', 'R_HIP'],
+    detect: (s) => judge(s, [
+      // 평소엔 왼발목이 -x 쪽(차이가 음수) → 교차하면 차이가 0 근처 또는 양수
+      { name: '다리 교차', weight: 65, vis: ['L_ANK', 'R_ANK'], score: (m) => atLeast(m.dx('L_ANK', 'R_ANK'), -0.1, 0.3) },
+      { name: '한 손 허리', weight: 35, vis: ['L_WR', 'R_WR'], score: (m) => Math.max(hipHand(m, 'L'), hipHand(m, 'R')) },
+    ], 0.62),
+  },
+  {
+    id: 'model_bow', name: '피날레 인사', shortInstruction: '런웨이 끝! 허리 숙여 인사해요 🙇',
+    category: 'MODEL', difficulty: 'NORMAL', reliability: 'EXPERIMENTAL', // 실제 학생으로 테스트 후 사용
+    cooldownGroup: 'model_bow', hintText: '상체를 앞으로 숙여 꾸벅 인사',
+    requiredLandmarks: ['L_SH', 'R_SH', 'L_HIP', 'R_HIP'],
+    detect: (s) => judge(s, [
+      // 엉덩이 중심 → 어깨 중심 선이 수직에서 앞으로 기울어진 각도(도)
+      { name: '상체 숙이기', weight: 75, vis: ['L_SH', 'R_SH', 'L_HIP', 'R_HIP'], score: (m) => {
+        const P = m.P; const mid = (a, b, k) => ((P[a][k] || 0) + (P[b][k] || 0)) / 2;
+        const vx = mid('L_SH', 'R_SH', 'x') - mid('L_HIP', 'R_HIP', 'x');
+        const vy = mid('L_SH', 'R_SH', 'y') - mid('L_HIP', 'R_HIP', 'y');
+        const vz = mid('L_SH', 'R_SH', 'z') - mid('L_HIP', 'R_HIP', 'z');
+        const tilt = Math.atan2(Math.hypot(vx, vz), vy) * 180 / Math.PI;
+        return atLeast(tilt, 25, 15);
+      } },
+      { name: '팔 내림', weight: 25, vis: ['L_WR', 'R_WR'], score: (m) => (atMost(m.dy('L_WR', 'L_SH'), -0.3, 0.4) + atMost(m.dy('R_WR', 'R_SH'), -0.3, 0.4)) / 2 },
+    ], 0.62),
+  },
+  {
+    id: 'model_glance', name: '고개 돌려 시크하게', shortInstruction: '한 손 허리, 고개를 옆으로 돌려 시크하게!',
+    category: 'MODEL', difficulty: 'CHALLENGE', reliability: 'EXPERIMENTAL', // 실제 학생으로 테스트 후 사용
+    cooldownGroup: 'model_hip', hintText: '고개만 옆으로 휙, 한 손은 허리에',
+    requiredLandmarks: ['NOSE', 'L_EAR', 'R_EAR', 'L_WR', 'R_WR'],
+    detect: (s) => judge(s, [
+      // 코가 두 귀의 가운데에서 옆으로 벗어나면 고개를 돌린 것
+      { name: '고개 돌리기', weight: 60, vis: ['NOSE', 'L_EAR', 'R_EAR'], score: (m) => {
+        const n = m.P.NOSE, l = m.P.L_EAR, r = m.P.R_EAR;
+        if (!n || !l || !r) return 0;
+        return atLeast(Math.abs(n.x - (l.x + r.x) / 2) / m.sw, 0.1, 0.08);
+      } },
+      { name: '한 손 허리', weight: 40, vis: ['L_WR', 'R_WR'], score: (m) => Math.max(hipHand(m, 'L'), hipHand(m, 'R')) },
+    ], 0.62),
+  },
 ];
 
 // 편의: id로 조회
@@ -614,6 +756,6 @@ export const POSE_BY_ID = Object.fromEntries(POSE_DEFS.map((p) => [p.id, p]));
 
 // 난이도/카테고리 상수
 export const DIFFICULTIES = ['EASY', 'NORMAL', 'CHALLENGE'];
-export const CATEGORIES = ['ARMS', 'DIRECTION', 'CUTE', 'FULL_BODY', 'MOTION'];
-export const CATEGORY_LABELS = { ARMS: '팔', DIRECTION: '방향', CUTE: '귀여운', FULL_BODY: '전신', MOTION: '동작' };
+export const CATEGORIES = ['ARMS', 'DIRECTION', 'CUTE', 'FULL_BODY', 'MOTION', 'MODEL'];
+export const CATEGORY_LABELS = { ARMS: '팔', DIRECTION: '방향', CUTE: '귀여운', FULL_BODY: '전신', MOTION: '동작', MODEL: '모델' };
 export const DIFFICULTY_LABELS = { EASY: '쉬움', NORMAL: '보통', CHALLENGE: '도전' };

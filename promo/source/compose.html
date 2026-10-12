@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>패션 아바타 스튜디오 홍보영상</title>
+<style>
+:root{--bg:#080a12;--ink:#f4f2ee;--mute:#9aa0b4;--blue:#315cff;--blue2:#8ea4ff;--pink:#f5b7c9;--gold:#f2c46b}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1920px;height:1080px;overflow:hidden;background:var(--bg);color:var(--ink);font-family:"Pretendard",sans-serif;letter-spacing:-0.02em;word-break:keep-all}
+.stage{position:absolute;inset:0;overflow:hidden;background:radial-gradient(1200px 700px at 82% 18%,#141c3f 0%,transparent 60%),radial-gradient(900px 600px at 8% 92%,#1d1430 0%,transparent 60%),var(--bg)}
+.grid{position:absolute;inset:-100px;background-image:linear-gradient(rgba(142,164,255,.055) 1px,transparent 1px),linear-gradient(90deg,rgba(142,164,255,.055) 1px,transparent 1px);background-size:80px 80px}
+.scene{position:absolute;inset:0;opacity:0}
+.a{will-change:transform,opacity}
+/* hero */
+.hero .txt{position:absolute;left:140px;top:250px;width:1060px}
+.eyebrow{font-size:28px;font-weight:700;color:var(--blue2);letter-spacing:.06em;margin-bottom:30px;display:flex;align-items:center;gap:16px}
+.eyebrow::before{content:"";width:44px;height:3px;background:var(--blue2);display:block}
+.big{font-size:100px;font-weight:800;line-height:1.14;letter-spacing:-0.045em}
+.big em{font-style:normal;color:var(--blue2)}
+.sub{font-size:38px;font-weight:500;color:#d3d6e2;margin-top:36px;line-height:1.45}
+.show{position:absolute;right:150px;top:110px;width:520px;height:836px;border-radius:30px;overflow:hidden;border:1.5px solid rgba(142,164,255,.35);box-shadow:0 40px 120px rgba(0,0,0,.6),0 0 90px rgba(49,92,255,.25)}
+.show img{position:absolute;left:50%;top:50%;height:100%;transform-origin:50% 50%}
+.show .lbl{position:absolute;left:26px;bottom:24px;font-size:20px;font-weight:700;letter-spacing:.2em;color:#fff;background:var(--blue);padding:8px 14px;border-radius:8px}
+/* window scenes */
+.cap{position:absolute;left:110px;top:0;bottom:0;width:560px;display:flex;flex-direction:column;justify-content:center}
+.cap .num{font-size:26px;font-weight:700;color:var(--blue2);letter-spacing:.08em;margin-bottom:22px}
+.cap h2{font-size:66px;font-weight:800;line-height:1.18;letter-spacing:-0.04em}
+.cap h2 em{font-style:normal;color:var(--blue2)}
+.cap p{font-size:31px;font-weight:500;color:#c3c7d6;line-height:1.5;margin-top:30px}
+.chips{display:flex;flex-wrap:wrap;gap:12px;margin-top:34px}
+.chip{font-size:24px;font-weight:600;padding:10px 20px;border-radius:999px;border:1.5px solid rgba(142,164,255,.5);color:var(--blue2);background:rgba(49,92,255,.1)}
+.win{position:absolute;left:720px;top:176px;width:1110px;border-radius:22px;overflow:hidden;background:#0d1020;border:1.5px solid rgba(142,164,255,.28);box-shadow:0 40px 120px rgba(0,0,0,.55),0 0 0 1px rgba(0,0,0,.4)}
+.win .bar{height:52px;display:flex;align-items:center;gap:10px;padding:0 22px;background:#141830;border-bottom:1px solid rgba(142,164,255,.16)}
+.win .bar i{width:14px;height:14px;border-radius:50%;background:#353b5c;display:block}
+.win .bar span{margin-left:22px;flex:1;height:32px;border-radius:9px;background:#0a0d1a;color:#9aa0b4;font-size:19px;display:flex;align-items:center;padding:0 18px;font-weight:500}
+.win .bar b{font-size:18px;font-weight:700;color:var(--pink);background:rgba(245,183,201,.1);border:1px solid rgba(245,183,201,.4);padding:5px 12px;border-radius:8px;margin-left:12px;white-space:nowrap}
+.win .view{position:relative;width:1110px;height:624px;overflow:hidden;background:#f4f2ee}
+.win .view img{position:absolute;left:0;top:0;transform-origin:0 0}
+.wide .win{left:320px;top:170px;width:1280px}
+.wide .win .view{width:1280px;height:720px}
+.wide .cap{left:320px;top:52px;bottom:auto;width:1400px;flex-direction:row;align-items:baseline;gap:28px;justify-content:flex-start}
+.wide .cap h2{font-size:56px}
+.wide .cap .num{margin:0}
+.tag{position:absolute;padding:14px 24px;border-radius:14px;background:rgba(8,10,18,.92);border:1.5px solid var(--blue2);font-size:25px;font-weight:700;color:var(--blue2);box-shadow:0 18px 50px rgba(0,0,0,.5);white-space:nowrap}
+.tag.pink{border-color:var(--pink);color:var(--pink)}
+/* cards */
+.cases .head{position:absolute;left:0;right:0;top:120px;text-align:center}
+.cases .head h2{font-size:78px;font-weight:800;letter-spacing:-0.04em}
+.cases .head h2 em{font-style:normal;color:var(--blue2)}
+.cases .head p{font-size:32px;color:#c3c7d6;margin-top:18px;font-weight:500}
+.cgrid{position:absolute;left:160px;right:160px;top:400px;display:grid;grid-template-columns:repeat(4,1fr);gap:26px}
+.card{height:220px;border-radius:22px;padding:30px 30px;background:linear-gradient(160deg,#161b36,#0e1122);border:1.5px solid rgba(142,164,255,.22);display:flex;flex-direction:column;justify-content:space-between}
+.card b{display:block;margin-bottom:10px;font-size:22px;color:var(--blue2);font-weight:700;letter-spacing:.04em}
+.card strong{font-size:38px;font-weight:800;line-height:1.25;letter-spacing:-0.03em}
+.card .ic{font-size:46px;line-height:1}
+.card.hot{border-color:rgba(245,183,201,.55)} .card.hot b{color:var(--pink)}
+/* outro */
+.outro{display:flex;align-items:center;justify-content:center;flex-direction:column;text-align:center;padding-bottom:90px}
+.logo{display:flex;align-items:center;gap:22px}
+.logo .fx{font-size:34px;font-weight:800;letter-spacing:.14em;background:var(--blue);color:#fff;padding:12px 20px;border-radius:6px}
+.logo .name{font-size:88px;font-weight:900;letter-spacing:.02em;text-align:left}
+.logo .name small{display:block;font-size:24px;letter-spacing:.34em;color:var(--blue2);font-weight:600;margin-top:4px}
+.outro .line{font-size:52px;font-weight:700;margin-top:70px;letter-spacing:-0.03em}
+.outro .line em{font-style:normal;color:var(--blue2)}
+.pill{margin-top:56px;font-size:38px;font-weight:700;padding:22px 46px;border-radius:999px;background:var(--blue);color:#fff;letter-spacing:-0.01em}
+.outro .foot{margin-top:40px;font-size:27px;color:var(--mute);font-weight:500}
+.subs{position:absolute;left:0;right:0;bottom:44px;display:flex;justify-content:center;pointer-events:none}
+.subs span{font-size:40px;font-weight:600;line-height:1.35;color:#fff;background:rgba(6,8,16,.8);padding:14px 34px;border-radius:16px;text-align:center;max-width:1560px;box-shadow:0 10px 40px rgba(0,0,0,.35);letter-spacing:-0.02em}
+.progress{position:absolute;left:0;bottom:0;height:6px;background:var(--blue2);opacity:.9}
+</style></head>
+<body>
+<div class="stage" id="stage">
+  <div class="grid a" id="grid"></div>
+
+  <section class="scene hero" id="s-hero">
+    <div class="txt">
+      <div class="eyebrow a" data-in="0.3">INTERACTIVE FASHION LAB · 패션 아바타 스튜디오</div>
+      <div class="big a" data-in="0.7">오늘, 우리가<br><em>런웨이의 주인공</em></div>
+      <div class="sub a" data-in="1.5">카메라 앞에서 움직이면<br>3D 아바타가 그대로 따라 해요</div>
+    </div>
+    <div class="show a" id="hero-show"><img id="hero-img" src="hero.jpg"><div class="lbl">AVATAR</div></div>
+  </section>
+
+  <section class="scene" id="s-start">
+    <div class="cap">
+      <div class="num a" data-in="0.2">STEP 1 · 시작하기</div>
+      <h2 class="a" data-in="0.4">버튼 하나로<br><em>바로 시작</em></h2>
+      <p class="a" data-in="0.8">포즈 미션과 자유 체험 중에서 골라요.</p>
+      <div class="chips a" data-in="1.2"><span class="chip">포즈 미션</span><span class="chip">자유 체험</span><span class="chip">내 아바타 불러오기</span></div>
+    </div>
+    <div class="win a" data-win><div class="bar"><i></i><i></i><i></i><span>localhost:8017 · 패션 아바타 체험</span></div><div class="view"><img id="v-start"></div></div>
+  </section>
+
+  <section class="scene" id="s-demo">
+    <div class="cap">
+      <div class="num a" data-in="0.2">STEP 2 · 포즈 미션</div>
+      <h2 class="a" data-in="0.4">아바타가 먼저<br><em>시범</em>을 보여줘요</h2>
+      <p class="a" data-in="0.8">미션 카드를 보고, 3·2·1 카운트다운이 끝나면 따라 해요.</p>
+    </div>
+    <div class="win a" data-win><div class="bar"><i></i><i></i><i></i><span>localhost:8017 · RUNWAY MISSION</span><b>시연: 웹캠 앞 학생 역할은 3D 모델</b></div><div class="view"><img id="v-demo"></div></div>
+  </section>
+
+  <section class="scene wide" id="s-play">
+    <div class="cap"><div class="num a" data-in="0.1">실시간 포즈 인식</div><h2 class="a" data-in="0.3">자세가 맞으면 <em>POSE MATCH</em>가 차올라요</h2></div>
+    <div class="win a" data-win><div class="bar"><i></i><i></i><i></i><span>localhost:8017 · RUNWAY MISSION</span><b>시연: 웹캠 앞 학생 역할은 3D 모델</b></div><div class="view"><img id="v-play"></div></div>
+  </section>
+
+  <section class="scene" id="s-result">
+    <div class="cap">
+      <div class="num a" data-in="0.2">미션 결과</div>
+      <h2 class="a" data-in="0.4">별을 모아<br><em>미션 성공!</em></h2>
+      <p class="a" data-in="0.8">몇 개 중 몇 개를 성공했는지 바로 보여줘요. 기념사진 버튼도 있어요.</p>
+    </div>
+    <div class="win a" data-win><div class="bar"><i></i><i></i><i></i><span>localhost:8017 · RUNWAY MISSION</span><b>시연: 웹캠 앞 학생 역할은 3D 모델</b></div><div class="view"><img id="v-result"></div></div>
+  </section>
+
+  <section class="scene cases" id="s-cards">
+    <div class="head"><h2 class="a" data-in="0.1"><em>45가지</em> 포즈 미션</h2><p class="a" data-in="0.4">매번 랜덤으로 출제돼요. 쉬운 포즈부터 전신 포즈까지!</p></div>
+    <div class="cgrid">
+      <div class="card a" data-in="0.7"><span class="ic">🙌</span><div><b>팔 · 쉬움</b><strong>양팔 만세</strong></div></div>
+      <div class="card a" data-in="0.85"><span class="ic">✈️</span><div><b>전신 · 쉬움</b><strong>비행기</strong></div></div>
+      <div class="card hot a" data-in="1.0"><span class="ic">🦸</span><div><b>전신 · 보통</b><strong>슈퍼히어로</strong></div></div>
+      <div class="card a" data-in="1.15"><span class="ic">🦖</span><div><b>전신 · 쉬움</b><strong>티라노 공룡</strong></div></div>
+      <div class="card hot a" data-in="1.3"><span class="ic">🕺</span><div><b>전신 · 보통</b><strong>토요일밤 디스코</strong></div></div>
+      <div class="card a" data-in="1.45"><span class="ic">🦩</span><div><b>전신 · 보통</b><strong>한 발 들기</strong></div></div>
+      <div class="card a" data-in="1.6"><span class="ic">🙆</span><div><b>전신 · 보통</b><strong>댑 댄스</strong></div></div>
+      <div class="card a" data-in="1.75" style="background:rgba(49,92,255,.14);border-color:var(--blue2)"><span class="ic">⭐</span><div><b>RESULT</b><strong>별을 모아<br>미션 성공</strong></div></div>
+    </div>
+  </section>
+
+  <section class="scene" id="s-free">
+    <div class="cap">
+      <div class="num a" data-in="0.2">STEP 3 · 자유 체험</div>
+      <h2 class="a" data-in="0.4">내가 움직이면<br><em>아바타도 똑같이</em></h2>
+      <p class="a" data-in="0.8">팔·손가락·고개·몸통·다리까지 실시간으로 따라 해요.</p>
+      <div class="chips a" data-in="1.2"><span class="chip">내 배경: 그대로</span><span class="chip">흐리게</span><span class="chip">아바타 배경</span></div>
+    </div>
+    <div class="win a" data-win><div class="bar"><i></i><i></i><i></i><span>localhost:8017 · 자유 체험</span><b>시연: 웹캠 앞 학생 역할은 3D 모델</b></div><div class="view"><img id="v-free"></div></div>
+  </section>
+
+  <section class="scene" id="s-photo">
+    <div class="cap">
+      <div class="num a" data-in="0.2">기념 남기기</div>
+      <h2 class="a" data-in="0.4">사진 · 영상으로<br><em>찰칵!</em></h2>
+      <p class="a" data-in="0.8">3초 카운트다운 사진과 최대 30초 영상. 다운로드 폴더에 바로 저장돼요.</p>
+      <div class="chips a" data-in="1.2"><span class="chip">아바타만</span><span class="chip">아바타 + 내 모습</span></div>
+    </div>
+    <div class="win a" data-win><div class="bar"><i></i><i></i><i></i><span>localhost:8017 · 자유 체험</span><b>시연: 웹캠 앞 학생 역할은 3D 모델</b></div><div class="view"><img id="v-photo"></div></div>
+  </section>
+
+  <section class="scene" id="s-upload">
+    <div class="cap">
+      <div class="num a" data-in="0.2">내 아바타</div>
+      <h2 class="a" data-in="0.4">VRoid로 만든<br><em>내 아바타</em>로</h2>
+      <p class="a" data-in="0.8">.vrm 파일을 불러오면 바로 내 아바타로 바뀌어요.</p>
+    </div>
+    <div class="win a" data-win><div class="bar"><i></i><i></i><i></i><span>localhost:8017 · 내 아바타 불러오기</span></div><div class="view"><img id="v-upload"></div></div>
+  </section>
+
+  <section class="scene" id="s-admin">
+    <div class="cap">
+      <div class="num a" data-in="0.2">운영자 설정</div>
+      <h2 class="a" data-in="0.4">수업·행사에<br><em>맞춤 설정</em></h2>
+      <p class="a" data-in="0.8">미션 개수, 합격 기준, 출제할 포즈를 골라요.</p>
+      <div class="chips a" data-in="1.2"><span class="chip">Esc로 열기</span><span class="chip">Space 수동 성공</span><span class="chip">포즈 테스트</span></div>
+    </div>
+    <div class="win a" data-win><div class="bar"><i></i><i></i><i></i><span>localhost:8017 · 운영자 설정</span></div><div class="view"><img id="v-admin"></div></div>
+  </section>
+
+  <section class="scene outro" id="s-outro">
+    <div class="logo a" data-in="0.1"><div class="fx">FASHION</div><div class="name">AVATAR STUDIO<small>INTERACTIVE FASHION LAB</small></div></div>
+    <div class="line a" data-in="0.6">내가 움직이면, <em>아바타가 런웨이 위에서</em> 따라 해요</div>
+    <div class="pill a" data-in="1.1">start.bat 더블클릭으로 바로 시작</div>
+    <div class="foot a" data-in="1.5">인터넷 없이 작동 · 웹캠 하나면 OK · MOVE / STYLE / CREATE</div>
+  </section>
+  <div class="subs"><span id="sub"></span></div>
+  <div class="progress" id="prog"></div>
+</div>
+<script>
+const FPS = 30;
+const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+const ease = t => t < .5 ? 4*t*t*t : 1 - Math.pow(-2*t + 2, 3)/2;
+const eout = t => 1 - Math.pow(1 - t, 3);
+const lerp = (a, b, t) => a + (b - a) * t;
+// 녹화 클립: 프레임 수, 원본 폭(px)
+const CLIPS = /*CLIPS*/{"start": {"n": 126, "w": 1600}, "mission": {"n": 480, "w": 1600}, "result": {"n": 105, "w": 1600}, "free": {"n": 270, "w": 1600}, "photo": {"n": 195, "w": 1600}, "video": {"n": 75, "w": 1600}, "upload": {"n": 180, "w": 1600}, "admin": {"n": 135, "w": 1600}};
+// 화면 영역 [x,y,w] (1600x900 기준, h = w*9/16) 시작 → 끝으로 천천히 줌
+const SCENES = /*SCENES*/[{"id": "s-hero", "dur": 4.8}, {"id": "s-start", "dur": 4.6, "img": "v-start", "segs": [{"clip": "start", "from": 0.0, "rate": 1, "len": 4.6, "view": [[0, 0, 1600], [30, 40, 1340]]}]}, {"id": "s-demo", "dur": 5.4, "img": "v-demo", "segs": [{"clip": "mission", "from": 3.85, "rate": 1, "len": 5.4, "view": [[0, 0, 1600], [0, 50, 1120]]}]}, {"id": "s-play", "dur": 6.2, "img": "v-play", "segs": [{"clip": "mission", "from": 0.9, "rate": 1, "len": 3.2, "view": [[0, 0, 1600], [30, 20, 1540]]}, {"clip": "mission", "from": 12.7, "rate": 1, "len": 3.0, "view": [[30, 20, 1540], [0, 0, 1600]]}]}, {"id": "s-result", "dur": 4.2, "img": "v-result", "segs": [{"clip": "result", "from": 0.0, "rate": 1, "len": 4.2, "view": [[240, 90, 1120], [340, 160, 900]]}]}, {"id": "s-cards", "dur": 5.4}, {"id": "s-free", "dur": 7.0, "img": "v-free", "segs": [{"clip": "free", "from": 0.9, "rate": 1, "len": 7.0, "view": [[0, 0, 1600], [60, 30, 1360]]}]}, {"id": "s-photo", "dur": 6.0, "img": "v-photo", "segs": [{"clip": "photo", "from": 0.4, "rate": 1, "len": 4.5, "view": [[0, 0, 1600], [120, 50, 1340]]}, {"clip": "video", "from": 0.5, "rate": 1, "len": 1.5, "view": [[150, 50, 1300], [220, 90, 1160]]}]}, {"id": "s-upload", "dur": 4.8, "img": "v-upload", "segs": [{"clip": "upload", "from": 0.2, "rate": 1, "len": 4.8, "view": [[0, 0, 1600], [50, 30, 1500]]}]}, {"id": "s-admin", "dur": 5.0, "img": "v-admin", "segs": [{"clip": "admin", "from": 0.2, "rate": 1, "len": 5.0, "view": [[0, 0, 1600], [380, 30, 880]]}]}, {"id": "s-outro", "dur": 5.8}];
+const XF = 0.6;
+let acc = 0; for (const s of SCENES) { s.start = acc; acc += s.dur - XF; }
+const TOTAL = acc + XF;
+window.TOTAL = TOTAL;
+function src(clip, i) { const c = CLIPS[clip]; i = Math.max(1, Math.min(c.n, i)); return `frames/${clip}/${String(i).padStart(5,'0')}.jpg`; }
+async function setImg(el, url) {
+  if (el.dataset.src === url) return;
+  el.dataset.src = url; el.src = url;
+  try { await el.decode(); } catch {}
+}
+const SUBS = /*SUBS*/[[0.4, 3.9, "카메라 앞에서 움직이면, 3D 아바타가 그대로 따라 해요."], [4.4, 8.0, "시작 화면에서 포즈 미션이나 자유 체험을 골라 바로 시작해요."], [8.4, 12.7, "미션 카드가 뜨면, 아바타가 먼저 시범 포즈를 보여 줘요."], [13.2, 18.3, "웹캠이 내 자세를 읽고, 포즈가 맞으면 게이지가 차오르며 성공!"], [18.8, 21.9, "미션을 마치면 몇 개를 성공했는지 바로 알려 줘요."], [22.4, 26.7, "만세, 비행기, 티라노 공룡까지! 45가지 포즈가 랜덤으로 나와요."], [27.2, 32.9, "자유 체험에서는 아바타가 내 움직임을 실시간으로 따라 해요."], [33.6, 38.5, "3초 카운트다운 사진과 영상으로 기념도 남길 수 있어요."], [39.0, 42.7, "VRoid로 만든 내 아바타 파일을 불러와 체험할 수도 있어요."], [43.2, 47.1, "미션 개수와 합격 기준은 운영자 설정에서 바꿀 수 있어요."], [47.6, 52.6, "인터넷 없이도 작동하는 패션 아바타 스튜디오, 지금 만나 보세요!"]];
+window.SUBS = SUBS; window.SCENES = SCENES;
+window.render = async function (t) {
+  { const cur = SUBS.find(x => t >= x[0] && t <= x[1]); const el = document.getElementById('sub');
+    if (cur) { el.textContent = cur[2]; const o = Math.min(clamp((t-cur[0])/0.25), clamp((cur[1]-t)/0.25)); el.parentElement.style.opacity = o; el.style.visibility='visible'; }
+    else { el.style.visibility='hidden'; } }
+  document.getElementById('prog').style.width = (t / TOTAL * 100) + '%';
+  document.getElementById('grid').style.transform = `translate(${-(t*6)%80}px, ${-(t*3)%80}px)`;
+  const waits = [];
+  for (const s of SCENES) {
+    const el = document.getElementById(s.id);
+    const lt = t - s.start;
+    if (lt < -0.01 || lt > s.dur + 0.01) { el.style.opacity = 0; el.style.display = 'none'; continue; }
+    el.style.display = '';
+    const fin = s === SCENES[0] ? 1 : clamp(lt / XF), fout = s === SCENES.at(-1) ? clamp((s.dur - lt) / 0.8) : clamp((s.dur - lt) / XF);
+    el.style.opacity = Math.min(fin, fout);
+    el.querySelectorAll('[data-in]').forEach(a => {
+      const p = eout(clamp((lt - parseFloat(a.dataset.in)) / 0.7));
+      a.style.opacity = p; a.style.transform = `translateY(${(1 - p) * 34}px)`;
+    });
+    const win = el.querySelector('[data-win]');
+    if (win) { const p = eout(clamp((lt - 0.15) / 0.9)); win.style.opacity = p; win.style.transform = `translateY(${(1-p)*50}px) scale(${lerp(.96,1,p)})`; }
+    if (s.id === 's-hero') {
+      const sh = document.getElementById('hero-show'); const p = eout(clamp((lt - 0.2) / 1.1));
+      sh.style.opacity = p; sh.style.transform = `translateX(${(1-p)*80}px)`;
+      document.getElementById('hero-img').style.transform = `translate(-50%,-50%) scale(${1.05 + lt * 0.02})`;
+    }
+    if (s.segs) {
+      let off = 0, seg = s.segs[0];
+      for (const g of s.segs) { if (lt >= off) seg = g; off += g.len; }
+      let segStart = 0; for (const g of s.segs) { if (g === seg) break; segStart += g.len; }
+      const st = clamp(lt - segStart, 0, seg.len);
+      const frame = Math.round((seg.from + st * seg.rate) * FPS) + 1;
+      const img = document.getElementById(s.img);
+      const box = img.parentElement; const bw = box.clientWidth;
+      const k = ease(clamp(st / seg.len));
+      const [a, b] = seg.view;
+      const vx = lerp(a[0], b[0], k), vy = lerp(a[1], b[1], k), vw = lerp(a[2], b[2], k);
+      const sc = bw / vw;
+      const pxScale = 1600 / CLIPS[seg.clip].w;
+      img.style.width = CLIPS[seg.clip].w + 'px';
+      img.style.transform = `translate(${-vx*sc}px, ${-vy*sc}px) scale(${sc*pxScale})`;
+      waits.push(setImg(img, src(seg.clip, frame)));
+    }
+  }
+  await Promise.all(waits);
+};
+</script>
+</body></html>
