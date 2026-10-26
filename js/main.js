@@ -6,6 +6,7 @@ import { Debug } from './debug.js';
 import { BACKGROUNDS, getBackground, setCustomBackground, getCustom, setCustomVisible } from './backgrounds.js';
 import * as CamBG from './cambg.js';
 import * as MissionUI from './mission-ui.js';
+import * as QuizUI from './mathquiz-ui.js';
 
 const IDLE_RESET_MS = 60 * 1000; // 60초 무조작 시 처음 화면으로
 
@@ -57,6 +58,13 @@ async function boot() {
     getSnapshot: () => Motion.getPoseSnapshot(),
     onExit: goStart,
     onManualPhoto: takePhoto,
+    adminSections: [QuizUI.adminSection], // 운영자 설정(Esc)에 수학 퀴즈 설정도 함께
+  });
+  QuizUI.init({
+    getSnapshot: () => Motion.getPoseSnapshot(),
+    onExit: goStart,
+    onManualPhoto: takePhoto,
+    isPaused: () => MissionUI.isAdminOpen(),
   });
   startRenderLoop();
 
@@ -79,7 +87,9 @@ function startRenderLoop() {
       const nowMs = performance.now();
       Motion.detect(nowMs);
       // 미션 준비 단계면 아바타가 목표 포즈를 시범으로 보여줌, 아니면 웹캠 따라 움직임
-      const demo = MissionUI.isActive() ? MissionUI.getDemoPose() : null;
+      const gameOn = MissionUI.isActive() || QuizUI.isActive();
+      const demo = MissionUI.isActive() ? MissionUI.getDemoPose()
+        : QuizUI.isActive() ? QuizUI.getDemoPose() : null;
       if (demo) Avatar.applyDemoPose(demo, dt);
       else Motion.applyToVRM(vrm, dt);
       updateCamMatch(dt); // 웹캠 표시 배율을 아바타 크기에 맞춤
@@ -87,7 +97,10 @@ function startRenderLoop() {
       updateCamView();
       updateMissionPoseOverlay();
       MissionUI.tick(nowMs);
-      if (!MissionUI.isActive()) updateGuide();
+      QuizUI.tick(nowMs);
+      if (!gameOn) updateGuide();
+      // 미션·퀴즈 중에는 사람이 화면 앞에 있는 동안 "무조작 → 처음 화면" 타이머를 미룸
+      else if (Motion.getStatus() === 'ok') resetIdleTimer();
       if (Debug.enabled) Debug.update({ ...Motion.getDebugInfo(), segFps: CamBG.getSegFps() }, $('#cam'));
     }
     if (vrm) vrm.update(dt);
@@ -109,6 +122,8 @@ async function goStart() {
   cancelVideo(); // 녹화 중이었다면 저장 없이 중단
   $('#video-choice').classList.add('hidden');
   MissionUI.forceStop();
+  QuizUI.forceStop();
+  document.body.classList.remove('photo-taking');
   resetCamMatch();
   Motion.stopCamera();
   // 다음 관람객을 위해 배경/웹캠 효과 초기화
@@ -125,9 +140,10 @@ async function goStart() {
   show('start');
 }
 
-async function goMotion(missionMode) {
+// mode: 'free'(자유 체험) | 'mission'(포즈 미션) | 'quiz'(수학 퀴즈)
+async function goMotion(mode) {
   Avatar.resetAvatarRotation();
-  Avatar.setFraming(missionMode ? 'mission' : 'motion');
+  Avatar.setFraming(mode === 'free' ? 'motion' : mode);
   show('motion');
   cameraFailed = false;
   try {
@@ -139,7 +155,8 @@ async function goMotion(missionMode) {
     console.error('카메라 오류', e);
     cameraFailed = true;
   }
-  if (missionMode) MissionUI.start();
+  if (mode === 'mission') MissionUI.start();
+  else if (mode === 'quiz') QuizUI.start();
   updateGuide();
 }
 
@@ -150,7 +167,8 @@ const camMatch = { s: 1, top: null };
 function updateCamMatch(dt) {
   const wrap = $('#cam-wrap');
   // 모바일 세로 또는 미션(3단 고정 레이아웃): JS 배율 맞춤 끔 → CSS 고정 위치 사용
-  if (Avatar.isPortrait() || document.body.classList.contains('mission-on')) {
+  const bodyCls = document.body.classList;
+  if (Avatar.isPortrait() || bodyCls.contains('mission-on') || bodyCls.contains('quiz-on')) {
     if (wrap.style.width) { wrap.style.width = wrap.style.height = wrap.style.top = wrap.style.transform = ''; }
     return;
   }
@@ -213,7 +231,7 @@ function updateMissionPoseOverlay() {
   const camEl = $('#cam');
   if (!canvas || !wrap || !camEl) return;
 
-  const points = MissionUI.isActive() ? Motion.getPoseOverlay() : null;
+  const points = MissionUI.isActive() || QuizUI.isActive() ? Motion.getPoseOverlay() : null;
   const visible = !!points;
   canvas.classList.toggle('hidden', !visible);
   if (!visible) return;
@@ -310,8 +328,9 @@ function applyBackground(id) {
 }
 
 function bindUI() {
-  $('#btn-done').addEventListener('click', () => goMotion(false));
-  $('#btn-mission').addEventListener('click', () => goMotion(true));
+  $('#btn-done').addEventListener('click', () => goMotion('free'));
+  $('#btn-mission').addEventListener('click', () => goMotion('mission'));
+  $('#btn-quiz').addEventListener('click', () => goMotion('quiz'));
   $('#btn-home-3').addEventListener('click', goStart);
 
   $('#btn-photo').addEventListener('click', takePhoto);
@@ -338,6 +357,7 @@ function bindUI() {
   }
   $('#btn-photo-close').addEventListener('click', () => {
     $('#photo-modal').classList.add('hidden');
+    document.body.classList.remove('photo-taking'); // 미션·퀴즈 결과창 다시 보이기
     const v = $('#video-preview');
     v.pause();
     v.removeAttribute('src');
@@ -389,12 +409,13 @@ function toast(msg) {
 async function takePhoto() {
   if (countdownBusy) return;
   countdownBusy = true;
+  document.body.classList.add('photo-taking');
   const cd = $('#countdown');
   cd.classList.remove('hidden');
   for (const n of [3, 2, 1]) {
     cd.textContent = n;
     await wait(1000);
-    if (current !== 'motion') { cd.classList.add('hidden'); countdownBusy = false; return; }
+    if (current !== 'motion') { cd.classList.add('hidden'); countdownBusy = false; document.body.classList.remove('photo-taking'); return; }
   }
   cd.classList.add('hidden');
 

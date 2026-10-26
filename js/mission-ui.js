@@ -12,7 +12,7 @@ export function getDemoPose() {
   return null;
 }
 
-let deps = null;      // { getSnapshot, capturePhoto, onExit, onManualPhoto }
+let deps = null;      // { getSnapshot, capturePhoto, onExit, onManualPhoto, adminSections }
 let root = null;      // 오버레이 루트
 let settings, enabled;
 let game = null;      // 진행 중 게임 상태
@@ -79,7 +79,7 @@ export function start() {
   game = { poses: set.poses, index: 0, success: 0, retriesLeft: settings.retries, phase: 'intro', results: [] };
   active = true;
   lastTick = 0;
-  root.classList.remove('hidden');
+  root.classList.remove('hidden', 'admin-only');
   root.classList.add('student');
   document.body.classList.add('mission-on'); // 학생 전체화면: 운영 컨트롤 숨김
   showMissionCard();
@@ -308,11 +308,21 @@ export function endGame() {
 }
 
 // ═════════ 운영자 패널 ═════════
+// 미션 중이 아닐 때(시작 화면·수학 퀴즈)도 Esc로 열 수 있게, 패널만 따로 보여줌
 function openAdmin() {
+  if (!active) root.classList.remove('hidden');
+  root.classList.toggle('admin-only', !active);
   buildAdminBody();
   q('#mm-admin').classList.remove('hidden');
 }
-function closeAdmin() { q('#mm-admin').classList.add('hidden'); }
+function closeAdmin() {
+  q('#mm-admin').classList.add('hidden');
+  if (root.classList.contains('admin-only')) {
+    root.classList.remove('admin-only');
+    if (!active) root.classList.add('hidden');
+  }
+}
+export function isAdminOpen() { return !!root && !q('#mm-admin').classList.contains('hidden'); }
 
 function buildAdminBody() {
   settings = Engine.loadSettings();
@@ -320,6 +330,7 @@ function buildAdminBody() {
   const s = settings;
   const stats = Engine.loadStats();
 
+  const extra = (deps && deps.adminSections) || [];
   const numField = (label, key, min, max, step) =>
     `<label class="mm-fld">${label}<input type="number" data-set="${key}" value="${s[key]}" min="${min}" max="${max}" step="${step || 1}"></label>`;
 
@@ -369,15 +380,17 @@ function buildAdminBody() {
         <button class="mm-mini" data-preset="7,5">7개 중 5개</button>
       </p>
     </div>
+    ${extra.map((sec) => sec.html()).join('')}
     <div class="mm-admin-sec">
       <h3>포즈 목록 (${POSE_DEFS.length}개)</h3>
       <p class="mm-help">체크 = 출제 대상. STABLE만 출제가 켜져 있으면 EXPERIMENTAL은 체크해도 제외됩니다.</p>
+      <p class="mm-help mm-admin-only-note">포즈 "테스트"와 미션 운영 버튼은 포즈 미션 중에 Esc를 누르면 나타나요.</p>
       <div class="mm-table-wrap"><table class="mm-table">
         <thead><tr><th>출제</th><th>이름</th><th>등급</th><th>분류</th><th>출제</th><th>성공률</th><th>평균</th><th></th></tr></thead>
         <tbody>${rows}</tbody>
       </table></div>
     </div>
-    <div class="mm-admin-sec">
+    <div class="mm-admin-sec mm-admin-ops">
       <h3>운영</h3>
       <div class="mm-admin-btns">
         <button class="btn btn-ghost" id="mm-op-start">미션 시작 / 다음 참가자</button>
@@ -401,10 +414,15 @@ function buildAdminBody() {
     settings = Engine.saveSettings(ns);
     root.querySelectorAll('[data-en]').forEach((el) => { enabled[el.dataset.en] = el.checked; });
     Engine.saveEnabled(enabled);
+    for (const sec of extra) sec.save(root);
     toast('설정을 저장했어요');
     buildAdminBody();
   };
-  q('#mm-reset-settings').onclick = () => { settings = Engine.resetSettings(); toast('기본 설정으로'); buildAdminBody(); };
+  q('#mm-reset-settings').onclick = () => {
+    settings = Engine.resetSettings();
+    for (const sec of extra) sec.reset();
+    toast('기본 설정으로'); buildAdminBody();
+  };
   q('#mm-reset-stats').onclick = () => { Engine.resetStats(); toast('통계 초기화'); buildAdminBody(); };
   root.querySelectorAll('[data-preset]').forEach((b) => b.onclick = () => {
     const [t, p] = b.dataset.preset.split(',').map(Number);
@@ -559,6 +577,7 @@ export function forceStop() {
   document.body.classList.remove('mission-on');
   if (root) {
     root.classList.add('hidden');
+    root.classList.remove('admin-only');
     q('#mm-result').style.display = 'none';
     q('#mm-card').style.display = '';
     q('#mm-admin').classList.add('hidden');

@@ -24,6 +24,8 @@ const CAMERA_FRAMING = {
   motion: { pos: new THREE.Vector3(0, 0.95, 3.7), look: new THREE.Vector3(0, 0.9, 0), shift: 0.22, shiftY: -0.03 },
   // 미션(3단): 아바타 왼쪽 1/3, 가운데 미션카드, 오른쪽 웹캠. 팔 든 자세까지 다 보이게
   mission:{ pos: new THREE.Vector3(0, 0.98, 4.3), look: new THREE.Vector3(0, 0.98, 0), shift: 0.34, shiftY: -0.03 },
+  // 수학 퀴즈: 아바타 가운데(양옆은 답 카드, 위는 문제). 손을 번쩍 들어도 머리 위가 안 잘리게
+  quiz:   { pos: new THREE.Vector3(0, 1.3, 5.3), look: new THREE.Vector3(0, 1.3, 0), shift: 0 },
 };
 CAMERA_FRAMING.custom = CAMERA_FRAMING.start; // 하위호환
 // 모바일 세로: 좌우 밀기 없이 세로 배치 (하단은 카드/웹캠)
@@ -31,6 +33,7 @@ const CAMERA_FRAMING_MOBILE = {
   start:  { pos: new THREE.Vector3(0, 0.95, 3.6), look: new THREE.Vector3(0, 0.95, 0), shift: 0, shiftY: -0.05 },
   motion: { pos: new THREE.Vector3(0, 1.02, 3.5), look: new THREE.Vector3(0, 0.98, 0), shift: 0, shiftY: -0.1 },
   mission:{ pos: new THREE.Vector3(0, 1.0, 3.7), look: new THREE.Vector3(0, 1.0, 0), shift: 0, shiftY: -0.14 },
+  quiz:   { pos: new THREE.Vector3(0, 1.07, 9.0), look: new THREE.Vector3(0, 1.07, 0), shift: 0 },
 };
 CAMERA_FRAMING_MOBILE.custom = CAMERA_FRAMING_MOBILE.start;
 export const MOTION_SHIFT = CAMERA_FRAMING.motion.shift;
