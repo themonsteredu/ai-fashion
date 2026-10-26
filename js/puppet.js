@@ -9,6 +9,7 @@
 //  - 관절을 못 찾은 그림은 "등신대" 방식(그림 전체가 한 덩어리로 옆걸음·앉기·기울이기)으로 움직인다.
 import * as THREE from 'three';
 import * as Avatar from './avatar.js';
+import { DEMO, DEMO_FLAT, DEMO_FLAT_RULE_OK } from './missionvisuals.js';
 
 const MAX_SIDE = 2048;     // 그림 긴 변 최대 픽셀 (큰 사진은 줄여서 사용)
 const GRID_ROWS = 120;     // 메시 세로 격자 수
@@ -307,6 +308,12 @@ function buildBoneDefs(mode, J, prep) {
   return B;
 }
 
+function segDist(p, b) {
+  const d = sub2(b.tail, b.head), L = d[0] * d[0] + d[1] * d[1];
+  const t = L ? Math.max(0, Math.min(1, ((p[0] - b.head[0]) * d[0] + (p[1] - b.head[1]) * d[1]) / L)) : 0;
+  return len2(sub2(p, lerp2(b.head, b.tail, t)));
+}
+
 function insidePoly(p, poly) {
   let inside = false;
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
@@ -436,7 +443,16 @@ function buildMesh(prep, bones) {
       const d = cand[bi];
       if (d < d1) { b2 = b1; d2 = d1; b1 = bi; d1 = d; } else if (d < d2) { b2 = bi; d2 = d; }
     }
-    if (b1 < 0) { b1 = 0; d1 = 0; }
+    if (b1 < 0) {
+      // 어느 뼈에서도 이어지지 않은 조각(떨어진 소품 등): 가장 가까운 뼈 선분에 붙인다
+      b1 = 0; d1 = 0;
+      let bd = Infinity;
+      for (let bi = 0; bi < bones.length; bi++) {
+        if (bones[bi].drive === 'none' && bones[bi].name === 'root') continue;
+        const sd = segDist([px, py], bones[bi]);
+        if (sd < bd) { bd = sd; b1 = bi; }
+      }
+    }
     let w1 = 1, w2 = 0;
     if (b2 >= 0 && isFinite(d2) && d2 - d1 < BLEND && related(b1, b2)) { w2 = 0.5 * (1 - (d2 - d1) / BLEND); w1 = 1 - w2; }
     const idx = pos.length / 3;
@@ -469,8 +485,9 @@ export function isActive() { return !!active; }
 export function getMode() { return active ? active.mode : null; }
 
 // 그림 픽셀 → 월드 좌표: 발끝을 바닥(y=0)에, 그림 키를 3D 아바타 키와 같게
-function toWorldFactory(prep, worldHeight, originX) {
-  const MAX_W = 1.15; // 너무 넓은 그림(정사각형·가로 그림)은 폭 기준으로 줄인다 (미터)
+function toWorldFactory(prep, worldHeight, originX, mode) {
+  // 등신대(그림 전체가 한 덩어리)는 너무 넓으면 폭 기준으로 줄인다. 팔이 움직이는 방식은 팔 벌린 폭을 허용
+  const MAX_W = mode === 'standee' ? 1.15 : Math.max(1.15, worldHeight * 1.1);
   const s = Math.min(worldHeight / Math.max(1, prep.contentBottom - prep.contentTop), MAX_W / Math.max(1, prep.contentRight - prep.contentLeft));
   return { s, P: (p) => new THREE.Vector3((p[0] - originX) * s, (prep.contentBottom - p[1]) * s, 0) };
 }
@@ -491,7 +508,7 @@ function build(prep, mode, J, vrm) {
   const bonesDef = buildBoneDefs(mode, J, prep);
   const worldH = vrmHeight(vrm);
   const originX = bonesDef[0].name === 'root' && mode !== 'standee' ? bonesDef[0].head[0] : prep.w / 2;
-  const { s, P } = toWorldFactory(prep, worldH, originX);
+  const { s, P } = toWorldFactory(prep, worldH, originX, mode);
 
   const mesh = buildMesh(prep, bonesDef);
   // 정점 좌표를 월드 단위로
@@ -644,6 +661,7 @@ export async function activate(source, { rig = null, onStatus = null } = {}) {
     return active.eyes.map((e) => active.headBone.localToWorld(e.clone()));
   });
   active = built;
+  Avatar.setWideStart(true); // 팔 벌린 그림이 첫 화면 오른쪽 패널 안에 들어오도록
   console.info(`그림 아바타 준비됨: ${finalMode} 방식, ${built.bones.length}개 뼈, ${built.geo.attributes.position.count}개 정점`);
   return { mode: finalMode, armsTouching: !!built.armsTouching };
 }
@@ -654,6 +672,7 @@ export function deactivate() {
   active.geo.dispose(); active.mat.dispose(); active.tex.dispose(); active.skeleton.dispose();
   active = null;
   Avatar.setEyeProvider(null);
+  Avatar.setWideStart(false);
   if (Avatar.state.vrm) Avatar.state.vrm.scene.visible = true;
 }
 
@@ -694,29 +713,36 @@ export async function activateDefault(onStatus) {
 }
 
 // 미션 시범 포즈: 3D 아바타는 아래팔을 카메라 쪽(Y축)으로 굽히는 경우가 많은데, 그림은 화면 평면만
-// 표현할 수 있다. 그림 아바타일 때는 그 굽힘을 화면 안에서 몸 쪽으로 굽히는 회전(Z축)으로 바꿔서 시범을 보인다.
-// (3D 아바타는 숨겨져 있으므로 보이는 변화는 그림뿐이다)
+// 표현할 수 있다. 그림 아바타일 때는 그림용 시범(DEMO_FLAT)을 쓰거나, 확인된 포즈만 규칙으로 바꾸고,
+// 나머지는 카메라 쪽 굽힘을 뺀다. (3D 아바타는 숨겨져 있으므로 보이는 변화는 그림뿐이다)
+const DEMO_ID = new Map(Object.entries(DEMO).map(([id, spec]) => [spec, id]));
 export function flattenDemo(spec) {
   if (!active || !spec) return spec;
+  const id = DEMO_ID.get(spec);
+  if (id && DEMO_FLAT[id]) return DEMO_FLAT[id];
+  const isYBend = ([b, ax]) => /LowerArm$/.test(b) && ax[1] && !ax[0] && !ax[2];
+  if (!spec.some(isYBend)) return spec;
+  if (!(id && DEMO_FLAT_RULE_OK.has(id))) return spec.filter((x) => !isYBend(x));
   const upZ = (side) => {
     const u = spec.find(([b, ax]) => b === side + 'UpperArm' && ax[2]);
     return u ? u[2] : (side === 'left' ? -1 : 1); // 위팔 지정 없음 = 차렷(아래)
   };
-  return spec.map(([b, ax, ang]) => (/LowerArm$/.test(b) && ax[1] && !ax[0] && !ax[2])
-    ? [b, [0, 0, 1], Math.sign(upZ(b.startsWith('left') ? 'left' : 'right')) * Math.abs(ang)]
-    : [b, ax, ang]);
+  return spec.map((x) => (isYBend(x)
+    ? [x[0], [0, 0, 1], Math.sign(upZ(x[0].startsWith('left') ? 'left' : 'right')) * Math.abs(x[2])]
+    : x));
 }
 
 // 3D 아바타가 앉은 정도(엉덩이~발 높이가 줄어든 비율) → 그림 다리를 세로로 줄일 배율
-function crouchSquash(vrm, A) {
+function crouchSquash(vrm, A, dt) {
   const hips = vrmPoint(vrm, 'hips');
   const fl = vrmPoint(vrm, 'leftFoot'), fr = vrmPoint(vrm, 'rightFoot');
   if (!hips || !fl || !fr) return 1;
   const now = hips.y - Math.min(fl.y, fr.y);
-  const rest = A.vrmRest.legH;
-  if (!(rest > 0.1)) return 1;
-  const c = THREE.MathUtils.clamp(1 - now / rest, 0, 0.7);
-  const eff = Math.max(0, c - 0.08) / 0.92;        // 서 있을 때의 작은 흔들림은 무시
+  if (!(now > 0.05)) return 1;
+  // "서 있을 때 다리 높이"는 사람마다·보정마다 달라서, 최근에 가장 길었던 값을 기준으로 삼는다(천천히 줄어듦)
+  A.legRef = A.legRef == null ? now : Math.max(now, A.legRef - dt * 0.03);
+  const c = THREE.MathUtils.clamp(1 - now / A.legRef, 0, 0.7);
+  const eff = Math.max(0, c - 0.05) / 0.95;        // 서 있을 때의 작은 흔들림은 무시
   return 1 - Math.min(0.55, eff * 1.1);
 }
 
@@ -763,12 +789,22 @@ export function update(dt, live) {
           } else desired = hold;
         } else if (r) {
           const r0 = A.vrmRest.dirs[d.name];
-          desired = r0 == null ? 0 : wrapAngle(r.angle - r0);
-          if (d.name === 'spine' || d.name === 'head') desired = THREE.MathUtils.clamp(desired, -0.6, 0.6);
+          const target = r0 == null ? 0 : wrapAngle(r.angle - r0);
+          if (d.name === 'spine' || d.name === 'head') {
+            desired = THREE.MathUtils.clamp(target, -0.6, 0.6);
+          } else {
+            // 다리: 무릎을 앞으로 들어 카메라 쪽을 향하면 화면 방향을 믿을 수 없음 → 부모 기준 각도 유지
+            const hold = parentNow + (A.rel[d.name] || 0);
+            const trust = THREE.MathUtils.smoothstep(r.ratio, 0.15, 0.45);
+            desired = hold + wrapAngle(target - hold) * trust;
+            if (/upperLeg$/.test(d.name)) desired = THREE.MathUtils.clamp(desired, -1.4, 1.4); // 다리가 엉덩이 위로 올라가지 않게
+          }
         }
       }
       // 부드럽게 (각도 최단 경로)
-      const prev = A.smooth[d.name] == null ? 0 : A.smooth[d.name];
+      // 팔·다리: 부모가 움직인 만큼은 그대로 따라가고(부모는 이미 부드럽게 처리됨), 자기 각도만 부드럽게
+      const prev = (A.rel[d.name] != null && d.parent) ? parentNow + A.rel[d.name]
+        : (A.smooth[d.name] == null ? 0 : A.smooth[d.name]);
       const cur = prev + wrapAngle(desired - prev) * k;
       A.smooth[d.name] = cur;
       A.rel[d.name] = cur - parentNow;
@@ -787,8 +823,8 @@ export function update(dt, live) {
   if (live) {
     const hips = vrmPoint(vrm, 'hips');
     if (hips) tx = THREE.MathUtils.clamp(hips.x - A.vrmRest.hips.x, -0.8, 0.8); // 그림 키 = 3D 키 → 이동량 그대로
-    squash = crouchSquash(vrm, A);
-  }
+    squash = crouchSquash(vrm, A, dt);
+  } else A.legRef = null;
   A.root.x += (tx - A.root.x) * k;
   A.squash += (squash - A.squash) * k;
   const rootBone = A.byName.root;
@@ -801,6 +837,32 @@ export function update(dt, live) {
     const hipH = rootBone.userData.restWorld.y;
     rootBone.position.y = hipH * A.squash;
     for (const n of ['LupperLeg', 'RupperLeg', 'lower']) if (A.byName[n]) A.byName[n].scale.y = A.squash;
+    // 다리를 벌리면 발목이 들려 보이므로, 낮은 쪽 발목이 제자리(바닥 높이)에 오도록 몸 전체를 내린다
+    const fL = A.byName.Lfoot, fR = A.byName.Rfoot;
+    if (fL && fR) {
+      A.mesh.updateMatrixWorld(true);
+      const yL = fL.getWorldPosition(_v).y, yR = fR.getWorldPosition(_v).y;
+      const want = Math.min(fL.userData.restWorld.y, fR.userData.restWorld.y) * A.squash;
+      rootBone.position.y += want - Math.min(yL, yR);
+    }
   }
 }
 
+
+// 그림 관절의 현재 월드 위치 (시범 포즈 점검용)
+export function jointWorld() {
+  if (!active || active.mode === 'standee') return null;
+  active.mesh.updateMatrixWorld(true);
+  const o = {};
+  for (const b of active.bones) {
+    const v = b.getWorldPosition(new THREE.Vector3());
+    o[b.name] = { x: v.x, y: v.y, z: 0 };
+  }
+  // 손끝(손목에서 손 방향) 대신 손목 = hand 뼈 위치, 발목 = foot 뼈 위치
+  const eyes = active.eyes.map((e) => active.headBone.localToWorld(e.clone()));
+  const mid = eyes[0].clone().add(eyes[1]).multiplyScalar(0.5);
+  o.nose = { x: mid.x, y: mid.y - 0.03, z: 0 };
+  o.earL = { x: Math.max(eyes[0].x, eyes[1].x) + 0.04, y: mid.y, z: 0 };
+  o.earR = { x: Math.min(eyes[0].x, eyes[1].x) - 0.04, y: mid.y, z: 0 };
+  return o;
+}

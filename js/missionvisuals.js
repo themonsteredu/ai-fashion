@@ -189,6 +189,24 @@ export const DEMO = {
   model_glance:     [['head',[0,1,0],0.6],['leftUpperArm',[0,0,1],-0.75],['leftLowerArm',[0,0,1],-1.5], DOWN_R],
 };
 
+// ── 그림 아바타용 시범 포즈 (화면 평면 회전만) ──
+// 그림은 아래팔을 카메라 쪽으로 굽히는 모습을 못 보여 주므로, 같은 뜻의 포즈를 화면 안에서 보여 준다.
+// (Z축 회전만 사용. 규칙: 왼팔은 +가 들어 올림, 오른팔은 -가 들어 올림 — DEMO 와 같은 기준)
+export const DEMO_FLAT = {
+  selfhug:   [['leftUpperArm',[0,0,1],-0.9],['leftLowerArm',[0,0,1],-2.6],['rightUpperArm',[0,0,1],0.9],['rightLowerArm',[0,0,1],2.6]],
+  robot:     [['leftUpperArm',[0,0,1],-0.6],['leftLowerArm',[0,0,1],-2.5],['rightUpperArm',[0,0,1],0.6],['rightLowerArm',[0,0,1],2.5]],
+  chin_rest: [['rightUpperArm',[0,0,1],1.45],['rightLowerArm',[0,0,1],2.8], DOWN_L],
+  hands_face:[['leftUpperArm',[0,0,1],-0.1],['leftLowerArm',[0,0,1],2.3],['rightUpperArm',[0,0,1],0.1],['rightLowerArm',[0,0,1],-2.3]],
+  surprise:  [['leftUpperArm',[0,0,1],0.0],['leftLowerArm',[0,0,1],2.2],['rightUpperArm',[0,0,1],0.0],['rightLowerArm',[0,0,1],-2.2]],
+  model_hair:[['rightUpperArm',[0,0,1],-1.45],['rightLowerArm',[0,0,1],-0.6], DOWN_L],
+  dab:       [['rightUpperArm',[0,0,1],-1.05],['leftUpperArm',[0,0,1],0.35],['leftLowerArm',[0,0,1],2.4]],
+  thumbsup_left: [['leftUpperArm',[0,0,1],-0.9],['leftLowerArm',[0,0,1],-2.2], DOWN_R],
+  thumbsup_right:[['rightUpperArm',[0,0,1],0.9],['rightLowerArm',[0,0,1],2.2], DOWN_L],
+  model_cross_legs: [['leftUpperLeg',[0,0,1],-0.35],['rightUpperLeg',[0,0,1],0.3],['leftUpperArm',[0,0,1],-0.75],['leftLowerArm',[0,0,1],-1.5], DOWN_R],
+};
+// 아래팔 굽힘을 "같은 쪽 위팔 방향 부호"로 바꾸는 규칙이 맞는 것으로 확인된 포즈
+export const DEMO_FLAT_RULE_OK = new Set(['hands_hip', 'superhero', 'overhead_heart', 'trex', 'model_cross_arms', 'model_bag']);
+
 // ── 포즈별 시각 메타 (테마색·실루엣·문구·난이도) ──
 // main/tip/successTip: 짧고 귀엽게. difficulty: 1~3 별.
 export const VISUALS = {

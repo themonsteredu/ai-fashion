@@ -26,6 +26,8 @@ const CAMERA_FRAMING = {
   mission:{ pos: new THREE.Vector3(0, 0.98, 4.3), look: new THREE.Vector3(0, 0.98, 0), shift: 0.34, shiftY: -0.03 },
 };
 CAMERA_FRAMING.custom = CAMERA_FRAMING.start; // 하위호환
+// 그림 아바타(팔 벌린 그림이라 3D보다 넓음): 조금 멀리·오른쪽에서 보여 첫 화면 패널 안에 들어오게
+CAMERA_FRAMING.startWide = { pos: new THREE.Vector3(0, 0.92, 4.3), look: new THREE.Vector3(0, 0.92, 0), shift: -0.30 };
 // 모바일 세로: 좌우 밀기 없이 세로 배치 (하단은 카드/웹캠)
 const CAMERA_FRAMING_MOBILE = {
   start:  { pos: new THREE.Vector3(0, 0.95, 3.6), look: new THREE.Vector3(0, 0.95, 0), shift: 0, shiftY: -0.05 },
@@ -33,13 +35,21 @@ const CAMERA_FRAMING_MOBILE = {
   mission:{ pos: new THREE.Vector3(0, 1.0, 3.7), look: new THREE.Vector3(0, 1.0, 0), shift: 0, shiftY: -0.14 },
 };
 CAMERA_FRAMING_MOBILE.custom = CAMERA_FRAMING_MOBILE.start;
+CAMERA_FRAMING_MOBILE.startWide = { pos: new THREE.Vector3(0, 0.95, 4.1), look: new THREE.Vector3(0, 0.95, 0), shift: 0, shiftY: -0.05 };
 export const MOTION_SHIFT = CAMERA_FRAMING.motion.shift;
 
 export function isPortrait() {
   return window.innerWidth <= 700 && window.innerHeight >= window.innerWidth;
 }
+let wideStart = false;
+export function setWideStart(on) {
+  wideStart = !!on;
+  if (state.camera && (framingMode === 'start' || framingMode === 'custom')) setFraming(framingMode);
+}
 function framingFor(mode) {
-  return isPortrait() ? CAMERA_FRAMING_MOBILE[mode] : CAMERA_FRAMING[mode];
+  const set = isPortrait() ? CAMERA_FRAMING_MOBILE : CAMERA_FRAMING;
+  if (wideStart && (mode === 'start' || mode === 'custom')) return set.startWide;
+  return set[mode];
 }
 
 let container = null;

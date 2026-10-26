@@ -100,6 +100,7 @@ function startRenderLoop() {
       updateMissionPoseOverlay();
       MissionUI.tick(nowMs);
       if (!MissionUI.isActive()) updateGuide();
+      else { const st = Motion.getStatus(); if (st === 'ok' || st === 'calibrating') resetIdleTimer(); } // 미션 중 사람이 보이면 무조작 아님
       if (Debug.enabled) Debug.update({ ...Motion.getDebugInfo(), segFps: CamBG.getSegFps() }, $('#cam'));
     }
     if (vrm) vrm.update(dt);
@@ -362,6 +363,7 @@ function bindUI() {
     const file = e.target.files && e.target.files[0];
     e.target.value = '';
     if (!file) return;
+    resetIdleTimer(); // 파일 고르는 시간은 무조작으로 치지 않음
     const loading = $('#loading');
     const loadingText = $('#loading-text');
     loading.classList.remove('hidden');
@@ -395,6 +397,8 @@ function bindUI() {
       loading.classList.add('hidden');
       const why = (err && err.userMessage) || '이 파일은 열 수 없어요. VRoid Studio에서 내보낸 .vrm 파일이나 PNG·JPG 그림인지 확인해 주세요.';
       alert(`${why}\n\n(선택한 파일: ${file.name})`);
+    } finally {
+      resetIdleTimer(); // 불러오기가 끝난 시점부터 60초
     }
   });
 
@@ -588,7 +592,10 @@ function resetIdleTimer() {
   clearTimeout(idleTimer);
   idleTimer = setTimeout(() => {
     // 관람객이 불러온 아바타는 그 사람 체험 동안만 — 다음 관람객은 부스 기본 캐릭터로 (사진 개인정보 보호)
-    if (customAvatar && !recorder && !countdownBusy) { location.reload(); return; }
+    if (customAvatar && !recorder && !countdownBusy) {
+      if (!$('#loading').classList.contains('hidden')) { resetIdleTimer(); return; } // 불러오는 중이면 기다림
+      location.reload(); return;
+    }
     if (current !== 'start') {
       $('#photo-modal').classList.add('hidden');
       goStart();
