@@ -146,7 +146,13 @@ export function setFraming(mode) {
 
 // ── 웹캠 배율 맞춤용: 아바타 눈 사이 거리의 화면상 픽셀 크기와 눈높이 ──
 // (아바타는 항상 전신 고정, 웹캠 표시 배율을 여기에 맞춘다)
+// 그림 아바타(puppet.js)를 쓰는 동안에는 그림의 눈 위치를 대신 알려 준다
+let eyeProvider = null;
+export function setEyeProvider(fn) { eyeProvider = fn; }
+
 export function getAvatarEyeScreen() {
+  const custom = eyeProvider ? eyeProvider() : null;
+  if (custom) return eyeToScreen(custom[0], custom[1]);
   if (!state.vrm) return null;
   const h = state.vrm.humanoid;
   const l = h.getRawBoneNode('leftEye');
@@ -162,6 +168,10 @@ export function getAvatarEyeScreen() {
     a = c.clone().setX(c.x - 0.035);
     b = c.clone().setX(c.x + 0.035);
   }
+  return eyeToScreen(a, b);
+}
+
+function eyeToScreen(a, b) {
   const w = window.innerWidth, hpx = window.innerHeight;
   const toPx = (v) => {
     const p = v.clone().project(state.camera);
@@ -595,7 +605,7 @@ export function enableDragRotate(el) {
   let dragging = false, lastX = 0;
   const down = (e) => { dragging = true; lastX = e.clientX; };
   const move = (e) => {
-    if (!dragging || !state.vrm) return;
+    if (!dragging || !state.vrm || !state.vrm.scene.visible) return; // 그림 아바타일 때는 회전 안 함
     state.vrm.scene.rotation.y += (e.clientX - lastX) * 0.008;
     lastX = e.clientX;
   };

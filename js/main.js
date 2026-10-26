@@ -6,6 +6,7 @@ import { Debug } from './debug.js';
 import { BACKGROUNDS, getBackground, setCustomBackground, getCustom, setCustomVisible } from './backgrounds.js';
 import * as CamBG from './cambg.js';
 import * as MissionUI from './mission-ui.js';
+import * as Puppet from './puppet.js';
 
 const IDLE_RESET_MS = 60 * 1000; // 60초 무조작 시 처음 화면으로
 
@@ -45,8 +46,17 @@ async function boot() {
     loadingText.textContent = '아바타 파일을 찾을 수 없어요. 폴더에 character.vrm 파일을 넣고 새로고침해 주세요.';
     return;
   }
-  if (Avatar.state.usingSample) $('#sample-badge').classList.remove('hidden');
   Motion.setAvatar(Avatar.state.vrm, Avatar.getSkeletonMeasures());
+
+  // 폴더에 character.png(그림 캐릭터)가 있으면 그 그림으로 보여 준다.
+  // 3D 아바타는 숨겨진 채로 동작 계산에만 쓰인다. (그림을 지우면 다시 3D 캐릭터)
+  let usingPicture = false;
+  try {
+    usingPicture = !!(await Puppet.activateDefault((t) => { loadingText.textContent = t; }));
+  } catch (e) {
+    console.warn('그림 캐릭터 준비 실패 → 3D 캐릭터 사용', e);
+  }
+  if (Avatar.state.usingSample && !usingPicture) $('#sample-badge').classList.remove('hidden');
 
   $('#loading').classList.add('hidden');
 
@@ -91,6 +101,7 @@ function startRenderLoop() {
       if (Debug.enabled) Debug.update({ ...Motion.getDebugInfo(), segFps: CamBG.getSegFps() }, $('#cam'));
     }
     if (vrm) vrm.update(dt);
+    Puppet.update(dt, current === 'motion'); // 그림 아바타: 3D 아바타 자세를 그림에 옮김
     renderer.render(scene, camera);
   }
   tick();
@@ -343,7 +354,7 @@ function bindUI() {
     v.removeAttribute('src');
   });
 
-  // 내 아바타(.vrm) 불러오기
+  // 내 아바타(.vrm 또는 그림 .png/.jpg) 불러오기
   $('#btn-upload').addEventListener('click', () => $('#vrm-file').click());
   $('#vrm-file').addEventListener('change', async (e) => {
     const file = e.target.files && e.target.files[0];
@@ -354,18 +365,30 @@ function bindUI() {
     loading.classList.remove('hidden');
     loadingText.textContent = '아바타를 불러오는 중…';
     try {
+      if (await Puppet.isImageFile(file)) {
+        // 그림 파일 → 그림 아바타 (3D 아바타는 숨겨서 동작 계산에만 사용)
+        const { mode } = await Puppet.activate(file, { onStatus: (t) => { loadingText.textContent = t; } });
+        $('#sample-badge').classList.add('hidden');
+        Avatar.setFraming('start');
+        loading.classList.add('hidden');
+        toast(mode === 'standee'
+          ? '그림을 불러왔어요! 몸 전체가 함께 움직여요'
+          : '그림 아바타를 만들었어요! 팔·다리가 따라 움직여요');
+        return;
+      }
       await Avatar.loadAvatarFromFile(file, (r) => {
         loadingText.textContent = `아바타를 불러오는 중… ${Math.round(r * 100)}%`;
       });
+      Puppet.deactivate(); // 3D 아바타를 다시 보이게
       Motion.setAvatar(Avatar.state.vrm, Avatar.getSkeletonMeasures());
       $('#sample-badge').classList.add('hidden');
       Avatar.setFraming('start');
       loading.classList.add('hidden');
       toast('아바타를 불러왔어요! 미션이나 자유 체험을 시작해 보세요');
     } catch (err) {
-      console.error('VRM 로드 실패', file.name, err);
+      console.error('아바타 불러오기 실패', file.name, err);
       loading.classList.add('hidden');
-      const why = (err && err.userMessage) || '이 파일은 열 수 없어요. VRoid Studio에서 내보낸 .vrm 파일인지 확인해 주세요.';
+      const why = (err && err.userMessage) || '이 파일은 열 수 없어요. VRoid Studio에서 내보낸 .vrm 파일이나 PNG·JPG 그림인지 확인해 주세요.';
       alert(`${why}\n\n(선택한 파일: ${file.name})`);
     }
   });
