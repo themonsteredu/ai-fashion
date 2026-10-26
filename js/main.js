@@ -6,6 +6,7 @@ import { Debug } from './debug.js';
 import { BACKGROUNDS, getBackground, setCustomBackground, getCustom, setCustomVisible } from './backgrounds.js';
 import * as CamBG from './cambg.js';
 import * as MissionUI from './mission-ui.js';
+import * as Puppet from './puppet.js';
 
 const IDLE_RESET_MS = 60 * 1000; // 60초 무조작 시 처음 화면으로
 
@@ -30,6 +31,7 @@ let selectedPart = 'top';
 let selectedPattern = 'solid';
 let selectedBgId = 'studio';
 let countdownBusy = false;
+let customAvatar = false; // 관람객이 직접 불러온 아바타(.vrm/그림)를 쓰는 중이면 true
 
 // ── 초기화 ──
 async function boot() {
@@ -45,8 +47,18 @@ async function boot() {
     loadingText.textContent = '아바타 파일을 찾을 수 없어요. 폴더에 character.vrm 파일을 넣고 새로고침해 주세요.';
     return;
   }
-  if (Avatar.state.usingSample) $('#sample-badge').classList.remove('hidden');
   Motion.setAvatar(Avatar.state.vrm, Avatar.getSkeletonMeasures());
+
+  // 폴더에 character.png(그림 캐릭터)가 있으면 그 그림으로 보여 준다.
+  // 3D 아바타는 숨겨진 채로 동작 계산에만 쓰인다. (그림을 지우면 다시 3D 캐릭터)
+  let usingPicture = false;
+  try {
+    usingPicture = !!(await Puppet.activateDefault((t) => { loadingText.textContent = t; }));
+  } catch (e) {
+    console.warn('그림 캐릭터 준비 실패 → 3D 캐릭터 사용', e);
+    setTimeout(() => toast('그림 캐릭터(character.png)를 열지 못해 3D 캐릭터로 시작했어요'), 500);
+  }
+  if (Avatar.state.usingSample && !usingPicture) $('#sample-badge').classList.remove('hidden');
 
   $('#loading').classList.add('hidden');
 
@@ -80,7 +92,7 @@ function startRenderLoop() {
       Motion.detect(nowMs);
       // 미션 준비 단계면 아바타가 목표 포즈를 시범으로 보여줌, 아니면 웹캠 따라 움직임
       const demo = MissionUI.isActive() ? MissionUI.getDemoPose() : null;
-      if (demo) Avatar.applyDemoPose(demo, dt);
+      if (demo) Avatar.applyDemoPose(Puppet.isActive() ? Puppet.flattenDemo(demo) : demo, dt); // 그림 아바타는 화면 평면 시범
       else Motion.applyToVRM(vrm, dt);
       updateCamMatch(dt); // 웹캠 표시 배율을 아바타 크기에 맞춤
       CamBG.process($('#cam'), nowMs);
@@ -88,9 +100,11 @@ function startRenderLoop() {
       updateMissionPoseOverlay();
       MissionUI.tick(nowMs);
       if (!MissionUI.isActive()) updateGuide();
+      else { const st = Motion.getStatus(); if (st === 'ok' || st === 'calibrating') resetIdleTimer(); } // 미션 중 사람이 보이면 무조작 아님
       if (Debug.enabled) Debug.update({ ...Motion.getDebugInfo(), segFps: CamBG.getSegFps() }, $('#cam'));
     }
     if (vrm) vrm.update(dt);
+    Puppet.update(dt, current === 'motion'); // 그림 아바타: 3D 아바타 자세를 그림에 옮김
     renderer.render(scene, camera);
   }
   tick();
@@ -343,30 +357,48 @@ function bindUI() {
     v.removeAttribute('src');
   });
 
-  // 내 아바타(.vrm) 불러오기
+  // 내 아바타(.vrm 또는 그림 .png/.jpg) 불러오기
   $('#btn-upload').addEventListener('click', () => $('#vrm-file').click());
   $('#vrm-file').addEventListener('change', async (e) => {
     const file = e.target.files && e.target.files[0];
     e.target.value = '';
     if (!file) return;
+    resetIdleTimer(); // 파일 고르는 시간은 무조작으로 치지 않음
     const loading = $('#loading');
     const loadingText = $('#loading-text');
     loading.classList.remove('hidden');
     loadingText.textContent = '아바타를 불러오는 중…';
     try {
+      if (await Puppet.isImageFile(file)) {
+        // 그림 파일 → 그림 아바타 (3D 아바타는 숨겨서 동작 계산에만 사용)
+        const { mode, armsTouching } = await Puppet.activate(file, { onStatus: (t) => { loadingText.textContent = t; } });
+        customAvatar = true;
+        $('#sample-badge').classList.add('hidden');
+        Avatar.setFraming('start');
+        loading.classList.add('hidden');
+        toast(mode === 'full' ? '그림 아바타를 만들었어요! 팔·다리가 따라 움직여요'
+          : mode === 'upper' ? '그림 아바타를 만들었어요! 팔·몸통이 따라 움직여요'
+          : armsTouching ? '팔이 몸에 붙은 그림이라 몸 전체가 함께 움직여요 (팔을 살짝 뗀 그림이면 팔도 움직여요)'
+          : '그림 전체가 함께 움직여요 (정면 전신 그림이면 팔·다리도 움직여요)', 4500);
+        return;
+      }
       await Avatar.loadAvatarFromFile(file, (r) => {
         loadingText.textContent = `아바타를 불러오는 중… ${Math.round(r * 100)}%`;
       });
+      Puppet.deactivate(); // 3D 아바타를 다시 보이게
+      customAvatar = true;
       Motion.setAvatar(Avatar.state.vrm, Avatar.getSkeletonMeasures());
       $('#sample-badge').classList.add('hidden');
       Avatar.setFraming('start');
       loading.classList.add('hidden');
       toast('아바타를 불러왔어요! 미션이나 자유 체험을 시작해 보세요');
     } catch (err) {
-      console.error('VRM 로드 실패', file.name, err);
+      console.error('아바타 불러오기 실패', file.name, err);
       loading.classList.add('hidden');
-      const why = (err && err.userMessage) || '이 파일은 열 수 없어요. VRoid Studio에서 내보낸 .vrm 파일인지 확인해 주세요.';
+      const why = (err && err.userMessage) || '이 파일은 열 수 없어요. VRoid Studio에서 내보낸 .vrm 파일이나 PNG·JPG 그림인지 확인해 주세요.';
       alert(`${why}\n\n(선택한 파일: ${file.name})`);
+    } finally {
+      resetIdleTimer(); // 불러오기가 끝난 시점부터 60초
     }
   });
 
@@ -377,12 +409,12 @@ function bindUI() {
 }
 
 let toastTimer = null;
-function toast(msg) {
+function toast(msg, ms = 2200) {
   const el = $('#toast');
   el.textContent = msg;
   el.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
+  toastTimer = setTimeout(() => el.classList.remove('show'), ms);
 }
 
 // ── 사진 찍기: 3초 카운트다운 → 아바타 화면만 캡처 → 표시 + PNG 저장 ──
@@ -559,6 +591,11 @@ function stopVideo() {
 function resetIdleTimer() {
   clearTimeout(idleTimer);
   idleTimer = setTimeout(() => {
+    // 관람객이 불러온 아바타는 그 사람 체험 동안만 — 다음 관람객은 부스 기본 캐릭터로 (사진 개인정보 보호)
+    if (customAvatar && !recorder && !countdownBusy) {
+      if (!$('#loading').classList.contains('hidden')) { resetIdleTimer(); return; } // 불러오는 중이면 기다림
+      location.reload(); return;
+    }
     if (current !== 'start') {
       $('#photo-modal').classList.add('hidden');
       goStart();

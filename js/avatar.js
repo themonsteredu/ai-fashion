@@ -26,6 +26,8 @@ const CAMERA_FRAMING = {
   mission:{ pos: new THREE.Vector3(0, 0.98, 4.3), look: new THREE.Vector3(0, 0.98, 0), shift: 0.34, shiftY: -0.03 },
 };
 CAMERA_FRAMING.custom = CAMERA_FRAMING.start; // 하위호환
+// 그림 아바타(팔 벌린 그림이라 3D보다 넓음): 조금 멀리·오른쪽에서 보여 첫 화면 패널 안에 들어오게
+CAMERA_FRAMING.startWide = { pos: new THREE.Vector3(0, 0.92, 4.3), look: new THREE.Vector3(0, 0.92, 0), shift: -0.30 };
 // 모바일 세로: 좌우 밀기 없이 세로 배치 (하단은 카드/웹캠)
 const CAMERA_FRAMING_MOBILE = {
   start:  { pos: new THREE.Vector3(0, 0.95, 3.6), look: new THREE.Vector3(0, 0.95, 0), shift: 0, shiftY: -0.05 },
@@ -33,13 +35,21 @@ const CAMERA_FRAMING_MOBILE = {
   mission:{ pos: new THREE.Vector3(0, 1.0, 3.7), look: new THREE.Vector3(0, 1.0, 0), shift: 0, shiftY: -0.14 },
 };
 CAMERA_FRAMING_MOBILE.custom = CAMERA_FRAMING_MOBILE.start;
+CAMERA_FRAMING_MOBILE.startWide = { pos: new THREE.Vector3(0, 0.95, 4.1), look: new THREE.Vector3(0, 0.95, 0), shift: 0, shiftY: -0.05 };
 export const MOTION_SHIFT = CAMERA_FRAMING.motion.shift;
 
 export function isPortrait() {
   return window.innerWidth <= 700 && window.innerHeight >= window.innerWidth;
 }
+let wideStart = false;
+export function setWideStart(on) {
+  wideStart = !!on;
+  if (state.camera && (framingMode === 'start' || framingMode === 'custom')) setFraming(framingMode);
+}
 function framingFor(mode) {
-  return isPortrait() ? CAMERA_FRAMING_MOBILE[mode] : CAMERA_FRAMING[mode];
+  const set = isPortrait() ? CAMERA_FRAMING_MOBILE : CAMERA_FRAMING;
+  if (wideStart && (mode === 'start' || mode === 'custom')) return set.startWide;
+  return set[mode];
 }
 
 let container = null;
@@ -146,7 +156,13 @@ export function setFraming(mode) {
 
 // ── 웹캠 배율 맞춤용: 아바타 눈 사이 거리의 화면상 픽셀 크기와 눈높이 ──
 // (아바타는 항상 전신 고정, 웹캠 표시 배율을 여기에 맞춘다)
+// 그림 아바타(puppet.js)를 쓰는 동안에는 그림의 눈 위치를 대신 알려 준다
+let eyeProvider = null;
+export function setEyeProvider(fn) { eyeProvider = fn; }
+
 export function getAvatarEyeScreen() {
+  const custom = eyeProvider ? eyeProvider() : null;
+  if (custom) return eyeToScreen(custom[0], custom[1]);
   if (!state.vrm) return null;
   const h = state.vrm.humanoid;
   const l = h.getRawBoneNode('leftEye');
@@ -162,6 +178,10 @@ export function getAvatarEyeScreen() {
     a = c.clone().setX(c.x - 0.035);
     b = c.clone().setX(c.x + 0.035);
   }
+  return eyeToScreen(a, b);
+}
+
+function eyeToScreen(a, b) {
   const w = window.innerWidth, hpx = window.innerHeight;
   const toPx = (v) => {
     const p = v.clone().project(state.camera);
@@ -595,7 +615,7 @@ export function enableDragRotate(el) {
   let dragging = false, lastX = 0;
   const down = (e) => { dragging = true; lastX = e.clientX; };
   const move = (e) => {
-    if (!dragging || !state.vrm) return;
+    if (!dragging || !state.vrm || !state.vrm.scene.visible) return; // 그림 아바타일 때는 회전 안 함
     state.vrm.scene.rotation.y += (e.clientX - lastX) * 0.008;
     lastX = e.clientX;
   };
