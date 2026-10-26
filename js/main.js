@@ -31,6 +31,7 @@ let selectedPart = 'top';
 let selectedPattern = 'solid';
 let selectedBgId = 'studio';
 let countdownBusy = false;
+let customAvatar = false; // 관람객이 직접 불러온 아바타(.vrm/그림)를 쓰는 중이면 true
 
 // ── 초기화 ──
 async function boot() {
@@ -55,6 +56,7 @@ async function boot() {
     usingPicture = !!(await Puppet.activateDefault((t) => { loadingText.textContent = t; }));
   } catch (e) {
     console.warn('그림 캐릭터 준비 실패 → 3D 캐릭터 사용', e);
+    setTimeout(() => toast('그림 캐릭터(character.png)를 열지 못해 3D 캐릭터로 시작했어요'), 500);
   }
   if (Avatar.state.usingSample && !usingPicture) $('#sample-badge').classList.remove('hidden');
 
@@ -90,7 +92,7 @@ function startRenderLoop() {
       Motion.detect(nowMs);
       // 미션 준비 단계면 아바타가 목표 포즈를 시범으로 보여줌, 아니면 웹캠 따라 움직임
       const demo = MissionUI.isActive() ? MissionUI.getDemoPose() : null;
-      if (demo) Avatar.applyDemoPose(demo, dt);
+      if (demo) Avatar.applyDemoPose(Puppet.isActive() ? Puppet.flattenDemo(demo) : demo, dt); // 그림 아바타는 화면 평면 시범
       else Motion.applyToVRM(vrm, dt);
       updateCamMatch(dt); // 웹캠 표시 배율을 아바타 크기에 맞춤
       CamBG.process($('#cam'), nowMs);
@@ -367,19 +369,22 @@ function bindUI() {
     try {
       if (await Puppet.isImageFile(file)) {
         // 그림 파일 → 그림 아바타 (3D 아바타는 숨겨서 동작 계산에만 사용)
-        const { mode } = await Puppet.activate(file, { onStatus: (t) => { loadingText.textContent = t; } });
+        const { mode, armsTouching } = await Puppet.activate(file, { onStatus: (t) => { loadingText.textContent = t; } });
+        customAvatar = true;
         $('#sample-badge').classList.add('hidden');
         Avatar.setFraming('start');
         loading.classList.add('hidden');
-        toast(mode === 'standee'
-          ? '그림을 불러왔어요! 몸 전체가 함께 움직여요'
-          : '그림 아바타를 만들었어요! 팔·다리가 따라 움직여요');
+        toast(mode === 'full' ? '그림 아바타를 만들었어요! 팔·다리가 따라 움직여요'
+          : mode === 'upper' ? '그림 아바타를 만들었어요! 팔·몸통이 따라 움직여요'
+          : armsTouching ? '팔이 몸에 붙은 그림이라 몸 전체가 함께 움직여요 (팔을 살짝 뗀 그림이면 팔도 움직여요)'
+          : '그림 전체가 함께 움직여요 (정면 전신 그림이면 팔·다리도 움직여요)', 4500);
         return;
       }
       await Avatar.loadAvatarFromFile(file, (r) => {
         loadingText.textContent = `아바타를 불러오는 중… ${Math.round(r * 100)}%`;
       });
       Puppet.deactivate(); // 3D 아바타를 다시 보이게
+      customAvatar = true;
       Motion.setAvatar(Avatar.state.vrm, Avatar.getSkeletonMeasures());
       $('#sample-badge').classList.add('hidden');
       Avatar.setFraming('start');
@@ -400,12 +405,12 @@ function bindUI() {
 }
 
 let toastTimer = null;
-function toast(msg) {
+function toast(msg, ms = 2200) {
   const el = $('#toast');
   el.textContent = msg;
   el.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
+  toastTimer = setTimeout(() => el.classList.remove('show'), ms);
 }
 
 // ── 사진 찍기: 3초 카운트다운 → 아바타 화면만 캡처 → 표시 + PNG 저장 ──
@@ -582,6 +587,8 @@ function stopVideo() {
 function resetIdleTimer() {
   clearTimeout(idleTimer);
   idleTimer = setTimeout(() => {
+    // 관람객이 불러온 아바타는 그 사람 체험 동안만 — 다음 관람객은 부스 기본 캐릭터로 (사진 개인정보 보호)
+    if (customAvatar && !recorder && !countdownBusy) { location.reload(); return; }
     if (current !== 'start') {
       $('#photo-modal').classList.add('hidden');
       goStart();

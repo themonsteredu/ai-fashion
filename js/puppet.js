@@ -18,7 +18,7 @@ const CROP_MARGIN = 0.02;  // 잘라낼 때 남길 여백 비율
 // 사용자에게 보여 줄 오류 문구 (main.js 의 alert 에서 그대로 사용)
 const MESSAGES = {
   decode: '그림 파일을 열 수 없어요. PNG 또는 JPG 그림인지 확인해 주세요.\n(아이폰 HEIC 사진은 JPG로 바꿔서 가져와 주세요)',
-  small: '그림이 너무 작아요. 더 큰 그림(세로 300픽셀 이상)을 선택해 주세요.',
+  small: '그림이 너무 작아요. 더 큰 그림(가로·세로 200픽셀 이상)을 선택해 주세요.',
   empty: '그림에 보이는 부분이 없어요. 다른 그림을 선택해 주세요.',
 };
 export class ImageAvatarError extends Error {
@@ -63,7 +63,7 @@ function removeFlatBackground(data, w, h) {
   for (let x = 0; x < w; x += 2) { pushPx(x, 0); pushPx(x, h - 1); }
   for (let y = 0; y < h; y += 2) { pushPx(0, y); pushPx(w - 1, y); }
   const med = [0, 1, 2].map((c) => border.map((p) => p[c]).sort((a, b) => a - b)[border.length >> 1]);
-  const TOL = 30;
+  const TOL = 15; // 엄격하게: 흰 신발·밝은 옷이 배경과 함께 지워지지 않도록
   const near = (i) => Math.abs(px[i] - med[0]) + Math.abs(px[i + 1] - med[1]) + Math.abs(px[i + 2] - med[2]) <= TOL * 1.6;
   const okBorder = border.filter((p) => Math.abs(p[0] - med[0]) + Math.abs(p[1] - med[1]) + Math.abs(p[2] - med[2]) <= TOL * 1.6).length;
   if (okBorder / border.length < 0.85) return false; // 배경이 단색이 아님 → 그대로 사용(네모 카드처럼 보임)
@@ -89,6 +89,41 @@ function removeFlatBackground(data, w, h) {
   return true;
 }
 
+// 가장 큰 덩어리(인물)와 그 근처 덩어리만 남기고 나머지는 투명하게
+function removeDebris(a, w, h) {
+  const CS = Math.max(4, Math.round(h / GRID_ROWS));
+  const gw = Math.ceil(w / CS), gh = Math.ceil(h / CS);
+  const occ = new Uint8Array(gw * gh);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    if (a[(y * w + x) * 4 + 3] > 16) occ[((y / CS) | 0) * gw + ((x / CS) | 0)] = 1;
+  }
+  const lab = new Int32Array(gw * gh).fill(-1), comps = [];
+  for (let st0 = 0; st0 < gw * gh; st0++) {
+    if (!occ[st0] || lab[st0] >= 0) continue;
+    const c = { n: 0, x0: gw, y0: gh, x1: -1, y1: -1 }, st = [st0]; lab[st0] = comps.length;
+    while (st.length) {
+      const k = st.pop(), x = k % gw, y = (k / gw) | 0; c.n++;
+      if (x < c.x0) c.x0 = x; if (x > c.x1) c.x1 = x; if (y < c.y0) c.y0 = y; if (y > c.y1) c.y1 = y;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= gw || ny >= gh) continue;
+        const nk = ny * gw + nx;
+        if (occ[nk] && lab[nk] < 0) { lab[nk] = comps.length; st.push(nk); }
+      }
+    }
+    comps.push(c);
+  }
+  if (comps.length < 2) return;
+  const main = comps.reduce((p, q) => (q.n > p.n ? q : p));
+  const M = 2; // 인물 상자 바깥 여유(칸)
+  const keep = comps.map((c) => c === main || (c.n >= main.n * 0.15) ||
+    (c.x1 >= main.x0 - M && c.x0 <= main.x1 + M && c.y1 >= main.y0 - M && c.y0 <= main.y1 + M));
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const l = lab[((y / CS) | 0) * gw + ((x / CS) | 0)];
+    if (l >= 0 && !keep[l]) a[(y * w + x) * 4 + 3] = 0;
+  }
+}
+
 // 반환: { canvas, w, h, toCanvas(x01, y01) — 원본 그림 비율 좌표 → 준비된 캔버스 픽셀 }
 async function prepareImage(blob) {
   const bmp = await decodeImage(blob);
@@ -98,6 +133,8 @@ async function prepareImage(blob) {
   const w = Math.round(W0 * s0), h = Math.round(H0 * s0);
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   const g = c.getContext('2d', { willReadFrequently: true });
+  g.imageSmoothingEnabled = true;
+  g.imageSmoothingQuality = 'high'; // 큰 사진을 한 번에 줄일 때 계단 현상 방지
   g.drawImage(bmp, 0, 0, w, h);
   if (bmp.close) bmp.close();
   const data = g.getImageData(0, 0, w, h);
@@ -105,12 +142,17 @@ async function prepareImage(blob) {
 
   // 투명 배경 여부
   let transparent = 0;
+  let dirty = false;
   for (let i = 3; i < a.length; i += 4 * 7) if (a[i] < 250) transparent++;
   let cardLike = false;
   if (transparent / (a.length / (4 * 7)) < 0.01) {
-    if (removeFlatBackground(data, w, h)) g.putImageData(data, 0, 0);
+    if (removeFlatBackground(data, w, h)) dirty = true;
     else cardLike = true;
   }
+
+  // 떨어져 있는 작은 조각(서명·얼룩·그림자 등)은 지운다 — 발이 바닥에 안 닿거나 그림이 작아지는 것 방지
+  if (!cardLike) { removeDebris(a, w, h); dirty = true; }
+  if (dirty) g.putImageData(data, 0, 0);
 
   // 보이는 부분의 테두리 상자
   let x0 = w, y0 = h, x1 = -1, y1 = -1;
@@ -133,6 +175,7 @@ async function prepareImage(blob) {
   return {
     canvas: out, w: cw, h: ch,
     contentTop: y0 - cy0,           // 머리끝(보이는 부분의 맨 위)
+    contentLeft: x0 - cx0, contentRight: x1 - cx0,
     contentBottom: y1 - cy0,        // 발끝(보이는 부분의 맨 아래) — 바닥에 맞춘다
     cardLike,
     toCanvas: (x01, y01) => [x01 * w - cx0, y01 * h - cy0],
@@ -169,6 +212,18 @@ async function detectJoints(prep) {
       if (!p) continue;
       joints[k] = [p.x * prep.w, p.y * prep.h];
       vis[k] = p.visibility == null ? 1 : p.visibility;
+    }
+    // 그림의 오른쪽(화면 오른쪽)이 L_* 가 되도록 맞춘다 (3D 아바타의 left* 뼈가 화면 오른쪽에 있음).
+    // 뒷모습·특이한 그림에서 좌우가 바뀌어 인식되면 팔이 몸을 가로지르는 것 방지
+    const dx = (p, q) => (joints[p] && joints[q] ? joints[p][0] - joints[q][0] : 0);
+    if (dx('L_SH', 'R_SH') + dx('L_HIP', 'R_HIP') < 0) {
+      for (const key of Object.keys(LM)) {
+        if (!key.startsWith('L_')) continue;
+        const r = 'R_' + key.slice(2);
+        if (!(key in joints) || !(r in joints)) continue;
+        [joints[key], joints[r]] = [joints[r], joints[key]];
+        [vis[key], vis[r]] = [vis[r], vis[key]];
+      }
     }
     return { joints, vis };
   } finally {
@@ -218,7 +273,7 @@ function buildBoneDefs(mode, J, prep) {
   const hipHalf = Math.max(len2(sub2(J.L_HIP, J.R_HIP)) / 2, shW * 0.45);
   const side = sub2(J.L_HIP, J.R_HIP); const sl = len2(side) || 1; const ux = [side[0] / sl, side[1] / sl];
   const inset = (p, q, t) => lerp2(p, q, t); // 어깨 꼭짓점을 몸 안쪽으로 살짝
-  const torso = [inset(J.L_SH, shC, 0.08), inset(J.R_SH, shC, 0.08), add2(hipC, ux, -hipHalf), add2(hipC, ux, hipHalf)];
+  const torso = [inset(J.L_SH, shC, 0.03), inset(J.R_SH, shC, 0.03), add2(hipC, ux, -hipHalf), add2(hipC, ux, hipHalf)];
   const B = [
     { name: 'root', parent: null, head: hipC, tail: hipC, drive: 'none', layer: 1 },
     { name: 'spine', parent: 'root', head: hipC, tail: neck, drive: 'delta', vrm: ['hips', 'neck'], layer: 1, region: torso },
@@ -342,10 +397,29 @@ function buildMesh(prep, bones) {
     nearestOfCell[k] = best;
   }
 
+  // 아래팔·손이 몸통·다리에 붙어 있는 칸 수 (붙어 있으면 움직일 때 찢어져 보임 → 등신대 방식으로)
+  const isLow = (bi) => bi >= 0 && /^[LR](lowerArm|hand)$/.test(bones[bi].name);
+  const isBody = (bi) => bi >= 0 && !/^[LR](upperArm|lowerArm|hand)$/.test(bones[bi].name);
+  let armTouch = 0;
+  for (let cy = 0; cy < rows; cy++) for (let cx = 0; cx < cols; cx++) {
+    const kk = cy * cols + cx;
+    if (!solid(cx, cy) || !isLow(nearestOfCell[kk])) continue;
+    let t = false;
+    for (let dy = -1; dy <= 1 && !t; dy++) for (let dx = -1; dx <= 1; dx++) {
+      if (solid(cx + dx, cy + dy) && isBody(nearestOfCell[(cy + dy) * cols + cx + dx])) { t = true; break; }
+    }
+    if (t) armTouch++;
+  }
+
   // 정점 (격자 꼭짓점) — 쓰는 칸 주변만 만든다
   const vIndex = new Int32Array((cols + 1) * (rows + 1)).fill(-1);
   const pos = [], uv = [], skinIdx = [], skinW = [];
-  const BLEND = Math.max(2, 0.035 * rows); // 관절 주변 섞이는 폭(칸)
+  const BLEND = Math.max(2, 0.03 * rows); // 관절 주변 섞이는 폭(칸)
+  // 부모-자식(또는 형제)처럼 이어진 뼈끼리만 섞는다 (손과 바지처럼 닿아 있을 뿐인 부분이 늘어나지 않게)
+  const related = (i, j) => {
+    const a = bones[i], b = bones[j];
+    return a.parent === b.name || b.parent === a.name || (a.parent && a.parent === b.parent && !/Arm|hand/.test(a.name + b.name));
+  };
   const vertexOf = (vx, vy) => {
     const key = vy * (cols + 1) + vx;
     if (vIndex[key] >= 0) return vIndex[key];
@@ -364,7 +438,7 @@ function buildMesh(prep, bones) {
     }
     if (b1 < 0) { b1 = 0; d1 = 0; }
     let w1 = 1, w2 = 0;
-    if (b2 >= 0 && isFinite(d2) && d2 - d1 < BLEND) { w2 = 0.5 * (1 - (d2 - d1) / BLEND); w1 = 1 - w2; }
+    if (b2 >= 0 && isFinite(d2) && d2 - d1 < BLEND && related(b1, b2)) { w2 = 0.5 * (1 - (d2 - d1) / BLEND); w1 = 1 - w2; }
     const idx = pos.length / 3;
     pos.push(px, py, 0);
     uv.push(px / w, 1 - py / h);
@@ -385,7 +459,7 @@ function buildMesh(prep, bones) {
       tris[layer].push(a, d, b, b, d, c);
     }
   }
-  return { pos, uv, skinIdx, skinW, index: [].concat(...tris) };
+  return { pos, uv, skinIdx, skinW, index: [].concat(...tris), armTouch };
 }
 
 // ── 5. 조립 ──
@@ -396,7 +470,8 @@ export function getMode() { return active ? active.mode : null; }
 
 // 그림 픽셀 → 월드 좌표: 발끝을 바닥(y=0)에, 그림 키를 3D 아바타 키와 같게
 function toWorldFactory(prep, worldHeight, originX) {
-  const s = worldHeight / Math.max(1, prep.contentBottom - prep.contentTop);
+  const MAX_W = 1.15; // 너무 넓은 그림(정사각형·가로 그림)은 폭 기준으로 줄인다 (미터)
+  const s = Math.min(worldHeight / Math.max(1, prep.contentBottom - prep.contentTop), MAX_W / Math.max(1, prep.contentRight - prep.contentLeft));
   return { s, P: (p) => new THREE.Vector3((p[0] - originX) * s, (prep.contentBottom - p[1]) * s, 0) };
 }
 
@@ -454,8 +529,12 @@ function build(prep, mode, J, vrm) {
   tex.premultiplyAlpha = true;        // 테두리 검은 번짐 방지
   tex.anisotropy = Avatar.state.renderer ? Avatar.state.renderer.capabilities.getMaxAnisotropy() : 1;
   tex.needsUpdate = true;
+  // 텍스처는 이미 알파가 곱해져 올라가므로(premultiplyAlpha) 셰이더에서 또 곱하지 않고 그대로 섞는다
   const mat = new THREE.MeshBasicMaterial({
-    map: tex, transparent: true, premultipliedAlpha: true, alphaTest: 0.01,
+    map: tex, transparent: true, alphaTest: 0.01, premultipliedAlpha: false,
+    blending: THREE.CustomBlending,
+    blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
+    blendSrcAlpha: THREE.OneFactor, blendDstAlpha: THREE.OneMinusSrcAlphaFactor,
     depthTest: false, depthWrite: false, side: THREE.DoubleSide, toneMapped: false,
   });
   const skinned = new THREE.SkinnedMesh(geo, mat);
@@ -469,13 +548,13 @@ function build(prep, mode, J, vrm) {
   let eyes = null;
   const headBone = byName.head || byName.root;
   const headRest = headBone.userData.restWorld;
-  if (J && J.L_EYE && J.R_EYE) eyes = [P(J.L_EYE).sub(headRest), P(J.R_EYE).sub(headRest)];
+  if (mode !== 'standee' && J && J.L_EYE && J.R_EYE) eyes = [P(J.L_EYE).sub(headRest), P(J.R_EYE).sub(headRest)];
   else {
     const top = P([prep.w / 2, prep.contentTop + (prep.contentBottom - prep.contentTop) * 0.11]).sub(headRest);
     eyes = [top.clone().setX(top.x + 0.035), top.clone().setX(top.x - 0.035)];
   }
 
-  return { mesh: skinned, bones, byName, skeleton, tex, mat, geo, mode, eyes, headBone, scale: s, worldH };
+  return { mesh: skinned, bones, byName, skeleton, tex, mat, geo, mode, eyes, headBone, scale: s, worldH, armTouch: mesh.armTouch };
 }
 
 // 3D 아바타(VRM)의 뼈 월드 위치
@@ -513,7 +592,9 @@ function captureVrmRest(vrm, bones) {
     if (d.vrm) { const r = vrmDir(vrm, d.vrm); rest[d.name] = r ? r.angle : null; }
   }
   const hips = vrmPoint(vrm, 'hips');
-  return { dirs: rest, hips: hips || new THREE.Vector3(0, 0.9, 0) };
+  const fl = vrmPoint(vrm, 'leftFoot'), fr = vrmPoint(vrm, 'rightFoot');
+  const legH = hips && fl && fr ? hips.y - Math.min(fl.y, fr.y) : 0;
+  return { dirs: rest, hips: hips || new THREE.Vector3(0, 0.9, 0), legH };
 }
 
 function wrapAngle(a) { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; }
@@ -538,9 +619,20 @@ export async function activate(source, { rig = null, onStatus = null } = {}) {
   const mode = rig && rig.mode ? rig.mode : chooseMode(found, prep);
 
   deactivate();
-  const built = build(prep, mode, found && found.joints, vrm);
+  let finalMode = mode;
+  let built = build(prep, finalMode, found && found.joints, vrm);
+  // 자동 인식한 그림에서 팔이 몸에 붙어 있으면(움직일 때 찢어져 보임) 그림 전체가 함께 움직이는 방식으로
+  if (!(rig && rig.joints) && finalMode !== 'standee' && built.armTouch > 2) {
+    console.info(`팔이 몸에 붙어 있음(${built.armTouch}칸) → 등신대 방식`);
+    built.geo.dispose(); built.mat.dispose(); built.tex.dispose(); built.skeleton.dispose();
+    finalMode = 'standee';
+    built = build(prep, finalMode, null, vrm);
+    built.armsTouching = true;
+  }
   built.vrmRest = captureVrmRest(vrm, built.bones);
   built.smooth = {};
+  built.rel = {};
+  built.squash = 1;
   built.root = new THREE.Vector3();
   built.joints = found ? found.joints : null;
   built.prep = prep;
@@ -552,8 +644,8 @@ export async function activate(source, { rig = null, onStatus = null } = {}) {
     return active.eyes.map((e) => active.headBone.localToWorld(e.clone()));
   });
   active = built;
-  console.info(`그림 아바타 준비됨: ${mode} 방식, ${built.bones.length}개 뼈, ${built.geo.attributes.position.count}개 정점`);
-  return { mode };
+  console.info(`그림 아바타 준비됨: ${finalMode} 방식, ${built.bones.length}개 뼈, ${built.geo.attributes.position.count}개 정점`);
+  return { mode: finalMode, armsTouching: !!built.armsTouching };
 }
 
 export function deactivate() {
@@ -575,25 +667,57 @@ export async function detectRig(blob) {
     const [x, y] = prep.fromCanvas(v[0], v[1]);
     joints[k] = [+x.toFixed(4), +y.toFixed(4)];
   }
-  return { version: 1, mode, joints, visibility: found ? found.vis : {} };
+  return { version: 1, bytes: blob.size, mode, joints, visibility: found ? found.vis : {} };
 }
 
 // 폴더의 기본 그림(character.png / .jpg)이 있으면 사용
 export async function activateDefault(onStatus) {
   for (const name of ['character.png', 'character.jpg', 'character.webp']) {
     let res;
-    try { res = await fetch('./' + name, { cache: 'no-store' }); } catch (e) { continue; }
+    try { res = await fetch('./' + name, { cache: 'no-cache' }); } catch (e) { continue; }
     if (!res.ok) continue;
     const blob = await res.blob();
     if (!blob.size || /text\/html/.test(blob.type)) continue;
     let rig = null;
     try {
-      const r = await fetch('./' + name.replace(/\.\w+$/, '.rig.json'), { cache: 'no-store' });
+      const r = await fetch('./' + name.replace(/\.\w+$/, '.rig.json'), { cache: 'no-cache' });
       if (r.ok) rig = await r.json();
     } catch (e) { rig = null; }
+    // 그림을 바꿨는데 예전 관절 파일이 남아 있으면 무시하고 자동으로 다시 찾는다
+    if (rig && rig.bytes && rig.bytes !== blob.size) {
+      console.warn(`${name.replace(/\.\w+$/, '.rig.json')} 은 다른 그림의 관절 파일 → 자동 인식으로 전환`);
+      rig = null;
+    }
     return activate(blob, { rig, onStatus });
   }
   return null;
+}
+
+// 미션 시범 포즈: 3D 아바타는 아래팔을 카메라 쪽(Y축)으로 굽히는 경우가 많은데, 그림은 화면 평면만
+// 표현할 수 있다. 그림 아바타일 때는 그 굽힘을 화면 안에서 몸 쪽으로 굽히는 회전(Z축)으로 바꿔서 시범을 보인다.
+// (3D 아바타는 숨겨져 있으므로 보이는 변화는 그림뿐이다)
+export function flattenDemo(spec) {
+  if (!active || !spec) return spec;
+  const upZ = (side) => {
+    const u = spec.find(([b, ax]) => b === side + 'UpperArm' && ax[2]);
+    return u ? u[2] : (side === 'left' ? -1 : 1); // 위팔 지정 없음 = 차렷(아래)
+  };
+  return spec.map(([b, ax, ang]) => (/LowerArm$/.test(b) && ax[1] && !ax[0] && !ax[2])
+    ? [b, [0, 0, 1], Math.sign(upZ(b.startsWith('left') ? 'left' : 'right')) * Math.abs(ang)]
+    : [b, ax, ang]);
+}
+
+// 3D 아바타가 앉은 정도(엉덩이~발 높이가 줄어든 비율) → 그림 다리를 세로로 줄일 배율
+function crouchSquash(vrm, A) {
+  const hips = vrmPoint(vrm, 'hips');
+  const fl = vrmPoint(vrm, 'leftFoot'), fr = vrmPoint(vrm, 'rightFoot');
+  if (!hips || !fl || !fr) return 1;
+  const now = hips.y - Math.min(fl.y, fr.y);
+  const rest = A.vrmRest.legH;
+  if (!(rest > 0.1)) return 1;
+  const c = THREE.MathUtils.clamp(1 - now / rest, 0, 0.7);
+  const eff = Math.max(0, c - 0.08) / 0.92;        // 서 있을 때의 작은 흔들림은 무시
+  return 1 - Math.min(0.55, eff * 1.1);
 }
 
 // 매 프레임 (3D 아바타 vrm.update 다음, 렌더 전에 호출)
@@ -604,7 +728,7 @@ export function update(dt, live) {
   if (!vrm) return;
   vrm.scene.updateMatrixWorld(true);
   const A = active;
-  const k = 1 - Math.exp(-dt * 18);
+  const k = live ? 1 - Math.exp(-dt * 18) : 1 - Math.exp(-dt * 8);
   const deltas = {};
 
   if (A.mode === 'standee') {
@@ -620,30 +744,34 @@ export function update(dt, live) {
   } else {
     for (const bone of A.bones) {
       const d = bone.userData.def;
-      let delta = 0;
+      if (d.drive === 'follow') {        // 손·발: 부모(아래팔·종아리)와 한 몸으로 (이미 부드럽게 처리된 값)
+        A.smooth[d.name] = deltas[d.name] = deltas[d.parent] || 0;
+        continue;
+      }
+      const parentNow = d.parent ? (deltas[d.parent] || 0) : 0;
+      let desired = 0;
       if (live && d.vrm && (d.drive === 'abs' || d.drive === 'delta')) {
         const r = vrmDir(vrm, d.vrm);
-        if (r) {
-          if (d.drive === 'abs') {
-            // 카메라 쪽으로 향해 화면에서 짧게 보이면 방향이 불안정 → 이전 값 유지 쪽으로
+        if (d.drive === 'abs') {
+          // 팔: 3D 아바타 팔의 화면상 방향을 그대로.
+          // 카메라 쪽을 향해 화면에서 짧게 보이면 방향을 믿을 수 없으므로, 부모 뼈 기준 각도를 유지한다.
+          const hold = parentNow + (A.rel[d.name] || 0);
+          if (r) {
             const target = wrapAngle(r.angle - bone.userData.restAngle);
             const trust = THREE.MathUtils.smoothstep(r.ratio, 0.12, 0.4);
-            const prev = A.smooth[d.name] == null ? target : A.smooth[d.name];
-            delta = prev + wrapAngle(target - prev) * trust;
-          } else {
-            const r0 = A.vrmRest.dirs[d.name];
-            delta = r0 == null ? 0 : wrapAngle(r.angle - r0);
-            if (d.name === 'spine') delta = THREE.MathUtils.clamp(delta, -0.6, 0.6);
-            if (d.name === 'head') delta = THREE.MathUtils.clamp(delta, -0.6, 0.6);
-          }
+            desired = hold + wrapAngle(target - hold) * trust;
+          } else desired = hold;
+        } else if (r) {
+          const r0 = A.vrmRest.dirs[d.name];
+          desired = r0 == null ? 0 : wrapAngle(r.angle - r0);
+          if (d.name === 'spine' || d.name === 'head') desired = THREE.MathUtils.clamp(desired, -0.6, 0.6);
         }
-      } else if (live && d.drive === 'follow') {
-        delta = deltas[d.parent] || 0;
       }
       // 부드럽게 (각도 최단 경로)
       const prev = A.smooth[d.name] == null ? 0 : A.smooth[d.name];
-      const cur = prev + wrapAngle(delta - prev) * (live ? k : 1 - Math.exp(-dt * 8));
+      const cur = prev + wrapAngle(desired - prev) * k;
       A.smooth[d.name] = cur;
+      A.rel[d.name] = cur - parentNow;
       deltas[d.name] = cur;
     }
     // 월드 회전량 → 부모 기준 회전
@@ -654,17 +782,25 @@ export function update(dt, live) {
     }
   }
 
-  // 몸 전체 이동 (옆걸음·앉기): 3D 아바타 엉덩이 이동량을 그림 크기 비율로
-  const target = new THREE.Vector3();
+  // 옆걸음(좌우 이동)과 앉기
+  let tx = 0, squash = 1;
   if (live) {
     const hips = vrmPoint(vrm, 'hips');
-    if (hips) {
-      // 그림 키 = 3D 아바타 키 이므로 이동량을 그대로 사용
-      target.set(hips.x - A.vrmRest.hips.x, hips.y - A.vrmRest.hips.y, 0);
-      target.y = THREE.MathUtils.clamp(target.y, -0.5, 0.15);
-    }
+    if (hips) tx = THREE.MathUtils.clamp(hips.x - A.vrmRest.hips.x, -0.8, 0.8); // 그림 키 = 3D 키 → 이동량 그대로
+    squash = crouchSquash(vrm, A);
   }
-  A.root.lerp(target, live ? k : 1 - Math.exp(-dt * 8));
+  A.root.x += (tx - A.root.x) * k;
+  A.squash += (squash - A.squash) * k;
   const rootBone = A.byName.root;
-  rootBone.position.copy(rootBone.userData.restWorld).add(A.root);
+  rootBone.position.copy(rootBone.userData.restWorld);
+  rootBone.position.x += A.root.x;
+  if (A.mode === 'standee') {
+    rootBone.scale.y = A.squash;                  // 발 기준으로 그림 전체를 납작하게
+  } else {
+    // 앉으면 엉덩이를 내리고 다리를 그만큼 세로로 줄여, 발은 바닥에 붙어 있게
+    const hipH = rootBone.userData.restWorld.y;
+    rootBone.position.y = hipH * A.squash;
+    for (const n of ['LupperLeg', 'RupperLeg', 'lower']) if (A.byName[n]) A.byName[n].scale.y = A.squash;
+  }
 }
+
