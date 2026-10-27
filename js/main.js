@@ -131,7 +131,10 @@ function show(name) {
   resetIdleTimer();
 }
 
+let motionSeq = 0; // 카메라 켜는 도중 '처음으로'를 누르면 늦게 끝난 시작 처리를 무시하기 위한 번호
+
 async function goStart() {
+  motionSeq++;
   cancelVideo(); // 녹화 중이었다면 저장 없이 중단
   $('#video-choice').classList.add('hidden');
   MissionUI.forceStop();
@@ -155,6 +158,7 @@ async function goStart() {
 
 // mode: 'free'(자유 체험) | 'mission'(포즈 미션) | 'quiz'(수학 퀴즈)
 async function goMotion(mode) {
+  const seq = ++motionSeq;
   Avatar.resetAvatarRotation();
   Avatar.setFraming(mode === 'free' ? 'motion' : mode);
   show('motion');
@@ -167,6 +171,11 @@ async function goMotion(mode) {
   } catch (e) {
     console.error('카메라 오류', e);
     cameraFailed = true;
+  }
+  // 카메라를 기다리는 사이 처음으로 돌아갔거나 다른 모드로 바뀌었으면 여기서 멈춤
+  if (seq !== motionSeq || current !== 'motion') {
+    if (current !== 'motion') Motion.stopCamera();
+    return;
   }
   if (mode === 'mission') MissionUI.start();
   else if (mode === 'quiz') QuizUI.start();
@@ -611,6 +620,7 @@ function stopVideo() {
 function resetIdleTimer() {
   clearTimeout(idleTimer);
   idleTimer = setTimeout(() => {
+    if (MissionUI.isAdminOpen()) { resetIdleTimer(); return; } // 운영자 설정 창(Esc)이 열려 있으면 기다림
     // 관람객이 불러온 아바타는 그 사람 체험 동안만 — 다음 관람객은 부스 기본 캐릭터로 (사진 개인정보 보호)
     if (customAvatar && !recorder && !countdownBusy) {
       if (!$('#loading').classList.contains('hidden')) { resetIdleTimer(); return; } // 불러오는 중이면 기다림
