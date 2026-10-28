@@ -59,3 +59,38 @@
   .realify-dialog select { font-size: 14px; }
 }
 @media (prefers-reduced-motion: reduce) { .realify-dialog * { scroll-behavior: auto; transition: none; } }
+
+/* 카메라로 따라 하기와 카메라 없는 자동 동작을 나란히 안내한다. */
+.start-buttons .btn-free, .start-buttons .btn-preview { grid-column: auto; height: 56px; font-size: clamp(13px, 1.15vw, 17px); gap: 9px; white-space: nowrap; }
+#screen-start .sub { word-break: keep-all; }
+.start-buttons .btn-preview { background: #fff; color: #3151ac; border: 1px solid #315cff; }
+.start-buttons .btn-preview.avatar-ready { background: #315cff; color: #fff; }
+.start-buttons .btn-preview.avatar-ready:hover { background: #2447ce; color: #fff; }
+.start-buttons .btn-free::after, .start-buttons .btn-preview::after { display: none; }
+
+/* 카메라 오류 문구가 화면 밖으로 잘리지 않게 표시한다. */
+.guide-msg { left: 4vw; top: 4vh; transform: none; z-index: 12; max-width: min(49vw, 570px); padding: 14px 19px; border-radius: 12px; font-size: clamp(16px, 1.55vw, 21px); line-height: 1.5; white-space: normal; word-break: keep-all; }
+.guide-preview-btn, .preview-info button { min-height: 42px; margin-top: 12px; padding: 9px 15px; background: #fff; border: 1px solid #d2d7e3; border-radius: 5px; color: #284bb5; font: 500 14px/1.4 "S-Core Dream", "Malgun Gothic", sans-serif; }
+.guide-preview-btn:focus-visible, .preview-info button:focus-visible { outline: 3px solid #315cff; outline-offset: 3px; }
+.motion-bar { width: min(90vw, 850px); justify-content: center; gap: 12px; }
+.motion-bar .btn { min-width: 0; padding: 16px 23px; font-size: clamp(15px, 1.5vw, 20px); white-space: nowrap; }
+
+/* 자동 미리보기에서는 카메라 화면과 카메라용 탭을 숨긴다. */
+body.preview-on #cam-wrap, body.preview-on #cambg-tabs { display: none; }
+.preview-info { position: absolute; z-index: 11; left: 4vw; top: 5vh; width: min(330px, 31vw); padding: 20px 22px; background: rgba(255,255,255,.9); border: 1px solid #deded7; border-radius: 8px; color: #17191e; box-shadow: 0 10px 32px #1112; font: 400 15px/1.65 "S-Core Dream", "Malgun Gothic", sans-serif; word-break: keep-all; }
+.preview-info h2 { font-size: 21px; line-height: 1.4; margin: 4px 0 10px; }
+.preview-info p + p { margin-top: 8px; color: #586170; font-size: 14px; }
+.preview-info .preview-label { color: #315cff; font-size: 11px; font-weight: 700; letter-spacing: .12em; }
+
+@media (max-width: 700px) {
+  .start-buttons .btn-free, .start-buttons .btn-preview { height: 52px; padding-inline: 10px; font-size: clamp(12px, 3.2vw, 15px); }
+  .start-buttons .btn-free .start-btn-no, .start-buttons .btn-preview .start-btn-no { display: none; }
+  .guide-msg { left: 50%; top: auto; bottom: calc(12vh + 8px); transform: translateX(-50%); max-width: 90vw; font-size: 15px; }
+  .motion-bar { width: 96vw; gap: 8px; }
+  .motion-bar .btn { flex: 1; padding: 12px 8px; font-size: clamp(13px, 3.4vw, 15px); }
+  .preview-info { left: 3vw; right: 3vw; top: 2vh; width: auto; padding: 11px 14px; font-size: 13px; }
+  .preview-info .preview-label { display: none; }
+  .preview-info h2 { font-size: 17px; margin: 0 0 3px; }
+  .preview-info p + p { font-size: 13px; margin-top: 3px; }
+  .preview-info button { margin-top: 6px; min-height: 38px; padding: 7px 12px; font-size: 13px; }
+}

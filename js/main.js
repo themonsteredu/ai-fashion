@@ -9,6 +9,7 @@ import * as MissionUI from './mission-ui.js';
 import * as Puppet from './puppet.js';
 import * as QuizUI from './mathquiz-ui.js';
 import * as RealifyUI from './realify-ui.js';
+import { previewPose, previewDescription, cameraErrorMessage } from './auto-motion.js';
 
 const IDLE_RESET_MS = 60 * 1000; // 60초 무조작 시 처음 화면으로
 
@@ -28,7 +29,11 @@ const COLORS = [
 let current = 'start';
 let idleTimer = null;
 let motionReady = false;
+let motionInitFailed = false;
 let cameraFailed = false;
+let cameraErrorName = '';
+let previewActive = false;
+let previewStartedAt = 0;
 let selectedPart = 'top';
 let selectedPattern = 'solid';
 let selectedBgId = 'studio';
@@ -94,8 +99,14 @@ async function boot() {
   startRenderLoop();
 
   // 모션 인식은 백그라운드에서 미리 준비 (화면 3 진입이 빨라짐)
-  Motion.initTrackers().then(() => { motionReady = true; })
-    .catch((e) => { console.error('모션 인식 초기화 실패', e); });
+  Motion.initTrackers().then(() => {
+    motionReady = true;
+    if (current === 'motion' && !previewActive) updateGuide();
+  }).catch((e) => {
+    motionInitFailed = true;
+    console.error('모션 인식 초기화 실패', e);
+    if (current === 'motion' && !previewActive) updateGuide();
+  });
   CamBG.init().catch((e) => { console.error('배경 분리 초기화 실패', e); });
 }
 
@@ -142,7 +153,10 @@ function startRenderLoop() {
     const dt = Math.min(clock.getDelta(), 0.05);
     const { renderer, scene, camera, vrm } = Avatar.state;
 
-    if (current === 'motion' && motionReady) {
+    if (current === 'motion' && previewActive) {
+      // 카메라나 이미지 생성 API 없이, 현재 아바타에 준비된 시범 동작을 반복 적용한다.
+      Avatar.applyDemoPose(previewPose((performance.now() - previewStartedAt) / 1000), dt);
+    } else if (current === 'motion' && motionReady) {
       const nowMs = performance.now();
       Motion.detect(nowMs);
       // 미션 준비 단계면 아바타가 목표 포즈를 시범으로 보여줌, 아니면 웹캠 따라 움직임
@@ -182,6 +196,9 @@ let motionSeq = 0; // 카메라 켜는 도중 '처음으로'를 누르면 늦게
 
 async function goStart() {
   motionSeq++;
+  previewActive = false;
+  document.body.classList.remove('preview-on');
+  $('#preview-info').classList.add('hidden');
   cancelVideo(); // 녹화 중이었다면 저장 없이 중단
   $('#video-choice').classList.add('hidden');
   MissionUI.forceStop();
@@ -203,13 +220,40 @@ async function goStart() {
   show('start');
 }
 
+// 카메라가 없어도 현재 적용된 그림 또는 VRM 아바타를 자동으로 움직여 볼 수 있다.
+function goPreview() {
+  motionSeq++;
+  cancelVideo();
+  $('#video-choice').classList.add('hidden');
+  MissionUI.forceStop();
+  QuizUI.forceStop();
+  document.body.classList.remove('photo-taking');
+  resetCamMatch();
+  Motion.stopCamera();
+  previewActive = true;
+  previewStartedAt = performance.now();
+  cameraFailed = false;
+  document.body.classList.add('preview-on');
+  $('#guide-msg').classList.add('hidden');
+  $('#preview-rig-hint').textContent = previewDescription(Puppet.isActive() ? Puppet.getMode() : null);
+  $('#preview-info').classList.remove('hidden');
+  Avatar.resetAvatarRotation();
+  Avatar.setFraming('preview');
+  show('motion');
+}
+
 // mode: 'free'(자유 체험) | 'mission'(포즈 미션) | 'quiz'(수학 퀴즈)
 async function goMotion(mode) {
   const seq = ++motionSeq;
+  previewActive = false;
+  document.body.classList.remove('preview-on');
+  $('#preview-info').classList.add('hidden');
   Avatar.resetAvatarRotation();
   Avatar.setFraming(mode === 'free' ? 'motion' : mode);
   show('motion');
   cameraFailed = false;
+  cameraErrorName = '';
+  updateGuide();
   try {
     await Motion.startCamera($('#cam'));
     // 흐릿한 배경 채움용 영상: 같은 스트림 공유 (전신이 다 보이도록 앞 영상은 contain)
@@ -218,10 +262,11 @@ async function goMotion(mode) {
   } catch (e) {
     console.error('카메라 오류', e);
     cameraFailed = true;
+    cameraErrorName = (e && e.name) || '';
   }
   // 카메라를 기다리는 사이 처음으로 돌아갔거나 다른 모드로 바뀌었으면 여기서 멈춤
-  if (seq !== motionSeq || current !== 'motion') {
-    if (current !== 'motion') Motion.stopCamera();
+  if (seq !== motionSeq || current !== 'motion' || previewActive) {
+    if (current !== 'motion' || previewActive) Motion.stopCamera();
     return;
   }
   if (mode === 'mission') MissionUI.start();
@@ -356,13 +401,21 @@ function resetCamMatch() {
 
 function updateGuide() {
   const guide = $('#guide-msg');
+  const message = $('#guide-text');
+  $('#btn-preview-from-motion').classList.toggle('hidden', !cameraFailed);
   if (cameraFailed) {
-    guide.textContent = '카메라를 사용할 수 없어요 — 웹캠 연결을 확인해 주세요';
+    message.textContent = cameraErrorMessage(cameraErrorName);
+    guide.classList.remove('hidden');
+    return;
+  }
+  if (motionInitFailed) {
+    message.textContent = '동작 인식을 준비하지 못했어요. 페이지를 새로고침하거나 자동 동작 미리보기를 이용해 주세요.';
+    $('#btn-preview-from-motion').classList.remove('hidden');
     guide.classList.remove('hidden');
     return;
   }
   if (!motionReady) {
-    guide.textContent = '모션 인식 준비 중…';
+    message.textContent = '모션 인식 준비 중…';
     guide.classList.remove('hidden');
     return;
   }
@@ -371,18 +424,18 @@ function updateGuide() {
     // 전신(발목)이 안 보이면 뒤로 물러나도록 부드럽게 안내
     const snap = Motion.getPoseSnapshot();
     if (snap && snap.present && !snap.fullBody) {
-      guide.textContent = '🦶 전신이 다 보이게 두세 걸음 뒤로 서보세요';
+      message.textContent = '전신이 다 보이게 두세 걸음 뒤로 서 보세요';
       guide.classList.remove('hidden');
     } else {
       guide.classList.add('hidden');
     }
     resetIdleTimer(); // 사람이 움직이는 동안은 초기화하지 않음
   } else if (status === 'calibrating') {
-    guide.textContent = `그대로 편하게 서 주세요… ${Math.round(Motion.getCalibProgress() * 100)}%`;
+    message.textContent = `그대로 편하게 서 주세요… ${Math.round(Motion.getCalibProgress() * 100)}%`;
     guide.classList.remove('hidden');
     resetIdleTimer();
   } else {
-    guide.textContent = '카메라 앞에 서 주세요';
+    message.textContent = '카메라 앞에 서 주세요';
     guide.classList.remove('hidden');
   }
 }
@@ -399,6 +452,9 @@ function applyBackground(id) {
 function bindUI() {
   RealifyUI.init();
   $('#btn-done').addEventListener('click', () => goMotion('free'));
+  $('#btn-preview').addEventListener('click', goPreview);
+  $('#btn-preview-from-motion').addEventListener('click', goPreview);
+  $('#btn-preview-camera').addEventListener('click', () => goMotion('free'));
   $('#btn-mission').addEventListener('click', () => goMotion('mission'));
   $('#btn-quiz').addEventListener('click', () => goMotion('quiz'));
   $('#btn-home-3').addEventListener('click', goStart);
@@ -457,6 +513,7 @@ function bindUI() {
         $('#sample-badge').classList.add('hidden');
         Avatar.setFraming('start');
         loading.classList.add('hidden');
+        indicateAvatarReady(mode, armsTouching);
         toast(mode === 'full' ? '그림 아바타를 만들었어요! 팔·다리가 따라 움직여요'
           : mode === 'upper' ? '그림 아바타를 만들었어요! 팔·몸통이 따라 움직여요'
           : armsTouching ? '팔이 몸에 붙은 그림이라 몸 전체가 함께 움직여요 (팔을 살짝 뗀 그림이면 팔도 움직여요)'
@@ -472,6 +529,7 @@ function bindUI() {
       $('#sample-badge').classList.add('hidden');
       Avatar.setFraming('start');
       loading.classList.add('hidden');
+      indicateAvatarReady(null, false);
       toast('아바타를 불러왔어요! 미션이나 자유 체험을 시작해 보세요');
     } catch (err) {
       console.error('아바타 불러오기 실패', file.name, err);
@@ -487,6 +545,15 @@ function bindUI() {
   for (const ev of ['pointerdown', 'keydown']) {
     window.addEventListener(ev, resetIdleTimer, { passive: true });
   }
+}
+
+function indicateAvatarReady(mode, armsTouching) {
+  const explanation = mode === 'standee'
+    ? (armsTouching ? '팔이 몸에 붙어 있어 몸 전체가 함께 움직여요. 자동 동작으로 확인해 보세요.' : '이 그림은 몸 전체가 함께 움직여요. 자동 동작으로 확인해 보세요.')
+    : mode === 'upper' ? '팔과 몸통이 움직여요. 자동 동작 또는 카메라 따라 하기를 선택해 주세요.'
+    : '아바타가 준비됐어요. 자동 동작 또는 카메라 따라 하기를 선택해 주세요.';
+  $('#screen-start .sub').textContent = explanation;
+  $('#btn-preview').classList.add('avatar-ready');
 }
 
 let toastTimer = null;
@@ -545,6 +612,7 @@ let recCopyRaf = null;
 
 function toggleVideo() {
   if (recorder) { stopVideo(); return; }
+  if (previewActive) { startVideo('avatar'); return; }
   $('#video-choice').classList.remove('hidden'); // 아바타만 / 아바타+내 모습 선택
 }
 
@@ -561,10 +629,9 @@ function startVideo(mode) {
   const rctx = rec.getContext('2d');
 
   // 렌더 화면에서 아바타가 있는 위치 (가운데에서 왼쪽으로 밀려 있음)
-  const avatarCx = (0.5 - Avatar.MOTION_SHIFT) * src.width;
-
   const bgPaint = getBackground(selectedBgId).paint;
   const copyFrame = () => {
+    const avatarCx = (0.5 - (previewActive ? 0 : Avatar.MOTION_SHIFT)) * src.width;
     bgPaint(rctx, rec.width, rec.height);
 
     if (mode === 'both') {

@@ -22,6 +22,8 @@ const CAMERA_FRAMING = {
   start:  { pos: new THREE.Vector3(0, 0.92, 3.85), look: new THREE.Vector3(0, 0.92, 0), shift: -0.26 },
   // 자유 체험(2단): 아바타 왼쪽 절반, 오른쪽 웹캠. 머리 안 잘리게 여유
   motion: { pos: new THREE.Vector3(0, 0.95, 3.7), look: new THREE.Vector3(0, 0.9, 0), shift: 0.22, shiftY: -0.03 },
+  // 자동 동작 미리보기: 카메라 화면 없이 아바타를 가운데 전신으로 보여 준다.
+  preview:{ pos: new THREE.Vector3(0, 0.98, 4.25), look: new THREE.Vector3(0, 0.98, 0), shift: 0 },
   // 미션(3단): 아바타 왼쪽 1/3, 가운데 미션카드, 오른쪽 웹캠. 팔 든 자세까지 다 보이게
   mission:{ pos: new THREE.Vector3(0, 0.98, 4.3), look: new THREE.Vector3(0, 0.98, 0), shift: 0.34, shiftY: -0.03 },
   // 수학 퀴즈: 아바타 가운데(양옆은 답 카드, 위는 문제). 손을 번쩍 들어도 머리 위가 안 잘리게
@@ -34,6 +36,7 @@ CAMERA_FRAMING.startWide = { pos: new THREE.Vector3(0, 0.92, 4.3), look: new THR
 const CAMERA_FRAMING_MOBILE = {
   start:  { pos: new THREE.Vector3(0, 0.95, 3.6), look: new THREE.Vector3(0, 0.95, 0), shift: 0, shiftY: -0.05 },
   motion: { pos: new THREE.Vector3(0, 1.02, 3.5), look: new THREE.Vector3(0, 0.98, 0), shift: 0, shiftY: -0.1 },
+  preview:{ pos: new THREE.Vector3(0, 0.98, 4.4), look: new THREE.Vector3(0, 0.98, 0), shift: 0, shiftY: 0 },
   mission:{ pos: new THREE.Vector3(0, 1.0, 3.7), look: new THREE.Vector3(0, 1.0, 0), shift: 0, shiftY: -0.14 },
   quiz:   { pos: new THREE.Vector3(0, 1.07, 9.0), look: new THREE.Vector3(0, 1.07, 0), shift: 0 },
 };
@@ -736,3 +739,4 @@ export function capturePhoto(bgPaint) {
 
   return out.toDataURL('image/png');
 }
+
