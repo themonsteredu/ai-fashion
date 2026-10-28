@@ -30,3 +30,26 @@ test('wrong pose times out without awarding success',()=>{
  for(let t=0;t<=8000;t+=20) r=j.update(snapshot(),20,t);
  assert.equal(r.state,'timeout');
 });
+
+for (const id of ['point_up', 'chin_rest']) for (const side of ['L', 'R']) {
+  test(`${id}: visible ${side} hand works, hidden alternatives cannot supply points`, () => {
+    const other = side === 'L' ? 'R' : 'L';
+    const s = snapshot();
+    s.pts[side + '_WR'].y = id === 'point_up' ? 2 : 1.3;
+    s.vis[other + '_WR'] = .1;
+    const run = (snap) => {
+      const judge = new MissionJudge(POSE_BY_ID[id], DEFAULT_SETTINGS);
+      let result;
+      for (let t = 0; t < 1000; t += 20) result = judge.update(snap, 20, t);
+      return result.state;
+    };
+    assert.equal(run(s), 'success');
+    // The correct hand is now invisible; the visible hand remains in the wrong position.
+    s.vis[side + '_WR'] = .1; s.vis[other + '_WR'] = 1;
+    assert.notEqual(run(s), 'success');
+    s.vis[other + '_WR'] = .1;
+    assert.notEqual(run(s), 'success');
+    s.vis[side + '_WR'] = 1; s.vis.NOSE = .1;
+    assert.notEqual(run(s), 'success');
+  });
+}
