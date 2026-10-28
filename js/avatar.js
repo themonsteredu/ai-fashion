@@ -171,7 +171,7 @@ export function setFitProvider(fn) { fitProvider = fn; }
 // 서 있는 키(차렷 기준) — 그림 아바타도 같은 키로 맞춰지므로 둘 다 이 값으로 계산
 function standHeight() {
   const vrm = state.vrm;
-  if (vrm.userData.standHeight) return vrm.userData.standHeight;
+  if (vrm.scene.userData.standHeight) return vrm.scene.userData.standHeight;
   const head = vrm.humanoid.getRawBoneNode('head');
   vrm.scene.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(vrm.scene);
@@ -187,7 +187,7 @@ function fitCamera(rect) {
   const cam = state.camera;
   const w = window.innerWidth, h = window.innerHeight;
   const hgt = standHeight();
-  const y0 = -0.04, y1 = hgt * 1.3;  // 발끝(그림자 여유) ~ 두 손을 번쩍 든 높이
+  const y0 = -0.06, y1 = hgt * 1.3;  // 발끝(신발 밑창·그림자 여유) ~ 두 손을 번쩍 든 높이
   const halfW = hgt * 0.6;           // 양팔을 옆으로 쫙 편 폭의 절반
   const t = Math.tan(THREE.MathUtils.degToRad(cam.fov / 2));
   const s = Math.min((rect.bottom - rect.top) / (y1 - y0), (rect.right - rect.left) / (2 * halfW)); // 1m당 화면 px
@@ -271,7 +271,7 @@ function setupVrm(gltf) {
 
   state.scene.add(vrm.scene);
   state.vrm = vrm;
-  vrm.userData.standHeight = standHeight(); // 포즈가 바뀌기 전(차렷)에 키를 재 둔다
+  vrm.scene.userData.standHeight = standHeight(); // 포즈가 바뀌기 전(차렷)에 키를 재 둔다
 
   // 아바타가 항상 관람객(화면) 쪽을 바라보게 — 눈맞춤 디테일
   if (vrm.lookAt) vrm.lookAt.target = state.camera;

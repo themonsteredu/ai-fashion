@@ -93,13 +93,17 @@ async function boot() {
 }
 
 function missionFitRect(mode) {
-  if (mode !== 'mission' || Avatar.isPortrait()) return null;
+  if (mode !== 'mission') return null;
   const w = window.innerWidth, h = window.innerHeight;
+  const portrait = Avatar.isPortrait();
   const card = document.querySelector('#mission-root .mm-mid');
   const r = card ? card.getBoundingClientRect() : null;
-  const cardTop = r && r.height > 0 ? r.top : h * 0.955 - 260; // 카드가 아직 안 보이면 평소 높이로 짐작
-  // 가로: 왼쪽 끝 ~ 오른쪽 웹캠 카드 앞, 세로: 화면 위 ~ 설명 카드 위
-  return { left: w * 0.04, right: w * 0.64, top: h * 0.035, bottom: cardTop - h * 0.02 };
+  // 카드가 아직 안 보이면 평소 높이로 짐작
+  const cardTop = r && r.height > 0 ? r.top : (portrait ? h - 250 : h * 0.955 - 260);
+  // 휴대폰 세로: 위쪽 제목·작은 웹캠 아래 ~ 설명 카드 위
+  if (portrait) return { left: w * 0.04, right: w * 0.96, top: h * 0.2, bottom: cardTop - Math.max(h * 0.02, 16) };
+  // 가로 화면: 왼쪽 끝 ~ 오른쪽 웹캠 카드 앞, 화면 위 ~ 설명 카드 위
+  return { left: w * 0.04, right: w * 0.64, top: h * 0.035, bottom: cardTop - Math.max(h * 0.03, 20) };
 }
 
 // ── 렌더 루프 ──
