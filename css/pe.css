@@ -7,6 +7,17 @@
 .start-buttons .btn-pe { grid-column: 1 / -1; height: 60px; background: #1f9d63; border: 1px solid #1f9d63; color: #fff; }
 .start-buttons .btn-pe:hover { background: #17804d; border-color: #17804d; }
 @media (max-width: 700px) { .start-buttons .btn-pe { height: 52px; } }
+/* 가로 화면 높이 920px 이하: 버튼이 5개라 위쪽 'INTERACTIVE FASHION LAB' 줄과 겹치지 않게 간격을 줄이고,
+   800px 이하(1280×720, 1366×768, 1024×768)는 버튼 높이도 조금 낮춤 */
+@media (min-width: 701px) and (max-height: 920px) {
+  .brand { margin-bottom: 2.4vh; }
+  .start-buttons { margin-top: 3vh; gap: 8px; }
+}
+@media (min-width: 701px) and (max-height: 800px) {
+  .start-buttons .btn-primary:not(.btn-pe) { height: 62px; }
+  .start-buttons .btn-pe { height: 52px; }
+  .start-buttons .btn-free, .start-buttons .btn-preview { height: 48px; }
+}
 /* 낮은 가로 화면(1366×600 등): 버튼이 5개가 되어도 업로드·운영자 설정 줄까지 한 화면에 들어오게 전체를 조금씩 줄임 */
 @media (min-width: 701px) and (max-height: 620px) {
   .start-edition { top: 2.2vh; }
@@ -118,13 +129,15 @@ body.pe-on.pe-cam-off .cam-preview { opacity: 0; pointer-events: none; }   /* di
 
 /* ── 코치 카드 (오른쪽 레일 아래) ── */
 .pe-coach {
+  --pe-pad: clamp(14px, 2vh, 26px);
   position: absolute; right: 2.2vw; width: 34vw; top: calc(3.2vh + 25.5vw + 1.6vh); bottom: 3.2vh;
-  padding: clamp(14px, 2vh, 26px) clamp(16px, 1.6vw, 28px); display: flex; flex-direction: column; justify-content: space-between; gap: 1.2vh;
+  padding: var(--pe-pad) clamp(16px, 1.6vw, 28px); display: flex; flex-direction: column; justify-content: space-between; gap: 1.2vh;
   color: #fff; background: var(--pe-panel); backdrop-filter: blur(14px); border-top: 3px solid var(--pe-accent); border-radius: 0 0 22px 22px;
   box-shadow: 0 24px 70px rgba(0,0,0,0.24); overflow: hidden;
 }
-.pe-banner { position: absolute; z-index: 3; top: 10px; left: 12px; right: 12px; padding: 10px 14px; border-radius: 14px; text-align: center;
+.pe-banner { position: absolute; z-index: 3; top: calc(var(--pe-pad) + 38px); left: 12px; right: 12px; padding: 10px 14px; border-radius: 14px; text-align: center;
   font-size: clamp(14px, 1.25vw, 20px); font-weight: 800; color: #111318; background: var(--pe-gold); box-shadow: 0 10px 30px rgba(0,0,0,0.3); }
+.pe-coach:has(.pe-banner:not(.hidden)) .pe-instr { visibility: hidden; }   /* 배너(급한 안내)가 떠 있는 동안은 그 자리의 안내 문구를 가림 — 글자가 겹쳐 보이지 않게 */
 .pe-coach-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 30px; }
 #pe-eyebrow2 { font-size: 12px; font-weight: 800; letter-spacing: 0.14em; color: #8ff0bd; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pe-coach-btns { display: flex; gap: 6px; flex: none; }
@@ -162,6 +175,10 @@ body.pe-on.pe-cam-off .cam-preview { opacity: 0; pointer-events: none; }   /* di
 #pe-debug { position: relative; z-index: 2; margin: 0; max-height: 34%; overflow: auto; padding: 6px 8px; border-radius: 8px; font: 11px/1.35 ui-monospace, Consolas, monospace; color: #cfe; background: rgba(0,0,0,0.5); white-space: pre-wrap; word-break: break-word; }
 #pe-root[data-phase="test"] #pe-debug { max-height: 48%; }
 #pe-root[data-phase="test"] .pe-beat { display: none; }
+#pe-root[data-phase="test"] .pe-instr small { display: none; }
+#pe-root[data-phase="test"] .pe-instr b { font-size: clamp(18px, 1.8vw, 30px); }
+#pe-root[data-phase="test"] .pe-ring { width: min(7vw, 12vh); }
+#pe-root[data-phase="test"] #pe-word { font-size: min(2.2vw, 3.6vh); }
 #pe-root[data-phase="ready"] .pe-beat, #pe-root[data-phase="setup"] .pe-beat, #pe-root[data-phase="go"] .pe-beat { visibility: hidden; }
 
 /* ── 결과 (고르기 패널과 같은 자리) ── */
@@ -192,7 +209,7 @@ body.pe-on.pe-cam-off .cam-preview { opacity: 0; pointer-events: none; }   /* di
 /* ── 낮은 가로 화면 (1366×600, 844×390 등) ── */
 @media (min-width: 701px) and (max-height: 620px) {
   body.pe-on .cam-preview { width: 26vw; height: 19.5vw; border-radius: 16px; }
-  .pe-coach { width: 34vw; top: calc(3.2vh + 19.5vw + 1.6vh); gap: 0.8vh; padding: 10px 14px; }
+  .pe-coach { --pe-pad: 10px; width: 34vw; top: calc(3.2vh + 19.5vw + 1.6vh); gap: 0.8vh; padding: 10px 14px; }
   .pe-instr b { font-size: clamp(18px, 2vw, 30px); }
   .pe-instr small { display: none; }
   .pe-ring { width: min(10vw, 17vh); }

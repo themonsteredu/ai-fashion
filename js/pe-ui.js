@@ -139,9 +139,10 @@ function setPhase(ph) {
   const g = game, prev = g.phase;
   g.phase = ph; g.tPhase = 0;
   root.dataset.phase = ph;
-  document.body.classList.toggle('pe-cam-off', ph === 'pick' || ph === 'result');
+  document.body.classList.toggle('pe-cam-off', ph === 'pick' || ph === 'result' || g.assist); // 카메라 없이 '보며 따라 하기'면 빈 웹캠 카드도 숨김
   camGuide.classList.toggle('hidden', ph !== 'ready');
   renderStages();
+  writeDataset();
   // 고르기 ↔ 진행 ↔ 결과는 무대 자리가 바뀜. 같은 화면 안에서도 머리말 높이가 바뀔 수 있음 (3% 규칙이 흔들림을 막음)
   if (secOf(prev) !== secOf(ph) || PLAY.has(ph)) deps.refreshFraming();
 }
@@ -162,9 +163,9 @@ function startSession(ids, course) {
   const g = game;
   Object.assign(g, { queue: ids, qi: 0, course, results: [], t0: g.t, readyMs: 0, legsWaitMs: 0, mpWaitMs: 0, waveT: 0, idle: null });
   g.legsNeeded = settings.legsMode !== 'upper' && ids.some((id) => M.getMove(id, settings).legs !== 'none');
-  renderSessionHead();
-  if (g.assist) { beginMove(0); return; }
+  if (g.assist) { renderSessionHead(); beginMove(0); return; }
   setPhase('ready');
+  renderSessionHead(); // 진행 화면이 보인 뒤에 (이름 길이 재기)
 }
 
 // 카메라가 없거나 동작 인식이 준비되지 않음: 선생님이 박자대로 하고, 선생님이 자세에 닿을 때마다 하나씩 센다
@@ -173,6 +174,7 @@ function enterAssist(msg) {
   if (!g || g.assist) return;
   g.assist = true;
   g.assistMsg = msg;
+  document.body.classList.add('pe-cam-off');
   note(msg, 4000);
   if (g.cur && !g.cur.finished) g.cur.variant = 'assist';
   if (g.phase === 'setup' || g.phase === 'step') enterGo();
@@ -382,6 +384,7 @@ function enterPraise(res) {
 function enterResult() {
   const g = game;
   g.resultMs = 0; g.photoStarMs = 0;
+  q('#pe-particles').innerHTML = ''; // 칭찬 별가루가 결과 카드 위에 남지 않게
   M.recordPESession({ course: g.course });
   setPhase('result');
   renderResult();
@@ -393,6 +396,7 @@ function startPhoto() {
   if (!g || g.phase !== 'result' || g.photoStarMs > 0 || document.body.classList.contains('photo-taking')) return;
   g.photoStarMs = 1200;
   g.resultMs = 0;
+  renderResultLive(); // '⭐ 별 포즈로 찍어요!' 바로 표시
 }
 
 // ── 운영자 테스트 (Esc → 체육 표의 '테스트') ──
@@ -522,9 +526,9 @@ const HANDLERS = {
   step(dt, s) {
     const g = game, mv = g.cur.mv, st = mv.steps[g.si], key = mv.keys[st.key] || {};
     g.demo = E.blendSpec(g.anim.from, key.spec || [], E.easeInOut(Math.min(1, g.anim.t / 600)));
+    if (g.stepDoneAt != null) { g.stepP = 1; if (g.t - g.stepDoneAt >= 500) nextStep(); return; } // ✓ 뒤 500 ms (운영자 통과는 사람이 없어도)
     if (!presentGate(dt, s)) return;
     g.stepT += dt; g.anim.t += dt;
-    if (g.stepDoneAt != null) { g.stepP = 1; if (g.t - g.stepDoneAt >= 500) nextStep(); return; }
     const F = E.relFeatures(s.R, g.Bm, s.legsOK), sc = E.scoreAll(mv.score, F, kSens())[st.score] || { s: 0, why: null };
     g.F = F; g.sc = { [st.score]: sc };
     const j = g.judge.update(sc.s, dt, s.ok);
@@ -658,7 +662,7 @@ function repsAssist(dt) {
     if (mv.targetKeys.includes(g.coach.key)) {
       g.assistHoldMs += dt;
       const per = (mv.countMs || 700) * (settings.tempo || 1);
-      while (g.assistHoldMs >= per && g.doneAt == null) { g.assistHoldMs -= per; countOne({ coachOnly: true, word: M.NUM[c.count % 3] }); }
+      while (g.assistHoldMs >= per && g.doneAt == null) { g.assistHoldMs -= per; countOne({ coachOnly: true, word: M.NUM[(c.count % Math.max(1, c.reps)) % 4] }); }
     } else g.assistHoldMs = 0;
   } else for (const e of ev) if (e.target && g.doneAt == null) countOne({ coachOnly: true });
 }
@@ -684,7 +688,8 @@ function onReplay() {
 // Space / 건너뛰기: 운영자 도움 — 준비·연습 통과, 따라 하기는 +1 (manual로 기록)
 function operatorPass() {
   const g = game, ph = g.phase;
-  if (ph === 'watch') endWatch();
+  if (ph === 'ready') { sfx('whistle'); beginMove(0); } // 사람이 안 잡혀도 운영자가 바로 시작
+  else if (ph === 'watch') endWatch();
   else if (ph === 'setup') { if (g.skipAt != null) return; if (g.cur.legsPending) { applyFallback(); if (game.phase !== 'setup' || g.skipAt != null) return; } if (baseline.size()) baseline.force(); finishSetup(g.s); }
   else if (ph === 'step') { if (g.stepDoneAt == null) { sfx('ding'); g.stepDoneAt = g.t; } }
   else if (ph === 'go') enterReps();
@@ -703,9 +708,10 @@ function onKey(e) {
     if (!tiles[i]) return;
     startSession([tiles[i].dataset.move], false);
   } else if (k === ' ' && ph !== 'pick' && ph !== 'result') operatorPass();
-  else if ((k === 'n' || k === 'N') && PLAY.has(ph) && ph !== 'test' && g.cur) {
-    if (ph === 'ready') return;
-    if (ph === 'praise') nextMove(); else finishMove(null, false);
+  else if ((k === 'n' || k === 'N') && PLAY.has(ph) && ph !== 'test') {
+    if (ph === 'ready') operatorPass();
+    else if (!g.cur) return;
+    else if (ph === 'praise') nextMove(); else finishMove(null, false);
   } else if ((k === 'r' || k === 'R') && PLAY.has(ph) && ph !== 'ready' && ph !== 'test' && ph !== 'praise' && g.cur) beginMove(g.qi);
   else if ((k === 'b' || k === 'B') && ph !== 'pick') enterPick();
   else if (k === 'm' || k === 'M') { muted = !muted; Sound.setMuted(muted); note(muted ? '🔇 소리 끔' : '🔊 소리 켬', 1200); }
@@ -829,6 +835,7 @@ function clearUI() {
   const d = q('#pe-debug'); d.textContent = ''; d.classList.add('hidden');
   q('#pe-count').textContent = '0'; q('#pe-target').textContent = '0';
   for (const k of root.querySelectorAll('.pe-key')) k.classList.remove('hit');
+  if (camGuide) for (const el of camGuide.querySelectorAll('[data-part]')) el.classList.remove('ok');
   for (const el of root.querySelectorAll('[data-stage]')) el.className = '';
   root.dataset.phase = 'pick';
   for (const k of ['move', 'step', 'reps', 'target', 'variant', 'legs', 'present', 'coach']) delete root.dataset[k];
@@ -857,10 +864,16 @@ function renderPicker() {
 function renderSessionHead() {
   const g = game, first = M.getMove(g.queue[0], settings);
   const mv = M.resolveVariant(first, 'full');
-  setText(q('#pe-name'), g.course ? '🏃 준비운동 코스' : first.name);
+  setName(g.course ? '🏃 준비운동 코스' : first.name, first.short);
   setHTML(q('.pe-icon'), tileFig(mv));
   q('.pe-icon').style.color = theme(first).accent;
   renderDots();
+}
+// 머리말 동작 이름: 자리가 모자라면(좁은 화면·긴 이름) 짧은 이름으로
+function setName(name, short) {
+  const el = q('#pe-name');
+  setText(el, name);
+  if (short && short !== name && el.clientWidth > 0 && el.scrollWidth > el.clientWidth + 1) setText(el, short);
 }
 function renderDots() {
   const g = game;
@@ -903,7 +916,7 @@ function renderMoveUI() {
   const g = game, c = g.cur;
   if (!c) return;
   const mv = c.mv, th = theme(mv);
-  setText(q('#pe-name'), mv.name);
+  setName(mv.name, mv.short);
   setHTML(q('.pe-icon'), tileFig(mv));
   q('.pe-icon').style.color = th.accent;
   renderDots(); renderStages();
@@ -913,7 +926,7 @@ function renderMoveUI() {
   const vtxt = g.assist ? '보며 따라 해요 👀' : c.variant === 'upper' ? (mv.variantLabel || '상체로 세어요') : c.variant.startsWith('sub:') ? `대신: ${mv.name}` : '';
   setText(q('#pe-variant'), vtxt); show(q('#pe-variant'), !!vtxt);
   const caps = deps.avatarCaps();
-  const mini = (caps.mode === 'standee') || (caps.picture && caps.custom && caps.mode === 'upper' && c.base.legs !== 'none');
+  const mini = !!caps.picture && (caps.mode === 'standee' || (caps.mode === 'upper' && c.base.legs !== 'none'));
   show(q('.pe-mini'), mini); show(q('.pe-minichip'), mini);
   g.mini = mini;
   const hold = mv.rep.kind === 'hold';
@@ -935,6 +948,7 @@ function renderLive() {
       const course = courseIds();
       setText(q('.pe-hero-sub'), g.heroLeft ? `${g.heroLeft}초 뒤 자동으로 시작해요` : `${course.length}가지 동작 · 약 ${Math.max(1, Math.round(course.length * 20 / 60))}분 · 처음이면 여기!`);
     }
+    setText(q('.pe-pick-sub'), g.assist ? '카메라를 쓸 수 없어요 — 선생님을 보면서 따라 해요 👀' : '하고 싶은 동작을 손가락으로 콕!');
     return;
   }
   if (ph === 'result') { renderResultLive(); return; }
@@ -955,6 +969,7 @@ function renderLive() {
   } else if (ph === 'setup') {
     eyebrow = '준비 자세'; instr = mv.readyLabel; sub = mv.safety || ''; word = '준비';
     ringHTML = ringArc(g.setupP || 0, '#27c47b'); rk = 's' + (g.setupP || 0).toFixed(2);
+    fb = g.fbWant || '';
   } else if (ph === 'step') {
     const n = mv.steps.length, st = mv.steps[g.si], lab = (mv.keys[st.key] || {}).label || '';
     eyebrow = `연습 ${['①', '②', '③', '④'][g.si] || g.si + 1}/${['①', '②', '③', '④'][n - 1] || n}`; instr = lab; sub = mv.text.sub;
@@ -1013,7 +1028,8 @@ function renderLive() {
 function renderResult() {
   const g = game, R = g.results;
   const done = R.filter((r) => r.outcome !== 'skipped');
-  const courseDone = g.course && !g.early && R.length === g.queue.length && R.every((r) => r.outcome === 'completed' || r.outcome === 'assist');
+  // 코스 완주 = 중간에 끝나지 않았고 건너뛴 동작이 없음 (덜 센 동작이 있어도 완주)
+  const courseDone = g.course && !g.early && R.length === g.queue.length && R.every((r) => r.outcome !== 'skipped');
   const allFull = R.length > 0 && R.every((r) => r.outcome === 'completed' || r.outcome === 'assist') && !g.early;
   let medalSpec = KP.STAR, medalName = '참 잘했어요 👏';
   if (courseDone) { medalName = '준비운동 마스터 🏅'; }
