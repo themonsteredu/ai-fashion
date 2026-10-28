@@ -8,6 +8,7 @@ import * as CamBG from './cambg.js';
 import * as MissionUI from './mission-ui.js';
 import * as Puppet from './puppet.js';
 import * as QuizUI from './mathquiz-ui.js';
+import * as PEUI from './pe-ui.js';
 import * as RealifyUI from './realify-ui.js';
 import * as OperatorPin from './operator-pin.js';
 import * as AvatarLibrary from './avatar-library.js';
@@ -78,7 +79,7 @@ async function boot() {
     getSnapshot: () => Motion.getPoseSnapshot(),
     onExit: goStart,
     onManualPhoto: takePhoto,
-    adminSections: [QuizUI.adminSection], // 운영자 설정(Esc)에 수학 퀴즈 설정도 함께
+    adminSections: [QuizUI.adminSection, PEUI.adminSection], // 운영자 설정(Esc)에 수학 퀴즈·체육 설정도 함께
     requestAdminAccess: () => OperatorPin.request('운영자 설정'),
     isOtherDialogOpen: () => OperatorPin.isOpen() || AvatarLibrary.isOpen() || RealifyUI.isOpen(),
   });
@@ -88,14 +89,30 @@ async function boot() {
     onManualPhoto: takePhoto,
     isPaused: () => MissionUI.isAdminOpen() || OperatorPin.isOpen() || AvatarLibrary.isOpen() || RealifyUI.isOpen(),
   });
-  // 미션·퀴즈: 설명 카드·정답 띠에 가리지 않는 빈 자리에 아바타 전신이 다 들어오게 (다리·발이 잘리지 않게)
-  Avatar.setFitProvider((mode) => (mode === 'mission' ? missionFitRect() : mode === 'quiz' ? quizFitRect() : null));
+  // 체육 동작 배우기: 설정·비밀번호·보관함 창이 열려 있으면 퀴즈와 똑같이 모두 멈춤
+  PEUI.init({
+    getSnapshot: () => Motion.getPoseSnapshot(),
+    getOverlay: () => Motion.getPoseOverlay(),
+    getVideoAspect: () => { const v = $('#cam'); return (v.videoWidth || 4) / (v.videoHeight || 3); },
+    isMotionReady: () => motionReady,
+    onExit: goStart,
+    onManualPhoto: takePhoto,
+    isPaused: () => MissionUI.isAdminOpen() || OperatorPin.isOpen() || AvatarLibrary.isOpen() || RealifyUI.isOpen(),
+    avatarCaps: () => ({ picture: Puppet.isActive(), mode: Puppet.getMode(), custom: customAvatar }),
+    refreshFraming: () => Avatar.refreshFraming(),
+    isPortrait: () => Avatar.isPortrait(),
+    keepAlive: () => resetIdleTimer(), // 카메라 없이 '보며 따라 하기' 중에는 사람이 안 잡혀도 처음 화면으로 돌아가지 않게
+  });
+  // 미션·퀴즈·체육: 설명 카드·정답 띠·코치 카드에 가리지 않는 빈 자리에 아바타 전신이 다 들어오게 (다리·발이 잘리지 않게)
+  Avatar.setFitProvider((mode) => (mode === 'mission' ? missionFitRect() : mode === 'quiz' ? quizFitRect()
+    : mode === 'pe' ? PEUI.fitRect() : null));
   if (window.ResizeObserver) {
     const ro = new ResizeObserver(() => {
       const c = document.body.classList;
-      if (c.contains('mission-on') || c.contains('quiz-on')) Avatar.refreshFraming();
+      if (c.contains('mission-on') || c.contains('quiz-on') || c.contains('pe-on')) Avatar.refreshFraming();
     });
-    for (const sel of ['#mission-root .mm-mid', '#quiz-root .qz-question-wrap', '#qz-reveal']) {
+    for (const sel of ['#mission-root .mm-mid', '#quiz-root .qz-question-wrap', '#qz-reveal',
+      '#pe-root .pe-head', '#pe-root .pe-coach', '#pe-root .pe-pick .pe-panel', '#pe-root .pe-result-card']) {
       const el = document.querySelector(sel);
       if (el) ro.observe(el);
     }
@@ -164,10 +181,11 @@ function startRenderLoop() {
       const nowMs = performance.now();
       Motion.detect(nowMs);
       // 미션 준비 단계면 아바타가 목표 포즈를 시범으로 보여줌, 아니면 웹캠 따라 움직임
-      const gameOn = MissionUI.isActive() || QuizUI.isActive();
+      const peOn = PEUI.isActive();
+      const gameOn = MissionUI.isActive() || QuizUI.isActive() || peOn;
       const demo = MissionUI.isActive() ? MissionUI.getDemoPose()
-        : QuizUI.isActive() ? QuizUI.getDemoPose() : null;
-      if (demo) Avatar.applyDemoPose(Puppet.isActive() ? Puppet.flattenDemo(demo) : demo, dt); // 그림 아바타는 화면 평면 시범
+        : QuizUI.isActive() ? QuizUI.getDemoPose() : peOn ? PEUI.getDemoPose() : null;
+      if (demo) Avatar.applyDemoPose(Puppet.isActive() ? Puppet.flattenDemo(demo) : demo, dt, peOn ? PEUI.getDemoOpts() : undefined); // 그림 아바타는 화면 평면 시범
       else Motion.applyToVRM(vrm, dt);
       updateCamMatch(dt); // 웹캠 표시 배율을 아바타 크기에 맞춤
       CamBG.process($('#cam'), nowMs);
@@ -175,10 +193,16 @@ function startRenderLoop() {
       updateMissionPoseOverlay();
       MissionUI.tick(nowMs);
       QuizUI.tick(nowMs);
+      PEUI.tick(nowMs);
       if (!gameOn) updateGuide();
-      // 미션·퀴즈 중에는 사람이 화면 앞에 있는 동안 "무조작 → 처음 화면" 타이머를 미룸
+      // 미션·퀴즈·체육 중에는 사람이 화면 앞에 있는 동안 "무조작 → 처음 화면" 타이머를 미룸
       else { const st = Motion.getStatus(); if (st === 'ok' || st === 'calibrating') resetIdleTimer(); }
       if (Debug.enabled) Debug.update({ ...Motion.getDebugInfo(), segFps: CamBG.getSegFps() }, $('#cam'));
+    } else if (current === 'motion' && PEUI.isActive()) {
+      // 동작 인식(MediaPipe) 준비 전에도 체육 고르기·시범은 움직인다 (판정은 '동작 인식 준비 중…'으로 대기)
+      const demo = PEUI.getDemoPose();
+      if (demo) Avatar.applyDemoPose(Puppet.isActive() ? Puppet.flattenDemo(demo) : demo, dt, PEUI.getDemoOpts());
+      PEUI.tick(performance.now());
     }
     if (vrm) vrm.update(dt);
     Puppet.update(dt, current === 'motion'); // 그림 아바타: 3D 아바타 자세를 그림에 옮김
@@ -207,6 +231,7 @@ async function goStart() {
   $('#video-choice').classList.add('hidden');
   MissionUI.forceStop();
   QuizUI.forceStop();
+  PEUI.forceStop();
   document.body.classList.remove('photo-taking');
   resetCamMatch();
   Motion.stopCamera();
@@ -231,6 +256,7 @@ function goPreview() {
   $('#video-choice').classList.add('hidden');
   MissionUI.forceStop();
   QuizUI.forceStop();
+  PEUI.forceStop();
   document.body.classList.remove('photo-taking');
   resetCamMatch();
   Motion.stopCamera();
@@ -246,13 +272,15 @@ function goPreview() {
   show('motion');
 }
 
-// mode: 'free'(자유 체험) | 'mission'(포즈 미션) | 'quiz'(수학 퀴즈)
+// mode: 'free'(카메라로 따라 하기) | 'mission'(포즈 미션) | 'quiz'(수학 퀴즈) | 'pe'(체육 동작 배우기)
 async function goMotion(mode) {
   const seq = ++motionSeq;
   previewActive = false;
   document.body.classList.remove('preview-on');
   $('#preview-info').classList.add('hidden');
   Avatar.resetAvatarRotation();
+  if (mode === 'pe') PEUI.prepare(); // 동기 실행: 소리 잠금 해제(클릭 안) + 고르기 화면을 카메라 켜기 전에 바로 표시
+  else PEUI.forceStop();
   Avatar.setFraming(mode === 'free' ? 'motion' : mode);
   show('motion');
   cameraFailed = false;
@@ -275,6 +303,7 @@ async function goMotion(mode) {
   }
   if (mode === 'mission') MissionUI.start();
   else if (mode === 'quiz') QuizUI.start();
+  else if (mode === 'pe') PEUI.start({ cameraOk: !cameraFailed });
   updateGuide();
 }
 
@@ -286,7 +315,7 @@ function updateCamMatch(dt) {
   const wrap = $('#cam-wrap');
   // 모바일 세로 또는 미션(3단 고정 레이아웃): JS 배율 맞춤 끔 → CSS 고정 위치 사용
   const bodyCls = document.body.classList;
-  if (Avatar.isPortrait() || bodyCls.contains('mission-on') || bodyCls.contains('quiz-on')) {
+  if (Avatar.isPortrait() || bodyCls.contains('mission-on') || bodyCls.contains('quiz-on') || bodyCls.contains('pe-on')) {
     if (wrap.style.width) { wrap.style.width = wrap.style.height = wrap.style.top = wrap.style.transform = ''; }
     return;
   }
@@ -349,7 +378,8 @@ function updateMissionPoseOverlay() {
   const camEl = $('#cam');
   if (!canvas || !wrap || !camEl) return;
 
-  const points = MissionUI.isActive() || QuizUI.isActive() ? Motion.getPoseOverlay() : null;
+  const points = MissionUI.isActive() || QuizUI.isActive() || PEUI.isActive() ? Motion.getPoseOverlay() : null;
+  const col = PEUI.isActive() ? '#27c47b' : '#315cff'; // 체육은 초록 뼈대
   const visible = !!points;
   canvas.classList.toggle('hidden', !visible);
   if (!visible) return;
@@ -380,13 +410,13 @@ function updateMissionPoseOverlay() {
     const pa = screenPoint(points[a]), pb = screenPoint(points[b]);
     ctx.beginPath(); ctx.moveTo(pa.x, pa.y); ctx.lineTo(pb.x, pb.y);
     ctx.strokeStyle = 'rgba(5, 8, 16, 0.72)'; ctx.lineWidth = 7; ctx.stroke();
-    ctx.strokeStyle = '#315cff'; ctx.lineWidth = 3; ctx.stroke();
+    ctx.strokeStyle = col; ctx.lineWidth = 3; ctx.stroke();
   }
   for (const index of MISSION_POSE_POINTS) {
     if (!usable(points[index])) continue;
     const p = screenPoint(points[index]);
     ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
-    ctx.fillStyle = '#315cff'; ctx.fill();
+    ctx.fillStyle = col; ctx.fill();
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
   }
 }
@@ -472,6 +502,7 @@ function bindUI() {
   $('#btn-preview-camera').addEventListener('click', () => goMotion('free'));
   $('#btn-mission').addEventListener('click', () => goMotion('mission'));
   $('#btn-quiz').addEventListener('click', () => goMotion('quiz'));
+  $('#btn-pe').addEventListener('click', () => goMotion('pe'));
   $('#btn-home-3').addEventListener('click', goStart);
 
   $('#btn-photo').addEventListener('click', takePhoto);

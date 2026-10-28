@@ -1,0 +1,280 @@
+/* ═════════ 체육 동작 배우기 (PE) ═════════
+   배치 "무대 + 레일": 왼쪽 무대 = 그림 선생님(머리부터 신발까지 항상 다 보임), 오른쪽 레일 = 웹캠 '나' + 코치 카드.
+   무대 자리는 pe-ui.js fitRect()가 머리말·코치 카드·패널의 실제 위치로 계산한다 → 이 파일의 카드 위치를 바꾸면 무대도 따라 바뀜.
+   모든 클래스는 pe- 로 시작. 뒤에 오는 일반 .btn 규칙에 지지 않게 두 클래스 선택자를 쓴다. */
+
+/* ── 시작 화면: 01 미션 | 02 퀴즈 / 03 체육 (한 줄 전체, 초록) / 04 카메라로 따라 하기 | 05 자동 동작 미리보기 ── */
+.start-buttons .btn-pe { grid-column: 1 / -1; height: 60px; background: #1f9d63; border: 1px solid #1f9d63; color: #fff; }
+.start-buttons .btn-pe:hover { background: #17804d; border-color: #17804d; }
+@media (max-width: 700px) { .start-buttons .btn-pe { height: 52px; } }
+/* 낮은 가로 화면(1366×600 등): 버튼이 5개가 되어도 업로드·운영자 설정 줄까지 한 화면에 들어오게 전체를 조금씩 줄임 */
+@media (min-width: 701px) and (max-height: 620px) {
+  .start-edition { top: 2.2vh; }
+  .brand { margin-bottom: 1.4vh; }
+  #screen-start h1 { font-size: clamp(32px, min(5.35vw, 8.6vh), 82px); }
+  #screen-start .sub { margin-top: 1.2vh; line-height: 1.5; }
+  .start-buttons { margin-top: 2vh; gap: 7px; }
+  .start-buttons .btn-primary:not(.btn-pe) { height: 54px; }
+  .start-buttons .btn-pe { height: 46px; }
+  .start-buttons .btn-free, .start-buttons .btn-preview { height: 44px; }
+  .upload-row { margin-top: 6px; }
+  .start-upload { padding: 9px 0; }
+  .upload-hint { margin-top: 4px; }
+}
+
+/* ── 공통 ── */
+#pe-root {
+  --pe-accent: #1f9d63; --pe-hot: #27c47b; --pe-soft: rgba(31,157,99,0.14); --pe-ink: #111318; --pe-panel: rgba(10,12,16,0.86); --pe-gold: #ffc83d;
+  position: fixed; inset: 0; z-index: 57; pointer-events: none; color: var(--pe-ink);
+  font-family: "Pretendard", "S-Core Dream", "Malgun Gothic", sans-serif;
+}   /* 퀴즈 58 · 미션(운영자 설정) 60 아래: Esc 설정 창은 항상 위 */
+#pe-root.hidden { display: none; }
+#pe-root .hidden { display: none !important; }
+#pe-root button, #pe-root .pe-panel, #pe-root .pe-coach, #pe-root .pe-head { pointer-events: auto; }
+#pe-root button { font-family: inherit; cursor: pointer; }
+#pe-root > section { display: none; }
+#pe-root[data-phase="pick"] .pe-pick, #pe-root[data-phase="result"] .pe-result { display: block; }
+#pe-root:is([data-phase="ready"],[data-phase="watch"],[data-phase="setup"],[data-phase="step"],[data-phase="go"],[data-phase="reps"],[data-phase="praise"],[data-phase="test"]) .pe-play { display: block; }
+#pe-root::after { content: ''; position: fixed; inset: 0; pointer-events: none; box-shadow: inset 0 0 0 0 rgba(39,196,123,0); transition: box-shadow 0.12s ease; }
+body.pe-flash #pe-root::after { box-shadow: inset 0 0 0 6px rgba(39,196,123,0.55); }   /* 셀 때마다 화면 가장자리만 초록 (무대는 97vh에서 끝남) */
+body.pe-on .motion-bar, body.pe-on .cambg-tabs, body.pe-on #guide-msg, body.pe-on #preview-info { display: none !important; }
+body.photo-taking #pe-root { visibility: hidden; }   /* 3-2-1(z30)·사진 창(z40)이 체육 화면(z57) 아래에 있어서 */
+.pe-eyebrow { color: var(--pe-accent); font-size: 11px; font-weight: 800; letter-spacing: 0.24em; }
+.pe-chip { padding: 8px 14px; border-radius: 999px; font-size: 13px; font-weight: 700; color: #5f626c; background: rgba(255,255,255,0.75); border: 1px solid rgba(17,19,24,0.14); white-space: nowrap; }
+.pe-chip:hover { color: var(--pe-accent); border-color: var(--pe-accent); }
+.pe-fig { display: block; }
+.pe-particle { position: fixed; z-index: 70; pointer-events: none; animation: mm-particle-fly 1.2s ease-out forwards; }
+
+/* ── 웹캠 '나' (오른쪽 레일 위, 4:3) ── */
+body.pe-on .cam-preview {
+  left: auto; right: 2.2vw; top: 3.2vh; bottom: auto; transform: none; width: 34vw; height: 25.5vw;
+  border-radius: 24px; border: 1px solid rgba(31,157,99,0.7); box-shadow: 0 26px 80px rgba(10,12,16,0.28);
+  transition: opacity 0.25s ease;
+}
+body.pe-on .cam-preview::before { content: '나 ME'; position: absolute; z-index: 5; left: 16px; top: 14px; color: #fff; font-size: 10px; font-weight: 800; letter-spacing: 0.2em; text-shadow: 0 1px 8px rgba(0,0,0,0.8); pointer-events: none; }
+body.pe-on.pe-cam-off .cam-preview { opacity: 0; pointer-events: none; }   /* display:none이 아니라 투명: 영상은 계속 들어와야 인식이 됨 */
+.pe-cam-guide { position: absolute; inset: 0; z-index: 4; pointer-events: none; }
+.pe-cam-body { position: absolute; left: 50%; top: 20%; width: 30%; height: 60%; transform: translateX(-50%); border: 3px dashed rgba(255,255,255,0.75); border-radius: 46% 46% 22% 22% / 30% 30% 12% 12%; }
+.pe-cam-floor { position: absolute; left: 18%; right: 18%; top: 92%; height: 0; border-top: 3px solid rgba(255,200,61,0.9); }
+.pe-cam-chips { position: absolute; left: 0; right: 0; bottom: 10px; display: flex; justify-content: center; gap: 6px; }
+.pe-cam-chips span { padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 800; color: #fff; background: rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.3); }
+.pe-cam-chips span.ok { background: var(--pe-accent); border-color: var(--pe-hot); }
+.pe-cam-chips span.ok::after { content: ' ✓'; }
+
+/* ── 고르기 (pick) ── */
+.pe-pick-head { position: absolute; left: 3.2vw; top: 3.2vh; right: 62vw; display: flex; flex-direction: column; gap: 6px; }
+.pe-pick-head h2 { font-size: clamp(28px, 3.2vw, 54px); font-weight: 900; letter-spacing: -0.05em; line-height: 1.04; }
+.pe-pick-sub { font-size: clamp(14px, 1.2vw, 19px); color: #5f626c; font-weight: 700; }
+.pe-panel {
+  position: absolute; left: 39vw; right: 2.2vw; top: 3.2vh; bottom: 3.2vh;
+  display: flex; flex-direction: column; gap: 1.4vh; padding: 2.4vh 1.8vw;
+  background: rgba(255,255,255,0.86); backdrop-filter: blur(10px); border-top: 4px solid var(--pe-accent);
+  box-shadow: 0 24px 70px rgba(10,12,16,0.12); overflow: hidden;
+}
+.pe-hero {
+  position: relative; flex: none; display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto; align-items: center; column-gap: 1.2vw; row-gap: 0.8vh;
+  padding: 2vh 1.6vw; text-align: left; color: #fff; background: var(--pe-accent); border: 0; box-shadow: 0 16px 40px rgba(31,157,99,0.32);
+}
+.pe-hero:active { transform: scale(0.98); }
+.pe-hero-txt b { display: block; font-size: clamp(20px, 2.2vw, 36px); font-weight: 900; letter-spacing: -0.04em; }
+.pe-hero-sub { display: block; margin-top: 4px; font-size: clamp(12px, 1.05vw, 17px); font-weight: 700; opacity: 0.88; }
+.pe-hero-figs { grid-column: 1; grid-row: 2; display: flex; gap: 4px; color: #fff; }
+.pe-hero-figs .pe-fig { width: clamp(26px, 2.6vw, 44px); height: auto; }
+.pe-hero-ring { grid-column: 2; grid-row: 1 / span 2; position: relative; display: grid; place-items: center; width: clamp(60px, 6vw, 96px); height: clamp(60px, 6vw, 96px); border-radius: 50%; background: #fff; color: var(--pe-accent); }
+.pe-hero-ring i { font-style: normal; font-size: clamp(15px, 1.3vw, 22px); font-weight: 900; }
+.pe-hero-ring svg { position: absolute; inset: -7px; width: calc(100% + 14px); height: calc(100% + 14px); }
+.pe-label-row { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.pe-label { font-size: 12px; font-weight: 800; letter-spacing: 0.18em; color: var(--pe-accent); }
+.pe-tiles { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); grid-template-rows: repeat(var(--rows, 2), minmax(0, 1fr)); gap: 10px; }
+.pe-tile {
+  --t1: #fff6d8; --t2: #ffe7b0; --ta: #e8991f; --tk: #7a5410;
+  position: relative; min-height: 0; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 2px;
+  padding: 8px 6px 10px; border: 0; border-radius: 14px; text-align: center; color: var(--tk); overflow: hidden;
+  background: linear-gradient(170deg, var(--t1), var(--t2)); box-shadow: 0 10px 26px rgba(10,12,16,0.08); transition: transform 0.15s ease;
+}
+.pe-tile:active { transform: scale(0.96); }
+.pe-tile-fig { flex: 1; min-height: 0; width: 100%; display: flex; align-items: center; justify-content: center; color: var(--ta); }
+.pe-tile-fig .pe-fig { width: 100%; height: 100%; max-height: 100%; }
+.pe-tile b { font-size: clamp(13px, 1.15vw, 19px); font-weight: 900; letter-spacing: -0.04em; line-height: 1.15; word-break: keep-all; }
+.pe-tile small { font-size: clamp(10px, 0.85vw, 13px); font-weight: 700; opacity: 0.8; white-space: nowrap; }
+.pe-badge { position: absolute; top: 6px; right: 6px; font-size: 11px; font-weight: 800; padding: 2px 6px; border-radius: 999px; background: rgba(255,255,255,0.78); }
+
+/* ── 진행 화면: 머리말 (무대 위, 아바타와 겹치지 않음) ── */
+.pe-head { position: absolute; left: 3.2vw; right: 38.5vw; top: 3.2vh; display: flex; flex-direction: column; gap: 8px; }
+.pe-headrow { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.pe-title { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.pe-icon { width: 46px; height: 46px; flex: none; border-radius: 12px; display: grid; place-items: center; background: var(--pe-soft); color: var(--pe-accent); padding: 3px; }
+.pe-icon .pe-fig { width: 100%; height: 100%; }
+#pe-name { min-width: 0; font-size: clamp(24px, 2.6vw, 42px); font-weight: 900; letter-spacing: -0.045em; line-height: 1.05; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pe-dots { margin-left: auto; display: flex; gap: 5px; flex: none; }
+.pe-dots i { width: 11px; height: 11px; border-radius: 50%; background: rgba(17,19,24,0.16); }
+.pe-dots i.done { background: var(--pe-accent); }
+.pe-dots i.on { background: #fff; box-shadow: 0 0 0 3px var(--pe-accent); }
+.pe-stages { display: flex; flex-wrap: wrap; gap: 6px; min-height: 31px; }
+.pe-stages span { padding: 6px 13px; border-radius: 999px; font-size: 13px; font-weight: 800; color: #5f626c; background: rgba(255,255,255,0.72); border: 1px solid rgba(17,19,24,0.1); white-space: nowrap; }
+.pe-stages span.done { color: var(--pe-accent); }
+.pe-stages span.on { color: #fff; background: var(--pe-accent); border-color: var(--pe-accent); }
+.pe-stages .pe-minichip { color: #7a5410; background: #fff6d8; }
+
+/* ── 코치 카드 (오른쪽 레일 아래) ── */
+.pe-coach {
+  position: absolute; right: 2.2vw; width: 34vw; top: calc(3.2vh + 25.5vw + 1.6vh); bottom: 3.2vh;
+  padding: clamp(14px, 2vh, 26px) clamp(16px, 1.6vw, 28px); display: flex; flex-direction: column; justify-content: space-between; gap: 1.2vh;
+  color: #fff; background: var(--pe-panel); backdrop-filter: blur(14px); border-top: 3px solid var(--pe-accent); border-radius: 0 0 22px 22px;
+  box-shadow: 0 24px 70px rgba(0,0,0,0.24); overflow: hidden;
+}
+.pe-banner { position: absolute; z-index: 3; top: 10px; left: 12px; right: 12px; padding: 10px 14px; border-radius: 14px; text-align: center;
+  font-size: clamp(14px, 1.25vw, 20px); font-weight: 800; color: #111318; background: var(--pe-gold); box-shadow: 0 10px 30px rgba(0,0,0,0.3); }
+.pe-coach-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 30px; }
+#pe-eyebrow2 { font-size: 12px; font-weight: 800; letter-spacing: 0.14em; color: #8ff0bd; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pe-coach-btns { display: flex; gap: 6px; flex: none; }
+.pe-coach .pe-chip { padding: 6px 12px; font-size: 13px; color: #fff; background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.28); }
+.pe-coach .pe-chip:hover { color: #fff; border-color: var(--pe-hot); }
+.pe-instrrow { display: flex; align-items: center; gap: 12px; min-height: 0; }
+.pe-mini { flex: none; width: 120px; height: 128px; color: var(--pe-gold); background: rgba(255,255,255,0.06); border-radius: 14px; }
+.pe-mini .pe-fig { width: 100%; height: 100%; }
+.pe-instr { min-width: 0; display: flex; flex-direction: column; }
+.pe-instr b { font-size: clamp(22px, 2.5vw, 44px); font-weight: 800; line-height: 1.12; letter-spacing: -0.045em; white-space: pre-line; word-break: keep-all; }
+.pe-instr small { margin-top: 6px; font-size: clamp(13px, 1.05vw, 18px); font-weight: 700; color: rgba(255,255,255,0.72); word-break: keep-all; }
+.pe-countrow { display: flex; align-items: center; gap: 1.4vw; min-height: 0; }
+.pe-ring { position: relative; flex: none; width: min(12vw, 19vh); aspect-ratio: 1; }
+.pe-ring svg { width: 100%; height: 100%; display: block; }
+.pe-ring-c { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+#pe-word { font-size: min(4.2vw, 6.6vh); font-weight: 900; letter-spacing: -0.06em; line-height: 1; white-space: nowrap; }
+#pe-word.pop { animation: pe-pop 0.18s ease-out; }
+@keyframes pe-pop { from { transform: scale(1.35); } to { transform: scale(1); } }
+.pe-num { margin-top: 4px; font-size: min(1.2vw, 1.9vh); font-weight: 800; color: rgba(255,255,255,0.72); font-variant-numeric: tabular-nums; }
+.pe-side { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1vh; }
+.pe-beat { display: flex; align-items: center; gap: 8px; }
+.pe-key { flex: none; width: min(4.6vw, 7.4vh); height: min(5.4vw, 8.6vh); border-radius: 10px; display: grid; place-items: center; padding: 2px; background: rgba(255,255,255,0.08); color: #fff; border: 2px solid transparent; transition: border-color 0.1s, background 0.1s; }
+.pe-key .pe-fig { width: 100%; height: 100%; }
+.pe-key.hit { border-color: var(--pe-hot); background: rgba(39,196,123,0.28); }
+.pe-track { position: relative; flex: 1; height: 6px; border-radius: 999px; background: rgba(255,255,255,0.18); }
+.pe-ball { position: absolute; top: 50%; left: 0; width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%; background: var(--pe-gold); box-shadow: 0 0 14px rgba(255,200,61,0.8); }
+.pe-holddots { display: none; position: absolute; inset: -8px 0; justify-content: center; align-items: center; gap: 10px; }
+.pe-holddots i { width: 16px; height: 16px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.5); background: transparent; }
+.pe-holddots i.on { background: var(--pe-gold); border-color: var(--pe-gold); }
+.pe-beat.hold .pe-ball { display: none; }
+.pe-beat.hold .pe-track { background: transparent; }
+.pe-beat.hold .pe-holddots { display: flex; }
+#pe-fb { min-height: 1.3em; font-size: clamp(14px, 1.2vw, 20px); font-weight: 800; color: #bdf3d6; word-break: keep-all; }
+.pe-variant { align-self: flex-start; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 800; color: #111318; background: #bdf3d6; }
+#pe-debug { position: relative; z-index: 2; margin: 0; max-height: 34%; overflow: auto; padding: 6px 8px; border-radius: 8px; font: 11px/1.35 ui-monospace, Consolas, monospace; color: #cfe; background: rgba(0,0,0,0.5); white-space: pre-wrap; word-break: break-word; }
+#pe-root[data-phase="test"] #pe-debug { max-height: 48%; }
+#pe-root[data-phase="test"] .pe-beat { display: none; }
+#pe-root[data-phase="ready"] .pe-beat, #pe-root[data-phase="setup"] .pe-beat, #pe-root[data-phase="go"] .pe-beat { visibility: hidden; }
+
+/* ── 결과 (고르기 패널과 같은 자리) ── */
+.pe-result-card { align-items: center; justify-content: center; text-align: center; gap: 1vh; overflow-y: auto; }
+.pe-medal { flex: none; }
+.pe-medal svg { display: block; width: clamp(84px, 13vh, 120px); height: auto; }
+.pe-medal-name { font-size: clamp(14px, 1.3vw, 20px); font-weight: 900; color: #7a5410; }
+#pe-result-title { font-size: clamp(24px, 2.8vw, 46px); font-weight: 900; letter-spacing: -0.045em; line-height: 1.12; word-break: keep-all; }
+#pe-result-rows { list-style: none; width: min(100%, 560px); margin: 0.6vh 0 0; padding: 0; display: grid; gap: 6px; }
+#pe-result-rows li { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto auto auto; align-items: center; gap: 10px; padding: 6px 12px; border-radius: 12px; background: rgba(31,157,99,0.07); text-align: left; font-size: clamp(14px, 1.2vw, 18px); }
+#pe-result-rows li.pe-row-note { display: block; text-align: center; background: transparent; font-weight: 800; color: #5f626c; }
+.pe-row-fig { width: 34px; height: 36px; }
+.pe-row-fig .pe-fig { width: 100%; height: 100%; }
+#pe-result-rows b { font-weight: 900; letter-spacing: -0.03em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pe-stars { color: #f0a400; letter-spacing: 0.05em; white-space: nowrap; }
+.pe-stars .off { color: rgba(17,19,24,0.16); }
+.pe-skipped { color: #8a8d94; font-weight: 700; }
+.pe-row-n { font-weight: 800; color: #5f626c; font-variant-numeric: tabular-nums; }
+.pe-chip-s { padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 800; color: #1d6b48; background: #dff6ec; white-space: nowrap; }
+#pe-result-total { margin-top: 0.4vh; font-size: clamp(15px, 1.3vw, 20px); color: #5f626c; font-weight: 700; }
+#pe-result-total b { color: var(--pe-accent); font-weight: 900; }
+.pe-result-btns { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 1vh; }
+.pe-result-btns button { position: relative; min-height: 54px; padding: 12px 22px; border-radius: 999px; font-size: clamp(15px, 1.3vw, 20px); font-weight: 900; border: 1.5px solid rgba(17,19,24,0.16); background: #fff; color: #111318; white-space: nowrap; }
+#pe-photo { background: var(--pe-accent); border-color: var(--pe-accent); color: #fff; }
+#pe-next { display: inline-flex; align-items: center; gap: 8px; background: transparent; }
+.pe-next-ring { width: 22px; height: 22px; color: var(--pe-accent); }
+
+/* ── 낮은 가로 화면 (1366×600, 844×390 등) ── */
+@media (min-width: 701px) and (max-height: 620px) {
+  body.pe-on .cam-preview { width: 26vw; height: 19.5vw; border-radius: 16px; }
+  .pe-coach { width: 34vw; top: calc(3.2vh + 19.5vw + 1.6vh); gap: 0.8vh; padding: 10px 14px; }
+  .pe-instr b { font-size: clamp(18px, 2vw, 30px); }
+  .pe-instr small { display: none; }
+  .pe-ring { width: min(10vw, 17vh); }
+  .pe-head { gap: 4px; top: 2.4vh; }
+  .pe-icon { width: 34px; height: 34px; border-radius: 9px; }
+  #pe-name { font-size: clamp(20px, 2.2vw, 32px); }
+  .pe-stages { min-height: 26px; }
+  .pe-stages span { padding: 4px 10px; font-size: 12px; }
+  .pe-mini { width: 76px; height: 82px; }
+  .pe-pick-head h2 { font-size: clamp(22px, 2.8vw, 40px); }
+  .pe-tiles { gap: 6px; }
+  .pe-tile small { display: none; }
+  .pe-hero { padding: 1.4vh 1.4vw; }
+  .pe-medal svg { width: 70px; }
+  #pe-result-rows li { padding: 3px 10px; }
+  .pe-result-btns button { min-height: 44px; padding: 8px 16px; }
+}
+
+/* ── 휴대폰 세로: 위 = 머리말 + 작은 웹캠, 가운데 = 무대, 아래 = 코치 시트 ── */
+@media (max-width: 700px) and (orientation: portrait) {
+  .pe-eyebrow { font-size: 8px; letter-spacing: 0.16em; }
+  .pe-chip { padding: 4px 9px; font-size: 11px; }
+  body.pe-on .cam-preview { top: 1.2vh; right: 2vw; left: auto; bottom: auto; width: 36vw; height: 27vw; border-radius: 14px; z-index: auto; }
+  body.pe-on .cam-preview::before { left: 8px; top: 6px; font-size: 7px; }
+  .pe-cam-chips { bottom: 4px; gap: 3px; }
+  .pe-cam-chips span { padding: 2px 5px; font-size: 9px; }
+  .pe-head { left: 4vw; right: 40vw; top: 1.2vh; gap: 5px; }
+  .pe-headrow { gap: 6px; }
+  .pe-icon { width: 30px; height: 30px; border-radius: 8px; }
+  .pe-title { gap: 8px; }
+  #pe-name { font-size: clamp(17px, 5.2vw, 23px); }
+  .pe-dots { display: none; }
+  .pe-stages { gap: 4px; min-height: 22px; }
+  .pe-stages span { padding: 3px 7px; font-size: 10px; }
+  .pe-coach {
+    left: 0; right: 0; top: auto; bottom: 0; width: auto; height: calc(150px + env(safe-area-inset-bottom)); border-radius: 0;
+    padding: 12px 14px calc(12px + env(safe-area-inset-bottom));
+    display: grid; grid-template-columns: 96px minmax(0, 1fr); grid-template-rows: auto 1fr; column-gap: 14px; row-gap: 6px; align-items: center;
+  }
+  .pe-coach-top { display: none; }
+  .pe-banner { top: 6px; left: 8px; right: 8px; padding: 7px 10px; font-size: 14px; }
+  .pe-instrrow { grid-column: 2; grid-row: 1; gap: 8px; }
+  .pe-mini { width: 54px; height: 58px; }
+  .pe-instr b { font-size: clamp(16px, 5vw, 21px); }
+  .pe-instr small { display: none; }
+  .pe-countrow { display: contents; }
+  .pe-ring { grid-column: 1; grid-row: 1 / span 2; width: 96px; }
+  .pe-side { grid-column: 2; grid-row: 2; gap: 4px; align-self: start; }
+  #pe-word { font-size: 32px; }
+  .pe-num { font-size: 11px; }
+  .pe-key { width: 34px; height: 40px; border-radius: 8px; }
+  #pe-fb { font-size: 13px; min-height: 16px; }
+  .pe-variant { font-size: 10px; padding: 2px 7px; }
+  #pe-debug { position: fixed; left: 2vw; right: 2vw; top: 30vh; max-height: 30vh; z-index: 5; }
+  /* 고르기: 위 제목, 가운데 아바타, 아래 시트(47vh부터) */
+  .pe-pick-head { left: 4vw; right: 4vw; top: 1.6vh; gap: 3px; }
+  .pe-pick-head h2 { font-size: clamp(22px, 6.6vw, 28px); }
+  .pe-pick-sub { font-size: 12px; }
+  .pe-panel { left: 0; right: 0; top: 47vh; bottom: 0; padding: 10px 10px calc(10px + env(safe-area-inset-bottom)); gap: 7px; }
+  .pe-hero { padding: 9px 12px; row-gap: 0; }
+  .pe-hero-figs { display: none; }
+  .pe-hero-ring { width: 52px; height: 52px; grid-row: 1; }
+  .pe-tiles { gap: 5px; }
+  .pe-tile { padding: 4px 2px 6px; border-radius: 10px; }
+  .pe-tile b { font-size: 11px; }
+  .pe-tile small, .pe-badge { display: none; }
+  /* 결과: 아래 시트 */
+  .pe-result-card { top: auto; bottom: 0; max-height: 60vh; justify-content: flex-start; gap: 5px; padding: 12px 12px calc(12px + env(safe-area-inset-bottom)); }
+  .pe-result-card > .pe-eyebrow { display: none; }
+  .pe-medal svg { width: 58px; }
+  .pe-medal-name { font-size: 12px; }
+  #pe-result-title { font-size: 19px; }
+  #pe-result-rows { gap: 3px; }
+  #pe-result-rows li { grid-template-columns: 24px minmax(0, 1fr) auto auto auto; gap: 6px; padding: 2px 8px; font-size: 12px; }
+  .pe-row-fig { width: 24px; height: 26px; }
+  .pe-chip-s { font-size: 10px; padding: 1px 5px; }
+  #pe-result-total { font-size: 12px; }
+  .pe-result-btns { gap: 6px; margin-top: 4px; }
+  .pe-result-btns button { min-height: 42px; padding: 8px 12px; font-size: 13px; }
+}
+
+/* 운영자 설정 안 체육 표 */
+.pe-admin .mm-fld select { padding: 8px 10px; border: 1.5px solid var(--line); border-radius: 8px; font-size: 15px; background: #fff; }
+.pe-admin .pe-table-wrap { overflow-x: auto; }
+.pe-admin .pe-reps-in { width: 58px; padding: 4px 6px; border: 1.5px solid var(--line); border-radius: 6px; }
