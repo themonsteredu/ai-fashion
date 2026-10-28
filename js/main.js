@@ -78,11 +78,17 @@ async function boot() {
     onManualPhoto: takePhoto,
     isPaused: () => MissionUI.isAdminOpen(),
   });
-  // 미션: 아래 설명 카드 위 빈 자리에 아바타 전신이 다 들어오게 (카드가 다리·발을 가리지 않게)
-  Avatar.setFitProvider(missionFitRect);
-  const mmCard = document.querySelector('#mission-root .mm-mid');
-  if (mmCard && window.ResizeObserver) {
-    new ResizeObserver(() => { if (document.body.classList.contains('mission-on')) Avatar.refreshFraming(); }).observe(mmCard);
+  // 미션·퀴즈: 설명 카드·정답 띠에 가리지 않는 빈 자리에 아바타 전신이 다 들어오게 (다리·발이 잘리지 않게)
+  Avatar.setFitProvider((mode) => (mode === 'mission' ? missionFitRect() : mode === 'quiz' ? quizFitRect() : null));
+  if (window.ResizeObserver) {
+    const ro = new ResizeObserver(() => {
+      const c = document.body.classList;
+      if (c.contains('mission-on') || c.contains('quiz-on')) Avatar.refreshFraming();
+    });
+    for (const sel of ['#mission-root .mm-mid', '#quiz-root .qz-question-wrap', '#qz-reveal']) {
+      const el = document.querySelector(sel);
+      if (el) ro.observe(el);
+    }
   }
   startRenderLoop();
 
@@ -92,8 +98,7 @@ async function boot() {
   CamBG.init().catch((e) => { console.error('배경 분리 초기화 실패', e); });
 }
 
-function missionFitRect(mode) {
-  if (mode !== 'mission') return null;
+function missionFitRect() {
   const w = window.innerWidth, h = window.innerHeight;
   const portrait = Avatar.isPortrait();
   const card = document.querySelector('#mission-root .mm-mid');
@@ -104,6 +109,27 @@ function missionFitRect(mode) {
   if (portrait) return { left: w * 0.04, right: w * 0.96, top: h * 0.2, bottom: cardTop - Math.max(h * 0.02, 16) };
   // 가로 화면: 왼쪽 끝 ~ 오른쪽 웹캠 카드 앞, 화면 위 ~ 설명 카드 위
   return { left: w * 0.04, right: w * 0.64, top: h * 0.035, bottom: cardTop - Math.max(h * 0.03, 20) };
+}
+
+function quizFitRect() {
+  if (Avatar.isPortrait()) return null; // 휴대폰 세로는 기존 배치 (답 카드가 아래에 있어 자리가 좁음)
+  const w = window.innerWidth, h = window.innerHeight;
+  const rectOf = (sel) => {
+    const el = document.querySelector(sel);
+    const r = el ? el.getBoundingClientRect() : null;
+    return r && r.height > 0 ? r : null;
+  };
+  const qb = rectOf('#quiz-root .qz-question-wrap');
+  const rv = rectOf('#qz-reveal');
+  const c0 = rectOf('#quiz-root .qz-choice[data-choice="0"]');
+  const c1 = rectOf('#quiz-root .qz-choice[data-choice="1"]');
+  // 세로: 문제 상자 아래 ~ 정답 공개 띠 위, 가로: 양쪽 답 카드 사이 (아직 안 보이면 평소 위치로 짐작)
+  return {
+    left: c0 ? c0.right + w * 0.01 : w * 0.27,
+    right: c1 ? c1.left - w * 0.01 : w * 0.73,
+    top: (qb ? qb.bottom : h * 0.24) + h * 0.02,
+    bottom: (rv ? rv.top : h * 0.82) - Math.max(h * 0.02, 14),
+  };
 }
 
 // ── 렌더 루프 ──

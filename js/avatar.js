@@ -146,7 +146,15 @@ const motionCam = { z: 0, lookY: 0, lookX: 0 };
 export function setFraming(mode) {
   framingMode = mode;
   const rect = fitProvider && state.vrm ? fitProvider(mode) : null;
-  if (rect) { fitCamera(rect); return; }
+  if (rect) {
+    // 글자 길이에 따라 카드 높이가 조금씩 바뀌어도 아바타가 들썩이지 않게, 크게 바뀔 때만 다시 맞춤
+    const w = window.innerWidth, h = window.innerHeight;
+    const near = lastFit && lastFit.mode === mode && lastFit.w === w && lastFit.h === h
+      && ['left', 'right', 'top', 'bottom'].every((k) => Math.abs(lastFit.rect[k] - rect[k]) < h * 0.03);
+    if (!near) { fitCamera(rect); lastFit = { mode, w, h, rect }; }
+    return;
+  }
+  lastFit = null;
   const f = framingFor(mode);
   motionCam.z = f.pos.z;
   motionCam.lookY = f.look.y;
@@ -166,6 +174,7 @@ export function refreshFraming() {
 // ── 영역 맞춤: 화면의 빈 자리(px)에 아바타 전신이 다 들어오게 카메라를 맞춘다 ──
 // (미션: 아래 설명 카드가 다리·발을 가리지 않게) 공급자가 null을 주면 위의 고정 배치를 쓴다
 let fitProvider = null;
+let lastFit = null;
 export function setFitProvider(fn) { fitProvider = fn; }
 
 // 서 있는 키(차렷 기준) — 그림 아바타도 같은 키로 맞춰지므로 둘 다 이 값으로 계산
