@@ -11,7 +11,7 @@ export const DEFAULT_SETTINGS = {
   totalMissions: 5,
   passCount: 3,
   timeoutMs: 8000,
-  holdMs: 500,
+  holdMs: 400,
   passScore: 0.68,      // 이 confidence 이상 유지 시 성공
   enterFrames: 4,       // 진입 안정화
   slipMs: 400,          // 순간 이탈 허용 (아이들은 자세가 조금씩 흔들림)
@@ -236,7 +236,7 @@ export class MissionJudge {
         this.slipMs += dtMs;
         // 오래 벗어나면 모은 시간이 서서히 줄어듦 (한 번 흔들렸다고 처음부터 다시 하지 않게)
         if (this.slipMs > this.settings.slipMs) {
-          this.holdMs = Math.max(0, this.holdMs - dtMs * 2);
+          this.holdMs = Math.max(0, this.holdMs - dtMs);
           if (this.holdMs === 0) this.enterCount = 0;
         }
       } else {
