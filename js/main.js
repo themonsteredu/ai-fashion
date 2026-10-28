@@ -8,6 +8,7 @@ import * as CamBG from './cambg.js';
 import * as MissionUI from './mission-ui.js';
 import * as Puppet from './puppet.js';
 import * as QuizUI from './mathquiz-ui.js';
+import * as RealifyUI from './realify-ui.js';
 
 const IDLE_RESET_MS = 60 * 1000; // 60초 무조작 시 처음 화면으로
 
@@ -396,6 +397,7 @@ function applyBackground(id) {
 }
 
 function bindUI() {
+  RealifyUI.init();
   $('#btn-done').addEventListener('click', () => goMotion('free'));
   $('#btn-mission').addEventListener('click', () => goMotion('mission'));
   $('#btn-quiz').addEventListener('click', () => goMotion('quiz'));
@@ -444,8 +446,13 @@ function bindUI() {
     loadingText.textContent = '아바타를 불러오는 중…';
     try {
       if (await Puppet.isImageFile(file)) {
-        // 그림 파일 → 그림 아바타 (3D 아바타는 숨겨서 동작 계산에만 사용)
-        const { mode, armsTouching } = await Puppet.activate(file, { onStatus: (t) => { loadingText.textContent = t; } });
+        // 업로드 그림 → AI 반실사 미리보기 → 선택한 결과를 움직이는 그림 아바타로 사용
+        loading.classList.add('hidden');
+        const avatarImage = await RealifyUI.convert(file);
+        if (!avatarImage) return;
+        loading.classList.remove('hidden');
+        loadingText.textContent = '아바타 움직임을 준비하는 중…';
+        const { mode, armsTouching } = await Puppet.activate(avatarImage, { onStatus: (t) => { loadingText.textContent = t; } });
         customAvatar = true;
         $('#sample-badge').classList.add('hidden');
         Avatar.setFraming('start');
@@ -666,7 +673,7 @@ function stopVideo() {
 function resetIdleTimer() {
   clearTimeout(idleTimer);
   idleTimer = setTimeout(() => {
-    if (MissionUI.isAdminOpen()) { resetIdleTimer(); return; } // 운영자 설정 창(Esc)이 열려 있으면 기다림
+    if (MissionUI.isAdminOpen() || RealifyUI.isOpen()) { resetIdleTimer(); return; } // 설정·변환·비교 중에는 무조작 초기화를 미룸
     // 관람객이 불러온 아바타는 그 사람 체험 동안만 — 다음 관람객은 부스 기본 캐릭터로 (사진 개인정보 보호)
     if (customAvatar && !recorder && !countdownBusy) {
       if (!$('#loading').classList.contains('hidden')) { resetIdleTimer(); return; } // 불러오는 중이면 기다림
@@ -682,3 +689,4 @@ function resetIdleTimer() {
 }
 
 boot();
+

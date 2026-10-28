@@ -1,0 +1,223 @@
+import { availableModels, MODELS, STYLES, QUALITIES, SIZES, createSettingsStore, transformImage, validateImage, RealifyError } from './realify.js';
+
+const $ = (id) => document.getElementById(id);
+let store, initialized = false, original = null, originalUrl = null;
+let results = [], selected = -1, sequence = 0, controller = null, resolveConversion = null;
+let settingsResolve = null, busy = false, elapsedTimer = null;
+
+function storage(name) { try { return window[name]; } catch { return null; } }
+function options(id, items) {
+  $(id).replaceChildren(...items.map((item) => {
+    const option = document.createElement('option'); option.value = item.id; option.textContent = item.label; return option;
+  }));
+}
+function label(items, id) { return items.find((item) => item.id === id)?.label || id; }
+function describe(settings) { return `${label(MODELS, settings.model)} / ${label(QUALITIES, settings.quality)} / ${label(STYLES, settings.style)}`; }
+function status(id, message, error = false) { $(id).textContent = message; $(id).dataset.error = String(error); }
+function updateSummary() {
+  const settings = store.getSettings();
+  $('ai-settings-summary').textContent = `${label(QUALITIES, settings.quality)} · ${label(STYLES, settings.style)}`;
+  $('realify-key-state').textContent = store.hasKey() ? '키가 입력되어 있어요. 첫 변환에서 연결을 확인해요.' : '아직 입력한 키가 없어요.';
+  $('realify-key-clear').disabled = !store.hasKey();
+}
+function selectedSettings() { return { model: $('realify-model').value, quality: $('realify-quality').value, style: $('realify-style').value, size: $('realify-size').value }; }
+function updateModelHint() {
+  const settings = selectedSettings();
+  $('realify-model-hint').textContent = MODELS.find((m) => m.id === settings.model)?.hint || '';
+  if (settings.model === 'gpt-image-1-mini') {
+    const prices = settings.size === '1024x1024' ? { low: '.005', medium: '.011', high: '.036' } : { low: '.006', medium: '.015', high: '.052' };
+    $('realify-cost-hint').textContent = `이미지 출력 1장 약 $0${prices[settings.quality]} + 입력 비용. 2026년 10월 확인한 요금이며 실제 청구액은 달라질 수 있어요.`;
+  } else {
+    $('realify-cost-hint').textContent = '실제 요금은 모델·화질·크기·입력 그림에 따라 달라져요. 두 모델의 같은 화질도 장당 비용은 다를 수 있어요.';
+  }
+}
+
+export function init() {
+  if (initialized) return;
+  initialized = true;
+  store = createSettingsStore({ local: storage('localStorage'), session: storage('sessionStorage') });
+  options('realify-quality', QUALITIES); options('realify-style', STYLES); options('realify-size', SIZES);
+  $('btn-ai-settings').addEventListener('click', () => openSettings());
+  $('realify-settings-close').addEventListener('click', () => closeSettings(false));
+  $('realify-settings').addEventListener('cancel', (event) => { event.preventDefault(); closeSettings(false); });
+  $('realify-settings-form').addEventListener('submit', (event) => {
+    event.preventDefault();
+    try {
+      const key = $('realify-api-key').value;
+      if (original && !key.trim() && !store.hasKey()) {
+        status('realify-settings-status', 'API 키를 입력하거나 원본 그림으로 사용해 주세요.', true);
+        $('realify-api-key').focus(); return;
+      }
+      const saved = store.save(selectedSettings(), key, $('realify-remember-key').checked);
+      $('realify-api-key').value = '';
+      updateSummary();
+      if ($('realify-remember-key').checked && saved.hasKey && !saved.remembered) {
+        $('realify-remember-key').checked = false;
+        status('realify-settings-status', '이 브라우저에서는 탭 저장을 사용할 수 없어요. 키는 새로고침 전까지만 유지돼요. 설정 저장을 한 번 더 누르면 계속해요.');
+        return;
+      }
+      closeSettings(true);
+    } catch (error) { status('realify-settings-status', error.userMessage || '설정을 저장하지 못했어요.', true); }
+  });
+  for (const id of ['realify-model', 'realify-quality', 'realify-size']) $(id).addEventListener('change', updateModelHint);
+  $('realify-key-clear').addEventListener('click', () => {
+    store.clearKey(); $('realify-api-key').value = ''; $('realify-remember-key').checked = false;
+    updateSummary(); status('realify-settings-status', 'API 키를 삭제했어요.');
+  });
+  $('realify-close').addEventListener('click', () => finish(null));
+  $('realify-dialog').addEventListener('cancel', (event) => { event.preventDefault(); finish(null); });
+  $('realify-cancel').addEventListener('click', () => controller?.abort());
+  $('realify-use-original').addEventListener('click', () => finish(original));
+  $('realify-apply').addEventListener('click', () => { if (!busy && results[selected]) finish(results[selected].file); });
+  $('realify-download').addEventListener('click', download);
+  $('realify-retry').addEventListener('click', async () => {
+    if (busy) return;
+    if (await openSettings(true)) await run();
+  });
+  // Native dialog focus trapping + prevent kiosk shortcuts from opening a second panel.
+  window.addEventListener('keydown', (event) => {
+    if (!isOpen()) return;
+    event.stopImmediatePropagation();
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      if ($('realify-settings').open) closeSettings(false); else finish(null);
+    }
+  }, true);
+  updateSummary();
+}
+
+export function isOpen() { return initialized && ($('realify-settings').open || $('realify-dialog').open || busy); }
+
+export function openSettings(forConversion = false) {
+  if ($('realify-settings').open) return Promise.resolve(false);
+  const settings = store.getSettings();
+  options('realify-model', availableModels());
+  for (const key of ['model', 'quality', 'style', 'size']) $(`realify-${key}`).value = settings[key];
+  $('realify-api-key').value = '';
+  $('realify-api-key').placeholder = store.hasKey() ? '키가 입력되어 있어요. 변경할 때만 새 키 입력' : 'sk-로 시작하는 API 키';
+  $('realify-remember-key').checked = store.isRemembered();
+  $('realify-settings-save').textContent = forConversion ? '이 설정으로 변환' : '설정 저장';
+  status('realify-settings-status', ''); updateSummary(); updateModelHint();
+  $('realify-settings').showModal();
+  return new Promise((resolve) => { settingsResolve = resolve; });
+}
+function closeSettings(saved) {
+  $('realify-api-key').value = '';
+  $('realify-settings').close();
+  const resolve = settingsResolve; settingsResolve = null; resolve?.(saved);
+}
+
+export async function convert(file) {
+  if (resolveConversion) return null;
+  await validateImage(file);
+  let bitmap;
+  try { bitmap = await createImageBitmap(file); }
+  catch { throw new RealifyError('decode', '그림을 열지 못했어요. PNG·JPG·WebP 이미지인지 확인해 주세요.'); }
+  const tooSmall = Math.max(bitmap.width, bitmap.height) < 200;
+  bitmap.close();
+  if (tooSmall) {
+    throw new RealifyError('small', '그림이 너무 작아요. 200픽셀 이상의 그림을 선택해 주세요.');
+  }
+  original = file; originalUrl = URL.createObjectURL(file);
+  $('realify-original').src = originalUrl;
+  $('realify-result').hidden = true; $('realify-result').removeAttribute('src');
+  $('realify-placeholder').hidden = false;
+  $('realify-placeholder').textContent = '선택한 설정으로 변환을 준비하고 있어요.';
+  $('realify-result-caption').textContent = '변환 결과';
+  $('realify-history').replaceChildren(); results = []; selected = -1;
+  status('realify-status', ''); setBusy(false);
+  $('realify-dialog').showModal();
+  const completion = new Promise((resolve) => { resolveConversion = resolve; });
+  if (!store.hasKey()) {
+    status('realify-status', 'AI 설정에서 API 키를 입력하면 변환을 시작해요.');
+    const saved = await openSettings(true);
+    if (saved && original) void run();
+    else if (original) { status('realify-status', '설정에서 API 키를 입력하거나, 원본 그림으로 사용할 수 있어요.'); $('realify-placeholder').textContent = 'API 키를 입력하면 이곳에 결과가 나타나요.'; }
+  } else { void run(); }
+  return completion;
+}
+
+function setBusy(value) {
+  busy = value;
+  $('realify-dialog').setAttribute('aria-busy', String(value));
+  $('realify-retry').disabled = value;
+  $('realify-apply').disabled = value || selected < 0;
+  $('realify-download').disabled = value || selected < 0;
+  $('realify-cancel').hidden = !value;
+  $('realify-use-original').disabled = value;
+  $('realify-timing').hidden = !value;
+  for (const button of $('realify-history').children) button.disabled = value;
+  clearInterval(elapsedTimer); elapsedTimer = null;
+  if (value) {
+    const start = Date.now();
+    const tick = () => { $('realify-timing').textContent = `${Math.floor((Date.now() - start) / 1000)}초 경과 · 그림에 따라 몇 분 정도 걸릴 수 있어요. 중지해도 이미 시작된 처리에는 비용이 발생할 수 있어요.`; };
+    tick(); elapsedTimer = setInterval(tick, 1000);
+  }
+}
+
+async function run() {
+  if (busy || !original || !$('realify-dialog').open) return;
+  const job = ++sequence;
+  controller = new AbortController();
+  const settings = store.getSettings();
+  setBusy(true); status('realify-status', `${describe(settings)} — 변환 중이에요.`);
+  if (selected < 0) $('realify-placeholder').textContent = '원본의 얼굴과 옷을 살려 입체감을 더하고 있어요.';
+  try {
+    const result = await transformImage(original, { apiKey: store.getKey(), settings, signal: controller.signal });
+    if (job !== sequence || !original) return;
+    // Decode before offering a download or replacing a working avatar.
+    const decoded = await createImageBitmap(result.file); decoded.close();
+    if (job !== sequence || !original) return;
+    if (controller.signal.aborted) throw new RealifyError('cancelled', '변환을 중지했어요. 이미 시작된 서버 처리에는 비용이 발생할 수 있어요.');
+    result.url = URL.createObjectURL(result.file);
+    results.push(result);
+    if (results.length > 3) URL.revokeObjectURL(results.shift().url);
+    selectResult(results.length - 1);
+    status('realify-status', '완성했어요. 원본과 비교하고 아바타로 사용해 보세요.');
+  } catch (error) {
+    if (job !== sequence) return;
+    status('realify-status', error.userMessage || '변환된 이미지를 열지 못했어요. 다른 설정으로 다시 시도해 주세요.', true);
+    if (selected < 0) $('realify-placeholder').textContent = '아직 변환된 이미지가 없어요.';
+  } finally {
+    if (job === sequence) { controller = null; setBusy(false); }
+  }
+}
+
+function selectResult(index) {
+  selected = index;
+  const result = results[index];
+  $('realify-result').src = result.url; $('realify-result').hidden = false;
+  $('realify-placeholder').hidden = true;
+  $('realify-result-caption').textContent = label(STYLES, result.settings.style);
+  const buttons = results.map((entry, i) => {
+    const button = document.createElement('button'); button.type = 'button';
+    button.setAttribute('aria-pressed', String(i === index)); button.disabled = busy;
+    const thumbnail = document.createElement('img'); thumbnail.src = entry.url; thumbnail.alt = '';
+    const text = document.createElement('span'); text.textContent = `${i + 1}. ${describe(entry.settings)}`;
+    button.append(thumbnail, text); button.addEventListener('click', () => selectResult(i)); return button;
+  });
+  $('realify-history').replaceChildren(...buttons);
+  $('realify-apply').disabled = busy; $('realify-download').disabled = busy;
+}
+
+function download() {
+  const result = results[selected];
+  if (!result || busy) return;
+  const link = document.createElement('a');
+  link.href = result.url; link.download = `avatar_${result.settings.model}_${result.settings.quality}_${Date.now()}.png`;
+  document.body.append(link); link.click(); link.remove();
+}
+
+function finish(file) {
+  sequence++;
+  controller?.abort(); controller = null;
+  if ($('realify-settings').open) closeSettings(false);
+  setBusy(false);
+  $('realify-dialog').close();
+  $('realify-original').removeAttribute('src'); $('realify-result').removeAttribute('src');
+  if (originalUrl) URL.revokeObjectURL(originalUrl);
+  for (const result of results) URL.revokeObjectURL(result.url);
+  $('realify-history').replaceChildren();
+  original = null; originalUrl = null; results = []; selected = -1;
+  const resolve = resolveConversion; resolveConversion = null; resolve?.(file);
+}

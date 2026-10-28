@@ -1,0 +1,61 @@
+.realify-settings-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 8px; font-size: 13px; line-height: 1.6; color: #565b66; }
+.realify-settings-row .realify-link { min-height: 44px; }
+.upload-hint { font-size: 12px; line-height: 1.65; word-break: keep-all; }
+.start-upload { font-size: 16px; min-height: 48px; }
+.start-upload small { font-size: 10px; letter-spacing: .03em; }
+.realify-dialog { color: #17191e; background: #faf9f6; border: 1px solid #d9d8d2; border-radius: 10px; width: min(1060px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); margin: auto; padding: 0; box-shadow: 0 24px 90px #0003; font: 400 16px/1.65 "S-Core Dream", "Malgun Gothic", sans-serif; word-break: keep-all; overscroll-behavior: contain; user-select: text; }
+.realify-dialog::backdrop { background: #101725a8; }
+.realify-dialog [hidden] { display: none !important; }
+.realify-settings-dialog { width: min(740px, calc(100vw - 32px)); }
+.realify-shell { padding: clamp(20px, 3vw, 36px); }
+.realify-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 18px; }
+.realify-header h2 { font-size: clamp(22px, 2.6vw, 30px); font-weight: 700; line-height: 1.4; letter-spacing: -.04em; }
+.realify-eyebrow { color: #315cff; font-size: 11px; font-weight: 700; letter-spacing: .14em; margin-bottom: 8px; }
+.realify-description { color: #555d69; margin: 12px 0 18px; font-size: 14px; }
+.realify-comparison { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.realify-comparison figure { min-width: 0; }
+.realify-comparison figcaption { font-size: 14px; font-weight: 500; margin-bottom: 10px; min-height: 24px; }
+.realify-image-frame { height: clamp(200px, 38vh, 450px); display: flex; align-items: center; justify-content: center; overflow: hidden; background: #eeede8; border: 1px solid #deded7; padding: 12px; }
+.realify-image-frame img { display: block; max-width: 100%; max-height: 100%; object-fit: contain; }
+.realify-image-frame p { color: #69717c; text-align: center; max-width: 24ch; font-size: 15px; }
+.realify-status { min-height: 28px; margin-top: 14px; font-size: 15px; color: #3151ac; }
+.realify-status[data-error="true"] { color: #a53528; }
+.realify-note { color: #626b76; font-size: 13px; line-height: 1.75; margin-top: 8px; }
+.realify-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 18px 0 12px; }
+.realify-primary, .realify-secondary, .realify-link { font: inherit; font-weight: 500; line-height: 1.5; cursor: pointer; touch-action: manipulation; }
+.realify-primary, .realify-secondary { min-height: 46px; padding: 10px 18px; border-radius: 5px; font-size: 15px; }
+.realify-primary { background: #315cff; color: white; border: 1px solid #315cff; }
+.realify-primary:hover:not(:disabled) { background: #2449d4; }
+.realify-secondary { background: #fff; color: #282d35; border: 1px solid #c7cbd2; }
+.realify-secondary:hover:not(:disabled) { border-color: #315cff; }
+.realify-link { color: #3151ac; background: transparent; text-decoration: underline; text-underline-offset: 4px; border: 0; padding: 8px 2px; font-size: 14px; }
+.realify-dialog button:disabled { opacity: .45; cursor: not-allowed; }
+.realify-dialog :focus-visible, .realify-settings-row :focus-visible { outline: 3px solid #315cff; outline-offset: 3px; }
+.realify-key-section { margin: 22px 0; padding-bottom: 22px; border-bottom: 1px solid #dcddd9; }
+.realify-key-section > label, .realify-fields label { font-size: 14px; font-weight: 500; }
+.realify-dialog input[type="password"], .realify-dialog select { width: 100%; min-height: 48px; border: 1px solid #bfc4cb; border-radius: 4px; background: #fff; color: #17191e; padding: 10px 12px; font: 400 15px/1.5 "S-Core Dream", "Malgun Gothic", sans-serif; margin-top: 8px; user-select: text; }
+.realify-key-controls { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 13px; color: #555d69; }
+.realify-check { display: flex; align-items: center; gap: 10px; min-height: 44px; }
+.realify-check input { width: 20px; height: 20px; accent-color: #315cff; }
+.realify-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.realify-fields label { min-width: 0; }
+.realify-cost-note { padding: 16px 20px; border-left: 3px solid #315cff; background: #eef1f9; font-size: 14px; color: #404b60; margin-bottom: 16px; }
+.realify-cost-note strong { font-weight: 700; color: #263455; }
+.realify-cost-note p { margin: 5px 0; }
+.realify-cost-note a { color: #3151ac; text-underline-offset: 3px; }
+.realify-history { display: flex; gap: 10px; flex-wrap: wrap; }
+.realify-history button { display: flex; gap: 10px; align-items: center; background: #fff; border: 1px solid #c7cbd2; border-radius: 4px; padding: 6px 10px; min-height: 60px; text-align: left; font: inherit; font-size: 14px; max-width: 100%; }
+.realify-history button[aria-pressed="true"] { border: 2px solid #315cff; }
+.realify-history img { width: 40px; height: 48px; object-fit: contain; }
+@media (max-width: 600px) {
+  .realify-fields { grid-template-columns: 1fr; gap: 14px; }
+  .realify-comparison { gap: 10px; }
+  .realify-image-frame { height: 240px; padding: 6px; }
+  .realify-header { gap: 10px; }
+  .realify-header .realify-secondary { padding-inline: 12px; flex-shrink: 0; }
+  .realify-actions > .realify-primary { flex: 1 1 100%; }
+  .realify-actions > .realify-secondary { flex: 1; }
+  .realify-dialog { max-height: calc(100dvh - 16px); width: calc(100vw - 16px); }
+  .realify-dialog select { font-size: 14px; }
+}
+@media (prefers-reduced-motion: reduce) { .realify-dialog * { scroll-behavior: auto; transition: none; } }
