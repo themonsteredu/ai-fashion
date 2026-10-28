@@ -145,6 +145,16 @@ const motionCam = { z: 0, lookY: 0, lookX: 0 };
 
 export function setFraming(mode) {
   framingMode = mode;
+  const rect = fitProvider && state.vrm ? fitProvider(mode) : null;
+  if (rect) {
+    // 글자 길이에 따라 카드 높이가 조금씩 바뀌어도 아바타가 들썩이지 않게, 크게 바뀔 때만 다시 맞춤
+    const w = window.innerWidth, h = window.innerHeight;
+    const near = lastFit && lastFit.mode === mode && lastFit.w === w && lastFit.h === h
+      && ['left', 'right', 'top', 'bottom'].every((k) => Math.abs(lastFit.rect[k] - rect[k]) < h * 0.03);
+    if (!near) { fitCamera(rect); lastFit = { mode, w, h, rect }; }
+    return;
+  }
+  lastFit = null;
   const f = framingFor(mode);
   motionCam.z = f.pos.z;
   motionCam.lookY = f.look.y;
@@ -155,6 +165,52 @@ export function setFraming(mode) {
   viewShiftY = f.shiftY || 0;
   applyViewShift();
   state.camera.updateProjectionMatrix();
+}
+
+export function refreshFraming() {
+  if (state.camera && state.vrm) setFraming(framingMode);
+}
+
+// ── 영역 맞춤: 화면의 빈 자리(px)에 아바타 전신이 다 들어오게 카메라를 맞춘다 ──
+// (미션: 아래 설명 카드가 다리·발을 가리지 않게) 공급자가 null을 주면 위의 고정 배치를 쓴다
+let fitProvider = null;
+let lastFit = null;
+export function setFitProvider(fn) { fitProvider = fn; }
+
+// 서 있는 키(차렷 기준) — 그림 아바타도 같은 키로 맞춰지므로 둘 다 이 값으로 계산
+function standHeight() {
+  const vrm = state.vrm;
+  if (vrm.scene.userData.standHeight) return vrm.scene.userData.standHeight;
+  const head = vrm.humanoid.getRawBoneNode('head');
+  vrm.scene.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(vrm.scene);
+  let hgt = box.max.y - Math.max(0, box.min.y);
+  if (head) {
+    const hy = head.getWorldPosition(new THREE.Vector3()).y;
+    if (!(hgt > hy) || hgt > hy * 1.6) hgt = hy * 1.12; // 머리 장식 등으로 상자가 너무 크면 머리 높이 기준
+  }
+  return THREE.MathUtils.clamp(hgt || 1.5, 1.2, 1.9);
+}
+
+function fitCamera(rect) {
+  const cam = state.camera;
+  const w = window.innerWidth, h = window.innerHeight;
+  const hgt = standHeight();
+  const y0 = -0.06, y1 = hgt * 1.3;  // 발끝(신발 밑창·그림자 여유) ~ 두 손을 번쩍 든 높이
+  const halfW = hgt * 0.6;           // 양팔을 옆으로 쫙 편 폭의 절반
+  const t = Math.tan(THREE.MathUtils.degToRad(cam.fov / 2));
+  const s = Math.min((rect.bottom - rect.top) / (y1 - y0), (rect.right - rect.left) / (2 * halfW)); // 1m당 화면 px
+  const d = h / (2 * s * t);
+  const cy = (y0 + y1) / 2 + ((rect.top + rect.bottom) / 2 - h / 2) / s;
+  motionCam.z = d;
+  motionCam.lookY = cy;
+  motionCam.lookX = 0;
+  cam.position.set(0, cy, d);
+  cam.lookAt(0, cy, 0);
+  viewShift = 0.5 - (rect.left + rect.right) / 2 / w;
+  viewShiftY = 0;
+  applyViewShift();
+  cam.updateProjectionMatrix();
 }
 
 // ── 웹캠 배율 맞춤용: 아바타 눈 사이 거리의 화면상 픽셀 크기와 눈높이 ──
@@ -224,6 +280,7 @@ function setupVrm(gltf) {
 
   state.scene.add(vrm.scene);
   state.vrm = vrm;
+  vrm.scene.userData.standHeight = standHeight(); // 포즈가 바뀌기 전(차렷)에 키를 재 둔다
 
   // 아바타가 항상 관람객(화면) 쪽을 바라보게 — 눈맞춤 디테일
   if (vrm.lookAt) vrm.lookAt.target = state.camera;
