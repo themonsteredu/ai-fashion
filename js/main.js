@@ -78,12 +78,28 @@ async function boot() {
     onManualPhoto: takePhoto,
     isPaused: () => MissionUI.isAdminOpen(),
   });
+  // 미션: 아래 설명 카드 위 빈 자리에 아바타 전신이 다 들어오게 (카드가 다리·발을 가리지 않게)
+  Avatar.setFitProvider(missionFitRect);
+  const mmCard = document.querySelector('#mission-root .mm-mid');
+  if (mmCard && window.ResizeObserver) {
+    new ResizeObserver(() => { if (document.body.classList.contains('mission-on')) Avatar.refreshFraming(); }).observe(mmCard);
+  }
   startRenderLoop();
 
   // 모션 인식은 백그라운드에서 미리 준비 (화면 3 진입이 빨라짐)
   Motion.initTrackers().then(() => { motionReady = true; })
     .catch((e) => { console.error('모션 인식 초기화 실패', e); });
   CamBG.init().catch((e) => { console.error('배경 분리 초기화 실패', e); });
+}
+
+function missionFitRect(mode) {
+  if (mode !== 'mission' || Avatar.isPortrait()) return null;
+  const w = window.innerWidth, h = window.innerHeight;
+  const card = document.querySelector('#mission-root .mm-mid');
+  const r = card ? card.getBoundingClientRect() : null;
+  const cardTop = r && r.height > 0 ? r.top : h * 0.955 - 260; // 카드가 아직 안 보이면 평소 높이로 짐작
+  // 가로: 왼쪽 끝 ~ 오른쪽 웹캠 카드 앞, 세로: 화면 위 ~ 설명 카드 위
+  return { left: w * 0.04, right: w * 0.64, top: h * 0.035, bottom: cardTop - h * 0.02 };
 }
 
 // ── 렌더 루프 ──

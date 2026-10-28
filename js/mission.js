@@ -11,19 +11,23 @@ export const DEFAULT_SETTINGS = {
   totalMissions: 5,
   passCount: 3,
   timeoutMs: 8000,
-  holdMs: 700,
+  holdMs: 500,
   passScore: 0.68,      // 이 confidence 이상 유지 시 성공
   enterFrames: 4,       // 진입 안정화
-  slipMs: 250,          // 순간 이탈 허용
+  slipMs: 400,          // 순간 이탈 허용 (아이들은 자세가 조금씩 흔들림)
   retries: 1,           // 미션별 재도전
   advanceOnFail: true,  // 실패해도 다음 미션으로
   onlyStable: true,     // STABLE 포즈만 출제
 };
 
+// 예전 기본값 그대로 저장된 값은 새 기본값을 따르게 (설정 창에서 '저장'하면 모든 값이 함께 저장되므로)
+const OLD_DEFAULTS = { holdMs: 700, slipMs: 250 };
+
 export function loadSettings() {
   try {
-    const s = JSON.parse(localStorage.getItem(LS_SETTINGS));
-    return { ...DEFAULT_SETTINGS, ...(s || {}) };
+    const s = JSON.parse(localStorage.getItem(LS_SETTINGS)) || {};
+    for (const [k, v] of Object.entries(OLD_DEFAULTS)) if (s[k] === v) delete s[k];
+    return { ...DEFAULT_SETTINGS, ...s };
   } catch (e) { return { ...DEFAULT_SETTINGS }; }
 }
 export function saveSettings(s) {
@@ -230,7 +234,11 @@ export class MissionJudge {
       // 진입 후 잠깐 벗어남은 slip 허용
       if (this.holdMs > 0) {
         this.slipMs += dtMs;
-        if (this.slipMs > this.settings.slipMs) { this.holdMs = 0; this.enterCount = 0; }
+        // 오래 벗어나면 모은 시간이 서서히 줄어듦 (한 번 흔들렸다고 처음부터 다시 하지 않게)
+        if (this.slipMs > this.settings.slipMs) {
+          this.holdMs = Math.max(0, this.holdMs - dtMs * 2);
+          if (this.holdMs === 0) this.enterCount = 0;
+        }
       } else {
         this.enterCount = Math.max(0, this.enterCount - 1);
       }
