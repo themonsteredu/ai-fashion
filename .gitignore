@@ -1,2 +1,5 @@
 chrome-profile/
 .vercel/
+
+node_modules/
+test-results/

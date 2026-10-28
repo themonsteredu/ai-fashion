@@ -58,15 +58,13 @@ function judge(s, conds, passScore = 0.68) {
   let total = 0, got = 0;
   const failed = [];
   for (const c of conds) {
-    // 필요한 관절 신뢰도 확인 — 안 보이면 그 조건 가중치를 줄여 관대하게
-    let w = c.weight;
-    if (c.vis) {
-      const visMin = Math.min(...c.vis.map((k) => (m.V[k] || 0)));
-      if (visMin < 0.3) w *= 0.35;
-    }
+    // 보이지 않는 관절의 추정 좌표는 정답의 근거로 쓰지 않는다.
+    // 분모는 유지해야 무조건 점수(유지 등)만으로 정답이 되지 않는다.
+    const w = c.weight;
+    const visible = !c.vis || c.vis.every((k) => m.has(k, 0.3));
     total += w;
     let sc = 0;
-    try { sc = Math.max(0, Math.min(1, c.score(m))); } catch (e) { sc = 0; }
+    try { sc = visible ? Math.max(0, Math.min(1, c.score(m))) : 0; } catch (e) { sc = 0; }
     got += w * sc;
     if (sc < 0.5) failed.push(c.name);
   }

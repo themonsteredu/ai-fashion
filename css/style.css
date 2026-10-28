@@ -737,20 +737,20 @@ body.mission-on #guide-msg { display: none !important; }
 
 /* 미션 준비 카운트다운 */
 .mm-countdown {
-  position: absolute; left: 21%; top: 38%; transform: translate(-50%, -50%);
-  width: clamp(110px, 13vw, 160px); height: clamp(110px, 13vw, 160px);
+  position: absolute; left: 50%; top: 10%; transform: translate(-50%, -50%);
+  width: 80px; height: 80px;
   display: flex; align-items: center; justify-content: center;
-  font-size: clamp(68px, 8vw, 108px); font-weight: 800; color: #fff;
+  font-size: 54px; font-weight: 800; color: #fff;
   background: rgba(12,14,19,0.88); border: 2px solid #315cff; border-radius: 26px;
   box-shadow: 0 18px 60px rgba(0,0,0,0.28); backdrop-filter: blur(12px);
   z-index: 62; pointer-events: none; animation: mm-cd-pop 0.45s ease;
 }
 .mm-countdown.hidden { display: none; }
-.mm-countdown.go { width: 170px; height: 82px; border-radius: 999px; font-size: 38px; letter-spacing: -0.06em; }
+.mm-countdown.go { width: 100px; height: 48px; border-radius: 999px; font-size: 22px; letter-spacing: -0.06em; }
 @keyframes mm-cd-pop { from { transform: translate(-50%,-50%) scale(1.4); opacity: 0.2; } to { transform: translate(-50%,-50%) scale(1); opacity: 1; } }
 @media (max-width: 700px) {
-  .mm-countdown { left: 36%; top: 33%; width: 100px; height: 100px; font-size: 66px; border-radius: 22px; }
-  .mm-countdown.go { width: 140px; height: 68px; font-size: 30px; border-radius: 999px; }
+  .mm-countdown { left: 54%; top: 10%; width: 64px; height: 64px; font-size: 42px; border-radius: 16px; }
+  .mm-countdown.go { width: 100px; height: 48px; font-size: 22px; border-radius: 999px; }
 }
 
 /* ═══════ 미션 데스크톱: 시범 아바타 | 여백 + HUD | 실시간 웹캠 ═══════ */
