@@ -58,15 +58,13 @@ function judge(s, conds, passScore = 0.68) {
   let total = 0, got = 0;
   const failed = [];
   for (const c of conds) {
-    // 필요한 관절 신뢰도 확인 — 안 보이면 그 조건 가중치를 줄여 관대하게
-    let w = c.weight;
-    if (c.vis) {
-      const visMin = Math.min(...c.vis.map((k) => (m.V[k] || 0)));
-      if (visMin < 0.3) w *= 0.35;
-    }
+    // 보이지 않는 관절의 추정 좌표는 정답의 근거로 쓰지 않는다.
+    // 분모는 유지해야 무조건 점수(유지 등)만으로 정답이 되지 않는다.
+    const w = c.weight;
+    const visible = !c.vis || c.vis.every((k) => m.has(k, 0.3));
     total += w;
     let sc = 0;
-    try { sc = Math.max(0, Math.min(1, c.score(m))); } catch (e) { sc = 0; }
+    try { sc = visible ? Math.max(0, Math.min(1, c.score(m))) : 0; } catch (e) { sc = 0; }
     got += w * sc;
     if (sc < 0.5) failed.push(c.name);
   }
@@ -77,6 +75,12 @@ function judge(s, conds, passScore = 0.68) {
     progress: Math.min(1, confidence / passScore),
     failedConditions: failed,
   };
+}
+
+// 한 손이면 충분한 조건: 보이는 손만 후보로 평가한다.
+function visibleHandScore(m, references, score) {
+  return Math.max(...['L', 'R'].map((side) =>
+    [side + '_WR', ...references(side)].every((key) => m.has(key, 0.3)) ? score(side) : 0));
 }
 
 // ── 패션 모델 포즈용 헬퍼 ──
@@ -271,8 +275,8 @@ export const POSE_DEFS = [
     requiredLandmarks: ['L_WR', 'R_WR'],
     detect: (s) => judge(s, [
       // 한 손이라도 머리 위로
-      { name: '한 손 위로', weight: 70, vis: ['L_WR', 'R_WR'], score: (m) => Math.max(atLeast(m.dy('L_WR', 'NOSE'), 0.1, 0.4), atLeast(m.dy('R_WR', 'NOSE'), 0.1, 0.4)) },
-      { name: '팔 폄', weight: 30, score: (m) => { const l = m.armDir('L'), r = m.armDir('R'); return Math.max(l ? atLeast(l.len, 0.85, 0.5) : 0, r ? atLeast(r.len, 0.85, 0.5) : 0); } },
+      { name: '한 손 위로', weight: 70, vis: ['NOSE'], score: (m) => visibleHandScore(m, () => ['NOSE'], (side) => atLeast(m.dy(side + '_WR', 'NOSE'), 0.1, 0.4)) },
+      { name: '팔 폄', weight: 30, score: (m) => visibleHandScore(m, (side) => [side + '_SH'], (side) => { const arm = m.armDir(side); return arm ? atLeast(arm.len, 0.85, 0.5) : 0; }) },
     ]),
   },
 
@@ -544,7 +548,7 @@ export const POSE_DEFS = [
     cooldownGroup: 'face', hintText: '한 손을 턱 아래에 살짝',
     requiredLandmarks: ['L_WR', 'R_WR', 'NOSE'],
     detect: (s) => judge(s, [
-      { name: '한 손 얼굴 근처', weight: 70, vis: ['L_WR', 'R_WR'], score: (m) => Math.max(band(m.dy('L_WR', 'NOSE'), -0.6, 0.0, 0.4), band(m.dy('R_WR', 'NOSE'), -0.6, 0.0, 0.4)) },
+      { name: '한 손 얼굴 근처', weight: 70, vis: ['NOSE'], score: (m) => visibleHandScore(m, () => ['NOSE'], (side) => band(m.dy(side + '_WR', 'NOSE'), -0.6, 0.0, 0.4)) },
       { name: '유지', weight: 30, score: () => 1 },
     ], 0.6),
   },
