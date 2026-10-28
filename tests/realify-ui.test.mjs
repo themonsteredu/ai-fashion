@@ -22,12 +22,25 @@ const elements = new Map([...markup.matchAll(/<([a-z]+)[^>]*\bid="([^"]+)"[^>]*>
 const element = (id) => { assert(elements.has(id), `HTML must contain #${id}`); return elements.get(id); };
 globalThis.document = { getElementById: element, createElement: (tag) => new Element(tag), body: new Element('body') };
 globalThis.window = new EventTarget(); window.localStorage = memory(); window.sessionStorage = memory();
+window.location = { hash: `#setup=${'a'.repeat(64)}`, pathname: '/', search: '' };
+window.history = { replaceState() {} }; window.confirm = () => true;
 globalThis.createImageBitmap = async () => ({ width: 256, height: 384, close() {} });
 const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5aUAAAAASUVORK5CYII=';
 const source = new File([Buffer.from(PNG, 'base64')], 'drawing.png', { type: 'image/png' });
 const KEY = ['sk', 'fixture'.repeat(8)].join('-');
-let mode = 'ok', requests = [], pending;
+let mode = 'ok', requests = [], pending, shared = { configured: false, registered: false };
 globalThis.fetch = async (url, request) => {
+  const action = new URL(url).searchParams.get('action');
+  if (action === 'status') return Response.json(shared);
+  if (action === 'save') {
+    const body = JSON.parse(request.body);
+    if (shared.registered && body.currentKey !== KEY) return Response.json({ error: { code: 'unauthorized' } }, { status: 403 });
+    shared = { configured: true, registered: true }; return Response.json({ ok: true });
+  }
+  if (action === 'delete') {
+    if (JSON.parse(request.body).currentKey !== KEY) return Response.json({ error: { code: 'unauthorized' } }, { status: 403 });
+    shared.configured = false; return Response.json({ ok: true });
+  }
   requests.push({ url, request });
   if (mode === 'wait') return new Promise((resolve) => { pending = resolve; });
   if (mode === 'auth') return Response.json({ error: { code: 'invalid_api_key', message: KEY } }, { status: 401 });
@@ -42,16 +55,16 @@ UI.init({
 const settle = async () => { for (let i=0; i<8; i++) await nextTick(); };
 function submit() { element('realify-settings-form').dispatchEvent(new Event('submit', { cancelable: true })); }
 
-test('settings save clears the key field and keeps credentials out of ordinary preferences', async () => {
+test('shared settings save clears the key field and keeps credentials out of browser preferences', async () => {
   element('btn-ai-settings').click();
   await settle();
   assert.equal(element('realify-settings').open, true);
   element('realify-api-key').value = KEY;
-  element('realify-remember-key').checked = true;
   submit(); await settle();
   assert.equal(UI.isOpen(), false);
   assert.equal(element('realify-api-key').value, '');
   assert.equal([...window.localStorage.map.values()].join('').includes(KEY), false);
+  assert.equal([...window.sessionStorage.map.values()].join('').includes(KEY), false);
 });
 
 test('converts once per attempt, keeps the original for comparisons, and applies the chosen result', async () => {
@@ -73,7 +86,7 @@ test('converts once per attempt, keeps the original for comparisons, and applies
 });
 
 test('missing key offers setup and original-image fallback without a request', async () => {
-  element('btn-ai-settings').click(); await settle(); element('realify-key-clear').click(); element('realify-settings-close').click();
+  element('btn-ai-settings').click(); await settle(); element('realify-current-key').value = KEY; element('realify-key-clear').click(); await settle(); element('realify-settings-close').click();
   const before = requests.length, completion = UI.convert(source); await settle();
   assert.equal(element('realify-settings').open, true);
   element('realify-settings-close').click(); await settle();
@@ -82,7 +95,7 @@ test('missing key offers setup and original-image fallback without a request', a
 });
 
 test('closing during a request discards its late response and releases the dialog', async () => {
-  element('btn-ai-settings').click(); await settle(); element('realify-api-key').value = KEY; submit();
+  element('btn-ai-settings').click(); await settle(); element('realify-api-key').value = KEY; element('realify-current-key').value = KEY; submit(); await settle();
   mode = 'wait';
   const completion = UI.convert(source); await settle();
   const last = requests.at(-1); assert.equal(element('realify-cancel').hidden, false);

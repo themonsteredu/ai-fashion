@@ -1,4 +1,5 @@
-// User-provided keys are sent only to the fixed OpenAI endpoint, never to app hosting.
+import { SHARED_API_URL, SHARED_PUBLIC_KEY } from './shared-api.js';
+// Direct mode remains available for isolated local tests. The app uses the shared server.
 // API contract: https://developers.openai.com/api/reference/resources/images/methods/edit
 export const API_URL = 'https://api.openai.com/v1/images/edits';
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
@@ -122,6 +123,8 @@ export async function optimizeInputImage(file, type, maxSide = 1536) {
 }
 
 function apiError(status, code) {
+  if (code === 'not_configured') return new RealifyError('key', '운영자가 AI 설정에서 API 키를 먼저 저장해 주세요.');
+  if (code === 'app_rate_limit') return new RealifyError('rate', '공유 변환 횟수 제한에 도달했어요. 잠시 후 다시 시도해 주세요.');
   if (status === 401) return new RealifyError('auth', 'API 키를 사용할 수 없어요. AI 설정에서 키를 확인해 주세요.');
   if (status === 403) return new RealifyError('access', '이 계정에서 선택한 이미지 모델을 사용할 수 없어요. 모델 권한과 계정 인증을 확인해 주세요.');
   if (code === 'insufficient_quota' || code === 'billing_hard_limit_reached') return new RealifyError('quota', 'API 잔액이나 사용 한도에 도달했어요. OpenAI 결제 설정을 확인해 주세요.');
@@ -133,8 +136,8 @@ function apiError(status, code) {
 }
 
 // Exactly one paid request per explicit attempt. Never auto-retry or silently upgrade.
-export async function transformImage(file, { apiKey, settings, signal, fetchImpl = globalThis.fetch, timeoutMs = 180000 } = {}) {
-  if (!apiKey) throw new RealifyError('key', 'AI 설정에서 OpenAI API 키를 먼저 입력해 주세요.');
+export async function transformImage(file, { apiKey, shared = false, settings, signal, fetchImpl = globalThis.fetch, timeoutMs = 180000 } = {}) {
+  if (!shared && !apiKey) throw new RealifyError('key', 'AI 설정에서 OpenAI API 키를 먼저 입력해 주세요.');
   const type = await validateImage(file);
   const config = normalizeSettings(settings);
   const optimized = await optimizeInputImage(file, type);
@@ -145,6 +148,7 @@ export async function transformImage(file, { apiKey, settings, signal, fetchImpl
   body.append('n', '1');
   body.append('size', config.size);
   body.append('quality', config.quality);
+  if (shared) body.append('style', config.style);
   body.append('background', 'transparent');
   body.append('output_format', 'png');
   const controller = new AbortController();
@@ -155,7 +159,7 @@ export async function transformImage(file, { apiKey, settings, signal, fetchImpl
   const timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
   try {
     if (controller.signal.aborted) throw new DOMException('Aborted', 'AbortError');
-    const response = await fetchImpl(API_URL, { method: 'POST', headers: { Authorization: `Bearer ${apiKey}` }, body, signal: controller.signal, credentials: 'omit', cache: 'no-store', redirect: 'error', referrerPolicy: 'no-referrer' });
+    const response = await fetchImpl(shared ? `${SHARED_API_URL}?action=generate` : API_URL, { method: 'POST', headers: shared ? { apikey: SHARED_PUBLIC_KEY } : { Authorization: `Bearer ${apiKey}` }, body, signal: controller.signal, credentials: 'omit', cache: 'no-store', redirect: 'error', referrerPolicy: 'no-referrer' });
     let payload;
     try { payload = await response.json(); } catch {
       if (controller.signal.aborted) throw new DOMException('Aborted', 'AbortError');

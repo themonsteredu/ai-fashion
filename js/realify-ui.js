@@ -1,10 +1,13 @@
 import { availableModels, MODELS, STYLES, QUALITIES, sizesForModel, createSettingsStore, transformImage, validateImage, RealifyError } from './realify.js';
+import { getSharedKeyStatus, saveSharedKey, deleteSharedKey, takeSetupToken, clearSetupToken } from './shared-api.js';
 
 const $ = (id) => document.getElementById(id);
 let store, initialized = false, original = null, originalUrl = null;
 let results = [], selected = -1, sequence = 0, controller = null, resolveConversion = null;
 let settingsResolve = null, busy = false, elapsedTimer = null;
 let callbacks = {};
+let sharedState = { configured: false, registered: false, loaded: false }, setupToken = '', settingsBusy = false;
+let sharedStatusRevision = 0;
 
 function storage(name) { try { return window[name]; } catch { return null; } }
 function options(id, items) {
@@ -18,8 +21,24 @@ function status(id, message, error = false) { $(id).textContent = message; $(id)
 function updateSummary() {
   const settings = store.getSettings();
   $('ai-settings-summary').textContent = `${label(QUALITIES, settings.quality)} · ${label(STYLES, settings.style)}`;
-  $('realify-key-state').textContent = store.hasKey() ? '키가 입력되어 있어요. 첫 변환에서 연결을 확인해요.' : '아직 입력한 키가 없어요.';
-  $('realify-key-clear').disabled = !store.hasKey();
+  $('realify-key-state').textContent = !sharedState.loaded ? '공유 설정을 확인하고 있어요.' : sharedState.configured ? '모든 기기에서 사용할 키가 저장되어 있어요.' : '공유 키가 아직 저장되지 않았어요.';
+  $('realify-key-clear').disabled = !sharedState.configured || settingsBusy;
+  $('realify-current-key-label').hidden = !sharedState.registered;
+  $('realify-api-key').placeholder = sharedState.configured ? '변경할 때만 새 키 입력' : 'sk-로 시작하는 API 키';
+}
+async function refreshSharedStatus() {
+  const revision = ++sharedStatusRevision;
+  try {
+    const result = await getSharedKeyStatus();
+    if (revision !== sharedStatusRevision) return sharedState.loaded;
+    sharedState = { configured: !!result.configured, registered: !!result.registered, loaded: true };
+    updateSummary(); return true;
+  } catch (error) {
+    if (revision !== sharedStatusRevision) return sharedState.loaded;
+    sharedState.loaded = false; updateSummary();
+    if ($('realify-settings').open) status('realify-settings-status', error.message, true);
+    return false;
+  }
 }
 function selectedSettings() { return { model: $('realify-model').value, quality: $('realify-quality').value, style: $('realify-style').value, size: $('realify-size').value }; }
 function updateSizeOptions(preferred) {
@@ -43,34 +62,56 @@ export function init(optionsForApp = {}) {
   initialized = true;
   callbacks = optionsForApp;
   store = createSettingsStore({ local: storage('localStorage'), session: storage('sessionStorage') });
+  setupToken = takeSetupToken(window.location, window.history, storage('sessionStorage'));
   options('realify-quality', QUALITIES); options('realify-style', STYLES);
   $('btn-ai-settings').addEventListener('click', () => openSettings());
   $('realify-settings-close').addEventListener('click', () => closeSettings(false));
   $('realify-settings').addEventListener('cancel', (event) => { event.preventDefault(); closeSettings(false); });
-  $('realify-settings-form').addEventListener('submit', (event) => {
+  $('realify-settings-form').addEventListener('submit', async (event) => {
     event.preventDefault();
+    if (settingsBusy) return;
+    settingsBusy = true; $('realify-settings-save').disabled = true; updateSummary();
     try {
-      const key = $('realify-api-key').value;
-      if (original && !key.trim() && !store.hasKey()) {
+      if (!sharedState.loaded && !(await refreshSharedStatus())) return;
+      const key = $('realify-api-key').value.trim();
+      const currentKey = $('realify-current-key').value.trim();
+      if (key) {
+        if (!/^sk-[A-Za-z0-9_-]{20,256}$/.test(key)) throw new RealifyError('key', 'sk-로 시작하는 OpenAI API 키 전체를 입력해 주세요.');
+        if (sharedState.registered && !currentKey) throw new RealifyError('key', '키를 바꾸려면 기존 API 키를 입력해 주세요.');
+        if (!sharedState.registered && !setupToken) throw new RealifyError('key', '처음 저장할 때는 전달받은 일회용 설정 링크로 열어 주세요.');
+        status('realify-settings-status', '모든 기기에서 사용할 키를 저장하고 있어요.');
+        await saveSharedKey(key, currentKey, setupToken);
+        sharedStatusRevision++;
+        sharedState = { configured: true, registered: true, loaded: true };
+        setupToken = ''; clearSetupToken(storage('sessionStorage')); store.clearKey();
+      }
+      if (original && !sharedState.configured) {
         status('realify-settings-status', 'API 키를 입력하거나 원본 그림으로 사용해 주세요.', true);
         $('realify-api-key').focus(); return;
       }
-      const saved = store.save(selectedSettings(), key, $('realify-remember-key').checked);
-      $('realify-api-key').value = '';
+      store.save(selectedSettings(), '', store.isRemembered());
+      $('realify-api-key').value = ''; $('realify-current-key').value = '';
       updateSummary();
-      if ($('realify-remember-key').checked && saved.hasKey && !saved.remembered) {
-        $('realify-remember-key').checked = false;
-        status('realify-settings-status', '이 브라우저에서는 탭 저장을 사용할 수 없어요. 키는 새로고침 전까지만 유지돼요. 설정 저장을 한 번 더 누르면 계속해요.');
-        return;
-      }
       closeSettings(true);
-    } catch (error) { status('realify-settings-status', error.userMessage || '설정을 저장하지 못했어요.', true); }
+    } catch (error) { status('realify-settings-status', error.userMessage || error.message || '설정을 저장하지 못했어요.', true); }
+    finally { settingsBusy = false; $('realify-settings-save').disabled = false; updateSummary(); }
   });
   $('realify-model').addEventListener('change', () => { updateSizeOptions($('realify-size').value); updateModelHint(); });
   for (const id of ['realify-quality', 'realify-size']) $(id).addEventListener('change', updateModelHint);
-  $('realify-key-clear').addEventListener('click', () => {
-    store.clearKey(); $('realify-api-key').value = ''; $('realify-remember-key').checked = false;
-    updateSummary(); status('realify-settings-status', 'API 키를 삭제했어요.');
+  $('realify-key-clear').addEventListener('click', async () => {
+    if (settingsBusy || !sharedState.configured) return;
+    const currentKey = $('realify-current-key').value.trim();
+    if (!currentKey) { status('realify-settings-status', '삭제하려면 기존 API 키를 입력해 주세요.', true); $('realify-current-key').focus(); return; }
+    if (!window.confirm('공통 API 키를 삭제하면 모든 기기의 변환이 중지돼요. 삭제할까요?')) return;
+    settingsBusy = true; $('realify-settings-save').disabled = true; updateSummary();
+    try {
+      await deleteSharedKey(currentKey);
+      sharedStatusRevision++;
+      sharedState = { configured: false, registered: true, loaded: true };
+      $('realify-api-key').value = ''; $('realify-current-key').value = '';
+      status('realify-settings-status', '공통 API 키를 삭제했어요. 다시 등록할 때 삭제한 키를 확인해 주세요.');
+    } catch (error) { status('realify-settings-status', error.message || '키를 삭제하지 못했어요.', true); }
+    finally { settingsBusy = false; $('realify-settings-save').disabled = false; updateSummary(); }
   });
   $('realify-close').addEventListener('click', () => finish(null));
   $('realify-dialog').addEventListener('cancel', (event) => { event.preventDefault(); finish(null); });
@@ -88,7 +129,7 @@ export function init(optionsForApp = {}) {
     event.preventDefault(); event.stopImmediatePropagation();
     if ($('realify-settings').open) closeSettings(false); else finish(null);
   }, true);
-  updateSummary();
+  updateSummary(); void refreshSharedStatus();
 }
 
 export function isOpen() { return initialized && ($('realify-settings').open || $('realify-dialog').open || busy); }
@@ -101,16 +142,16 @@ export async function openSettings(forConversion = false) {
   options('realify-model', availableModels());
   for (const key of ['model', 'quality', 'style']) $(`realify-${key}`).value = settings[key];
   updateSizeOptions(settings.size);
-  $('realify-api-key').value = '';
-  $('realify-api-key').placeholder = store.hasKey() ? '키가 입력되어 있어요. 변경할 때만 새 키 입력' : 'sk-로 시작하는 API 키';
-  $('realify-remember-key').checked = store.isRemembered();
+  $('realify-api-key').value = ''; $('realify-current-key').value = '';
   $('realify-settings-save').textContent = forConversion ? '이 설정으로 변환' : '설정 저장';
   status('realify-settings-status', ''); updateSummary(); updateModelHint();
   $('realify-settings').showModal();
-  return new Promise((resolve) => { settingsResolve = resolve; });
+  const result = new Promise((resolve) => { settingsResolve = resolve; });
+  void refreshSharedStatus();
+  return result;
 }
 function closeSettings(saved) {
-  $('realify-api-key').value = '';
+  $('realify-api-key').value = ''; $('realify-current-key').value = '';
   $('realify-settings').close();
   const resolve = settingsResolve; settingsResolve = null; resolve?.(saved);
 }
@@ -136,7 +177,11 @@ export async function convert(file) {
   status('realify-status', ''); setBusy(false);
   $('realify-dialog').showModal();
   const completion = new Promise((resolve) => { resolveConversion = resolve; });
-  if (!store.hasKey()) {
+  const canCheck = await refreshSharedStatus();
+  if (!canCheck) {
+    status('realify-status', '공유 설정 서버에 연결하지 못했어요. 인터넷을 확인하거나 원본 그림을 사용해 주세요.', true);
+    $('realify-placeholder').textContent = '연결을 확인한 뒤 다시 시도해 주세요.';
+  } else if (!sharedState.configured) {
     status('realify-status', 'AI 설정에서 API 키를 입력하면 변환을 시작해요.');
     const saved = await openSettings(true);
     if (saved && original) void run();
@@ -171,7 +216,7 @@ async function run() {
   setBusy(true); status('realify-status', `${describe(settings)} — 변환 중이에요.`);
   if (selected < 0) $('realify-placeholder').textContent = '원본의 얼굴과 옷을 살려 입체감을 더하고 있어요.';
   try {
-    const result = await transformImage(original, { apiKey: store.getKey(), settings, signal: controller.signal });
+    const result = await transformImage(original, { shared: true, settings, signal: controller.signal });
     if (job !== sequence || !original) return;
     // Decode before offering a download or replacing a working avatar.
     const decoded = await createImageBitmap(result.file); decoded.close();
