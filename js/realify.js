@@ -4,6 +4,7 @@ export const API_URL = 'https://api.openai.com/v1/images/edits';
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 export const SETTINGS_KEY = 'fashion.realify.settings.v1';
 export const SESSION_KEY = 'fashion.realify.key.v1';
+const SPEED_UPGRADE_KEY = 'fashion.realify.fast-default.v1';
 const MINI_END = Date.parse('2026-12-01T00:00:00Z');
 
 export const MODELS = [
@@ -17,26 +18,40 @@ export const STYLES = [
   { id: 'animated', label: '3D 애니메이션', prompt: 'A polished 3D animated feature character with expressive but restrained stylization, tactile fabric and soft natural lighting. Not flat 2D, not chibi, not a plastic toy.' },
 ];
 export const QUALITIES = [{ id: 'low', label: '초안 · 비용 절약' }, { id: 'medium', label: '표준 · 균형' }, { id: 'high', label: '정밀 · 세부 표현' }];
-export const SIZES = [{ id: '1024x1024', label: '정사각 · 1024 × 1024' }, { id: '1024x1536', label: '전신 세로 · 1024 × 1536' }];
-export const DEFAULT_SETTINGS = Object.freeze({ model: 'gpt-image-2.5-flare', style: 'semi', quality: 'low', size: '1024x1536' });
+export const SIZES = [
+  { id: '768x1024', label: '빠른 전신 · 768 × 1024', modernOnly: true },
+  { id: '1024x1024', label: '정사각 · 1024 × 1024' },
+  { id: '1024x1536', label: '큰 전신 · 1024 × 1536' },
+];
+export const DEFAULT_SETTINGS = Object.freeze({ model: 'gpt-image-2.5-flare', style: 'semi', quality: 'low', size: '768x1024' });
 
 export class RealifyError extends Error {
   constructor(code, message) { super(message); this.name = 'RealifyError'; this.code = code; this.userMessage = message; }
 }
 
 export function availableModels(now = Date.now()) { return MODELS.filter((m) => !m.endsAt || now < m.endsAt); }
+export function sizesForModel(model) { return model === 'gpt-image-1-mini' ? SIZES.filter((item) => !item.modernOnly) : SIZES; }
 export function normalizeSettings(value = {}, now = Date.now()) {
   const source = value && typeof value === 'object' ? value : {};
   const result = {};
-  for (const [key, choices] of Object.entries({ model: availableModels(now), style: STYLES, quality: QUALITIES, size: SIZES })) {
+  for (const [key, choices] of Object.entries({ model: availableModels(now), style: STYLES, quality: QUALITIES })) {
     result[key] = choices.some((item) => item.id === source[key]) ? source[key] : DEFAULT_SETTINGS[key];
   }
+  const options = sizesForModel(result.model);
+  result.size = options.some((item) => item.id === source.size) ? source.size : (result.model === 'gpt-image-1-mini' ? '1024x1536' : DEFAULT_SETTINGS.size);
   return result;
 }
 
 export function createSettingsStore({ local = null, session = null } = {}) {
   let settings = { ...DEFAULT_SETTINGS }, apiKey = '', remembered = false;
-  try { settings = normalizeSettings(JSON.parse(local?.getItem(SETTINGS_KEY) || '{}')); } catch { /* unavailable storage */ }
+  try {
+    const previous = JSON.parse(local?.getItem(SETTINGS_KEY) || '{}');
+    // 기존 기본 설정을 한 번만 빠른 전신 크기로 바꾼다. 이후 직접 고른 설정은 유지한다.
+    if (!local?.getItem(SPEED_UPGRADE_KEY) && previous.model === 'gpt-image-2.5-flare' && previous.quality === 'low' && previous.size === '1024x1536') previous.size = DEFAULT_SETTINGS.size;
+    settings = normalizeSettings(previous);
+    local?.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    local?.setItem(SPEED_UPGRADE_KEY, '1');
+  } catch { /* unavailable storage */ }
   try { apiKey = session?.getItem(SESSION_KEY) || ''; remembered = !!apiKey; } catch { /* private browsing */ }
   return {
     getSettings: () => normalizeSettings(settings),
@@ -83,6 +98,29 @@ export function buildPrompt(settings) {
   ].join('\n');
 }
 
+// Resize large inputs before uploading. Keep transparent PNGs and never enlarge an image.
+// If browser decoding/encoding is unavailable or ineffective, the original is still valid.
+export async function optimizeInputImage(file, type, maxSide = 1536) {
+  if (typeof createImageBitmap !== 'function' || typeof document === 'undefined') return file;
+  let bitmap;
+  try {
+    bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+    if (Math.max(bitmap.width, bitmap.height) <= maxSide) return file;
+    const scale = maxSide / Math.max(bitmap.width, bitmap.height);
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    const ctx = canvas.getContext('2d');
+    if (!ctx || typeof canvas.toBlob !== 'function') return file;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    const encoded = await new Promise((resolve) => canvas.toBlob(resolve, type, type === 'image/png' ? undefined : 0.9));
+    return encoded && encoded.size && encoded.size < file.size && encoded.type === type ? encoded : file;
+  } catch { return file; }
+  finally { bitmap?.close?.(); }
+}
+
 function apiError(status, code) {
   if (status === 401) return new RealifyError('auth', 'API 키를 사용할 수 없어요. AI 설정에서 키를 확인해 주세요.');
   if (status === 403) return new RealifyError('access', '이 계정에서 선택한 이미지 모델을 사용할 수 없어요. 모델 권한과 계정 인증을 확인해 주세요.');
@@ -99,8 +137,9 @@ export async function transformImage(file, { apiKey, settings, signal, fetchImpl
   if (!apiKey) throw new RealifyError('key', 'AI 설정에서 OpenAI API 키를 먼저 입력해 주세요.');
   const type = await validateImage(file);
   const config = normalizeSettings(settings);
+  const optimized = await optimizeInputImage(file, type);
   const body = new FormData();
-  body.append('image', new Blob([file], { type }), `drawing.${type === 'image/jpeg' ? 'jpg' : type.split('/')[1]}`);
+  body.append('image', new Blob([optimized], { type }), `drawing.${type === 'image/jpeg' ? 'jpg' : type.split('/')[1]}`);
   body.append('model', config.model);
   body.append('prompt', buildPrompt(config));
   body.append('n', '1');

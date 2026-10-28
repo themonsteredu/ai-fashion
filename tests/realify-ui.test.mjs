@@ -33,12 +33,18 @@ globalThis.fetch = async (url, request) => {
   if (mode === 'auth') return Response.json({ error: { code: 'invalid_api_key', message: KEY } }, { status: 401 });
   return Response.json({ data: [{ b64_json: PNG }] });
 };
-const UI = await import('../js/realify-ui.js'); UI.init();
+let allowSettings = true, saveFails = false, savedResults = [];
+const UI = await import('../js/realify-ui.js');
+UI.init({
+  requestSettingsAccess: async () => allowSettings,
+  saveResult: async (file, settings) => { if (saveFails) throw Error('storage full'); savedResults.push({ file, settings }); },
+});
 const settle = async () => { for (let i=0; i<8; i++) await nextTick(); };
 function submit() { element('realify-settings-form').dispatchEvent(new Event('submit', { cancelable: true })); }
 
 test('settings save clears the key field and keeps credentials out of ordinary preferences', async () => {
   element('btn-ai-settings').click();
+  await settle();
   assert.equal(element('realify-settings').open, true);
   element('realify-api-key').value = KEY;
   element('realify-remember-key').checked = true;
@@ -56,6 +62,7 @@ test('converts once per attempt, keeps the original for comparisons, and applies
   element('realify-model').value = 'gpt-image-2.5-sunburst'; element('realify-quality').value = 'high';
   submit(); await settle();
   assert.equal(requests.length, 2); assert.equal(element('realify-history').children.length, 2);
+  assert.equal(savedResults.length, 2);
   assert.equal(requests[1].request.body.get('quality'), 'high');
   assert.deepEqual(await requests[1].request.body.get('image').arrayBuffer(), await source.arrayBuffer());
   element('realify-history').children[0].click();
@@ -66,7 +73,7 @@ test('converts once per attempt, keeps the original for comparisons, and applies
 });
 
 test('missing key offers setup and original-image fallback without a request', async () => {
-  element('btn-ai-settings').click(); element('realify-key-clear').click(); element('realify-settings-close').click();
+  element('btn-ai-settings').click(); await settle(); element('realify-key-clear').click(); element('realify-settings-close').click();
   const before = requests.length, completion = UI.convert(source); await settle();
   assert.equal(element('realify-settings').open, true);
   element('realify-settings-close').click(); await settle();
@@ -75,7 +82,7 @@ test('missing key offers setup and original-image fallback without a request', a
 });
 
 test('closing during a request discards its late response and releases the dialog', async () => {
-  element('btn-ai-settings').click(); element('realify-api-key').value = KEY; submit();
+  element('btn-ai-settings').click(); await settle(); element('realify-api-key').value = KEY; submit();
   mode = 'wait';
   const completion = UI.convert(source); await settle();
   const last = requests.at(-1); assert.equal(element('realify-cancel').hidden, false);
@@ -93,4 +100,21 @@ test('authentication error stays recoverable without exposing upstream text or s
   assert.equal(element('realify-status').textContent.includes(KEY), false);
   assert.equal(element('realify-apply').disabled, true); assert.equal(element('realify-retry').disabled, false);
   element('realify-use-original').click(); assert.equal(await completion, source);
+});
+
+test('settings remain closed when the operator password gate is denied', async () => {
+  allowSettings = false;
+  element('btn-ai-settings').click(); await settle();
+  assert.equal(element('realify-settings').open, false);
+  allowSettings = true;
+});
+
+test('a storage failure leaves a generated result usable and tells the user to download it', async () => {
+  mode = 'ok'; saveFails = true;
+  const completion = UI.convert(source); await settle();
+  assert.match(element('realify-status').textContent, /자동 저장하지 못했/);
+  assert.equal(element('realify-apply').disabled, false);
+  assert.equal(element('realify-download').disabled, false);
+  element('realify-apply').click(); assert.equal((await completion).type, 'image/png');
+  saveFails = false;
 });

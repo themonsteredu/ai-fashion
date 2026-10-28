@@ -1,9 +1,10 @@
-import { availableModels, MODELS, STYLES, QUALITIES, SIZES, createSettingsStore, transformImage, validateImage, RealifyError } from './realify.js';
+import { availableModels, MODELS, STYLES, QUALITIES, sizesForModel, createSettingsStore, transformImage, validateImage, RealifyError } from './realify.js';
 
 const $ = (id) => document.getElementById(id);
 let store, initialized = false, original = null, originalUrl = null;
 let results = [], selected = -1, sequence = 0, controller = null, resolveConversion = null;
 let settingsResolve = null, busy = false, elapsedTimer = null;
+let callbacks = {};
 
 function storage(name) { try { return window[name]; } catch { return null; } }
 function options(id, items) {
@@ -21,6 +22,11 @@ function updateSummary() {
   $('realify-key-clear').disabled = !store.hasKey();
 }
 function selectedSettings() { return { model: $('realify-model').value, quality: $('realify-quality').value, style: $('realify-style').value, size: $('realify-size').value }; }
+function updateSizeOptions(preferred) {
+  const sizes = sizesForModel($('realify-model').value);
+  options('realify-size', sizes);
+  $('realify-size').value = sizes.some((item) => item.id === preferred) ? preferred : ($('realify-model').value === 'gpt-image-1-mini' ? '1024x1536' : '768x1024');
+}
 function updateModelHint() {
   const settings = selectedSettings();
   $('realify-model-hint').textContent = MODELS.find((m) => m.id === settings.model)?.hint || '';
@@ -32,11 +38,12 @@ function updateModelHint() {
   }
 }
 
-export function init() {
+export function init(optionsForApp = {}) {
   if (initialized) return;
   initialized = true;
+  callbacks = optionsForApp;
   store = createSettingsStore({ local: storage('localStorage'), session: storage('sessionStorage') });
-  options('realify-quality', QUALITIES); options('realify-style', STYLES); options('realify-size', SIZES);
+  options('realify-quality', QUALITIES); options('realify-style', STYLES);
   $('btn-ai-settings').addEventListener('click', () => openSettings());
   $('realify-settings-close').addEventListener('click', () => closeSettings(false));
   $('realify-settings').addEventListener('cancel', (event) => { event.preventDefault(); closeSettings(false); });
@@ -59,7 +66,8 @@ export function init() {
       closeSettings(true);
     } catch (error) { status('realify-settings-status', error.userMessage || '설정을 저장하지 못했어요.', true); }
   });
-  for (const id of ['realify-model', 'realify-quality', 'realify-size']) $(id).addEventListener('change', updateModelHint);
+  $('realify-model').addEventListener('change', () => { updateSizeOptions($('realify-size').value); updateModelHint(); });
+  for (const id of ['realify-quality', 'realify-size']) $(id).addEventListener('change', updateModelHint);
   $('realify-key-clear').addEventListener('click', () => {
     store.clearKey(); $('realify-api-key').value = ''; $('realify-remember-key').checked = false;
     updateSummary(); status('realify-settings-status', 'API 키를 삭제했어요.');
@@ -76,23 +84,23 @@ export function init() {
   });
   // Native dialog focus trapping + prevent kiosk shortcuts from opening a second panel.
   window.addEventListener('keydown', (event) => {
-    if (!isOpen()) return;
-    event.stopImmediatePropagation();
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      if ($('realify-settings').open) closeSettings(false); else finish(null);
-    }
+    if (!isOpen() || callbacks.isOtherDialogOpen?.() || event.key !== 'Escape') return;
+    event.preventDefault(); event.stopImmediatePropagation();
+    if ($('realify-settings').open) closeSettings(false); else finish(null);
   }, true);
   updateSummary();
 }
 
 export function isOpen() { return initialized && ($('realify-settings').open || $('realify-dialog').open || busy); }
 
-export function openSettings(forConversion = false) {
-  if ($('realify-settings').open) return Promise.resolve(false);
+export async function openSettings(forConversion = false) {
+  if ($('realify-settings').open) return false;
+  if (callbacks.requestSettingsAccess && !(await callbacks.requestSettingsAccess())) return false;
+  if ($('realify-settings').open) return false;
   const settings = store.getSettings();
   options('realify-model', availableModels());
-  for (const key of ['model', 'quality', 'style', 'size']) $(`realify-${key}`).value = settings[key];
+  for (const key of ['model', 'quality', 'style']) $(`realify-${key}`).value = settings[key];
+  updateSizeOptions(settings.size);
   $('realify-api-key').value = '';
   $('realify-api-key').placeholder = store.hasKey() ? '키가 입력되어 있어요. 변경할 때만 새 키 입력' : 'sk-로 시작하는 API 키';
   $('realify-remember-key').checked = store.isRemembered();
@@ -169,11 +177,19 @@ async function run() {
     const decoded = await createImageBitmap(result.file); decoded.close();
     if (job !== sequence || !original) return;
     if (controller.signal.aborted) throw new RealifyError('cancelled', '변환을 중지했어요. 이미 시작된 서버 처리에는 비용이 발생할 수 있어요.');
+    let saved = false;
+    if (callbacks.saveResult) {
+      try { await callbacks.saveResult(result.file, result.settings); saved = true; }
+      catch { /* The result remains usable and downloadable even if local storage is full. */ }
+    }
+    if (job !== sequence || !original) return;
     result.url = URL.createObjectURL(result.file);
     results.push(result);
     if (results.length > 3) URL.revokeObjectURL(results.shift().url);
     selectResult(results.length - 1);
-    status('realify-status', '완성했어요. 원본과 비교하고 아바타로 사용해 보세요.');
+    status('realify-status', saved ? '완성한 아바타를 이 기기에 저장했어요. 원본과 비교해 보세요.'
+      : callbacks.saveResult ? '완성했어요. 기기에 자동 저장하지 못했으니 PNG 저장을 눌러 보관해 주세요.'
+      : '완성했어요. 원본과 비교하고 아바타로 사용해 보세요.');
   } catch (error) {
     if (job !== sequence) return;
     status('realify-status', error.userMessage || '변환된 이미지를 열지 못했어요. 다른 설정으로 다시 시도해 주세요.', true);

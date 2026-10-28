@@ -20,6 +20,7 @@ let judge = null;
 let lastTick = 0;
 let active = false;
 let testMode = null;  // 포즈 테스트 대상 pose
+let adminOpening = false;
 
 export function isActive() { return active; }
 
@@ -33,7 +34,7 @@ export function init(d) {
 
 // 매 프레임 (main 렌더 루프에서 호출)
 export function tick(nowMs) {
-  if (!active) return;
+  if (!active || deps?.isOtherDialogOpen?.()) return;
   const dt = lastTick ? Math.min(nowMs - lastTick, 100) : 16;
   lastTick = nowMs;
 
@@ -315,6 +316,14 @@ function openAdmin() {
   buildAdminBody();
   q('#mm-admin').classList.remove('hidden');
 }
+async function openAdminWithGate() {
+  if (adminOpening || isAdminOpen()) return;
+  adminOpening = true;
+  try {
+    const allowed = !deps?.requestAdminAccess || await deps.requestAdminAccess();
+    if (allowed) openAdmin();
+  } finally { adminOpening = false; }
+}
 function closeAdmin() {
   q('#mm-admin').classList.add('hidden');
   if (root.classList.contains('admin-only')) {
@@ -558,9 +567,10 @@ function buildDOM() {
 
 function bindKeys() {
   window.addEventListener('keydown', (e) => {
+    if (deps?.isOtherDialogOpen?.()) return;
     const tag = (e.target && e.target.tagName) || '';
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return; // 입력창 포커스 시 무시
-    if (e.key === 'Escape') { e.preventDefault(); q('#mm-admin').classList.contains('hidden') ? openAdmin() : closeAdmin(); return; }
+    if (e.key === 'Escape') { e.preventDefault(); q('#mm-admin').classList.contains('hidden') ? void openAdminWithGate() : closeAdmin(); return; }
     if (!active) return;
     if (e.key === ' ') { e.preventDefault(); forceSuccess(); }
     else if (e.key === 'r' || e.key === 'R') { e.preventDefault(); restartMission(); }
@@ -568,7 +578,7 @@ function bindKeys() {
   });
 }
 
-export function openOperator() { openAdmin(); }
+export function openOperator() { return openAdminWithGate(); }
 
 // onExit 콜백 없이 즉시 중단 (홈으로 나갈 때 재귀 방지)
 export function forceStop() {
@@ -584,3 +594,4 @@ export function forceStop() {
     q('#mm-test').classList.add('hidden');
   }
 }
+
