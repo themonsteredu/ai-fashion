@@ -43,8 +43,10 @@ export function longestEdge(mesh,points){let max=0;
  const a=mesh.index[t+i],b=mesh.index[t+j];max=Math.max(max,Math.hypot(points[a][0]-points[b][0],points[a][1]-points[b][1]));
  }return max;
 }
-test('only connected anatomical joints can share a triangle',()=>{
- const {prep,bones}=fixture(),mesh=buildMesh(prep,bones),cell=prep.h/120;
+// Skin is continuous around a joint (so it bends instead of hinging like a wooden doll),
+// but only inside that joint's zone; touching parts away from a joint stay separate.
+test('only connected anatomical joints can share a triangle, and only near that joint',()=>{
+ const {prep,bones}=fixture(),mesh=buildMesh(prep,bones);
  let joined=0;
  for(let t=0;t<mesh.index.length;t+=3){
   const vertices=mesh.index.slice(t,t+3),owners=[...new Set(vertices.map(v=>mesh.skinIdx[v*4]))];
@@ -53,7 +55,7 @@ test('only connected anatomical joints can share a triangle',()=>{
   const [a,b]=owners.map(i=>bones[i]);
   const child=a.parent===b.name?a:b.parent===a.name?b:null;
   assert(child,'Unrelated body parts must stay separate');
-  for(const v of vertices) assert(Math.hypot(mesh.pos[v*3]-child.head[0],mesh.pos[v*3+1]-child.head[1])<cell*3);
+  for(const v of vertices) assert(mesh.jointZone(a.name,b.name,mesh.pos[v*3],mesh.pos[v*3+1])<=mesh.zoneFade,'Joined skin must stay near its joint');
   joined++;
  }
  assert(joined>0,'A real joint should share vertices');
@@ -80,7 +82,12 @@ test('every visible cell is retained and normalized weights stay within one limb
   for(let k=1;k<4;k++)if(weights[k]>0){
    const a=bones[ids[0]],b=bones[ids[k]];
    assert(a.parent===b.name||b.parent===a.name);
-   assert(!((/Arm|hand/.test(a.name)) !== (/Arm|hand/.test(b.name))));
+   // An arm may blend into the body only at the shoulder, and only around that joint.
+   if(/Arm|hand/.test(a.name)!==/Arm|hand/.test(b.name)){
+    const pair=[a.name,b.name].sort().join('/');
+    assert.match(pair,/^[LR]upperArm\/spine$/);
+    assert(mesh.jointZone(a.name,b.name,mesh.pos[v*3],mesh.pos[v*3+1])<=mesh.zoneFade);
+   }
   }
  }
 });
@@ -112,4 +119,75 @@ test('a skirt stays joined to the torso while upper-body pose moves',()=>{
   seen.set(key,v);tested++;
  }
  assert(tested>100);
+});
+
+// The torso must follow the spine bone (leaning, swaying). Only the pelvis band blends into the thighs.
+test('the torso follows the spine instead of being pinned to the hips',()=>{
+ const {prep,bones}=fixture();
+ bones.push({name:'LupperLeg',parent:'root',head:[360,550],tail:[370,760],drive:'delta',layer:0},
+ {name:'RupperLeg',parent:'root',head:[240,550],tail:[230,760],drive:'delta',layer:0});
+ const mesh=buildMesh(prep,bones),spine=bones.findIndex(b=>b.name==='spine');
+ let torso=0;
+ for(let v=0;v<mesh.pos.length/3;v++){
+  for(let k=0;k<4;k++) if(mesh.skinW[v*4+k]>0) assert.notEqual(bones[mesh.skinIdx[v*4+k]].name,'root','No picture pixel may be pinned to the non-rotating root');
+  const x=mesh.pos[v*3],y=mesh.pos[v*3+1];
+  if(x>250&&x<350&&y>280&&y<450){torso++;assert.equal(mesh.skinIdx[v*4],spine);assert(mesh.skinW[v*4]>.99);}
+ }
+ assert(torso>100);
+});
+
+// A-pose picture: arms leave the body at the shoulder and there is a gap below the armpit.
+export function aPoseFixture(){
+ const w=600,h=1000,alpha=new Uint8ClampedArray(w*h*4);
+ const capsule=(p,a,b,r)=>{const d=[b[0]-a[0],b[1]-a[1]],L=d[0]*d[0]+d[1]*d[1],t=Math.max(0,Math.min(1,((p[0]-a[0])*d[0]+(p[1]-a[1])*d[1])/L));return Math.hypot(p[0]-a[0]-d[0]*t,p[1]-a[1]-d[1]*t)<=r;};
+ const arms=[[[390,195],[470,385],[545,560]],[[210,195],[130,385],[55,560]]];
+ for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+  const p=[x,y];
+  const body=(x>=205&&x<=395&&y>=150&&y<=600)||(Math.hypot((x-300)/62,(y-95)/75)<=1)||(x>=215&&x<=290&&y>=580&&y<=940)||(x>=310&&x<=385&&y>=580&&y<=940);
+  const arm=arms.some(([s,e,wr])=>capsule(p,s,e,30)||capsule(p,e,wr,24));
+  if(body||arm)alpha[(y*w+x)*4+3]=255;
+ }
+ const bones=[
+  {name:'root',parent:null,head:[300,560],tail:[300,560],drive:'none',layer:1},
+  {name:'spine',parent:'root',head:[300,560],tail:[300,165],drive:'delta',layer:1,region:[[215,200],[385,200],[395,580],[205,580]]},
+ ];
+ for(const [side,[s,e,wr]] of [['L',arms[0]],['R',arms[1]]]){
+  bones.push(
+   {name:side+'upperArm',parent:'spine',head:s,tail:e,drive:'abs',layer:3,seedFrom:.18},
+   {name:side+'lowerArm',parent:side+'upperArm',head:e,tail:wr,drive:'abs',layer:3},
+   {name:side+'hand',parent:side+'lowerArm',head:wr,tail:[wr[0]+(wr[0]-e[0])*.3,wr[1]+(wr[1]-e[1])*.3],drive:'follow',layer:3},
+  );
+ }
+ bones.push({name:'LupperLeg',parent:'root',head:[345,560],tail:[348,760],drive:'delta',layer:0},
+ {name:'RupperLeg',parent:'root',head:[255,560],tail:[252,760],drive:'delta',layer:0});
+ return {prep:{w,h,canvas:{getContext:()=>({getImageData:()=>({data:alpha})})}},bones};
+}
+test('an A-pose arm is cut along the armhole and its shoulder skin stays joined',()=>{
+ const {prep,bones}=aPoseFixture(),mesh=buildMesh(prep,bones),cell=prep.h/120;
+ assert.equal(mesh.cuts.length,2,'Both armpits should be found');
+ const armAt=(x,y)=>{let best=null;for(let v=0;v<mesh.pos.length/3;v++){const d=Math.hypot(mesh.pos[v*3]-x,mesh.pos[v*3+1]-y);if(!best||d<best.d)best={d,v};}return best.v;};
+ // The whole sleeve (outer side of the upper arm near the shoulder) follows the arm, the body stays.
+ for(const [arm,sleeve,chest] of [['LupperArm',[440,280],[330,300]],['RupperArm',[160,280],[270,300]]]){
+  const a=bones.findIndex(b=>b.name===arm),v=armAt(...sleeve),c=armAt(...chest);
+  const wArm=v2=>{let s=0;for(let k=0;k<4;k++)if(mesh.skinIdx[v2*4+k]===a)s+=mesh.skinW[v2*4+k];return s;};
+  assert(wArm(v)>.99,`${arm} sleeve must follow the arm`);
+  assert(wArm(c)<.01,`${arm} must not drag the chest`);
+ }
+ // Around each shoulder the skin is one piece: no duplicated vertices inside the shared armhole zone.
+ for(const cut of mesh.cuts){
+  const seen=new Set();let tested=0;
+  for(let v=0;v<mesh.pos.length/3;v++){
+   const x=mesh.pos[v*3],y=mesh.pos[v*3+1],n=bones[mesh.skinIdx[v*4]].name;
+   if(!/^(spine|[LR]upperArm)$/.test(n)||mesh.jointZone('spine',cut.arm,x,y)>0.8)continue;
+   const key=x+':'+y;assert(!seen.has(key),'Shoulder skin must not split into two pieces');seen.add(key);tested++;
+  }
+  assert(tested>10);
+ }
+ // Raising the arms bends the shoulder smoothly instead of tearing or stretching ribbons.
+ let max=0;
+ for(const angle of [0,.6,1.2,1.8,2.4])for(const elbow of [-1.2,0,1.2]){
+  const points=deformed(mesh,bones,{LupperArm:-angle,RupperArm:angle,LlowerArm:elbow,RlowerArm:-elbow});
+  max=Math.max(max,longestEdge(mesh,points));
+ }
+ assert(max<cell*4,`Maximum deformed edge was ${max.toFixed(2)}px`);
 });

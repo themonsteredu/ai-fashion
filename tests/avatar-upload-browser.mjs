@@ -58,7 +58,7 @@ try{
  } else {
    assert.notEqual(info.mode,'standee','prepared fixture should have independently moving arms');
    assert(info.joints?.Lhand && info.joints?.Rhand);
-   assert.equal(info.caps,4,'both shoulders and elbows need overlap material');
+   assert.equal(info.caps,0,'joints bend as one continuous skin; no separate patch meshes are pasted behind them');
    await page.waitForTimeout(1000);
    const later=await page.evaluate(async()=>{const p=await import('/js/puppet.js');return p.jointWorld();});
    assert(Math.hypot(later.Lhand.x-info.joints.Lhand.x,later.Lhand.y-info.joints.Lhand.y)>.003,'automatic preview must visibly move an arm');

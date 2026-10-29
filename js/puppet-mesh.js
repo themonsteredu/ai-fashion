@@ -1,4 +1,6 @@
-// Pixel mesh partitioning: each limb owns its seam vertices.
+// 그림 메시: 관절 주변은 한 장의 피부처럼 이어서 부드럽게 접고(어깨·팔꿈치·손목·목·무릎·발목),
+// 관절에서 먼 곳에서 그냥 맞닿아 있을 뿐인 부분(옆구리에 붙인 팔, 엉덩이에 닿은 손)은 떼어 둔다.
+// 그래야 팔을 들어도 셔츠가 리본처럼 늘어나지 않으면서, 관절이 목각 인형처럼 꺾이지 않는다.
 const GRID_ROWS = 120;
 const lerp2 = (a,b,t) => [a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t];
 const sub2 = (a,b) => [a[0]-b[0],a[1]-b[1]];
@@ -40,6 +42,29 @@ export function buildMesh(prep, bones) {
     }
   }
   const solid = (cx, cy) => cx >= 0 && cy >= 0 && cx < cols && cy < rows && cellA[cy * cols + cx] > 8;
+
+  // 팔다리 굵기(반폭): 뼈 중간 몇 곳에서 양옆으로 그림 끝까지 재고, 좁은 쪽을 쓴다
+  // (몸에 붙은 팔은 몸통 쪽으로 끝없이 이어지므로 바깥쪽 끝까지만 믿는다)
+  const limbRadius = (b) => {
+    const d = sub2(b.tail, b.head), L = len2(d);
+    if (L < 1e-6) return 0;
+    const n = [-d[1] / L, d[0] / L], found = [];
+    for (const t of [0.35, 0.5, 0.65]) {
+      const c = lerp2(b.head, b.tail, t);
+      const reach = (sign) => {
+        let r = 0;
+        for (let s = cell * 0.5; s <= L; s += cell * 0.5) {
+          if (!solid(Math.floor((c[0] + n[0] * s * sign) / cell), Math.floor((c[1] + n[1] * s * sign) / cell))) break;
+          r = s;
+        }
+        return r;
+      };
+      if (solid(Math.floor(c[0] / cell), Math.floor(c[1] / cell))) found.push(Math.min(reach(1), reach(-1)));
+    }
+    if (!found.length) return 0;
+    found.sort((a, b) => a - b);
+    return found[found.length >> 1] + cell * 0.75;
+  };
 
   // 뼈별 "그림 안쪽 거리" (다익스트라 대신 칸 단위 거리의 BFS 근사 — 8방향, 대각 1.41)
   const N = cols * rows;
@@ -114,13 +139,7 @@ export function buildMesh(prep, bones) {
     if (t) armTouch++;
   }
 
-  // 정점 (격자 꼭짓점) — 쓰는 칸 주변만 만든다
-  const vIndex = new Map();
-  const region = bi => {
-    const name = bones[bi].name;
-    const limb = name.match(/^([LR])(upperArm|lowerArm|hand|upperLeg|lowerLeg|foot)$/);
-    return limb ? limb[1] + (/Arm|hand/.test(limb[2]) ? 'arm' : 'leg') : 'body';
-  };
+  // 칸의 주인 뼈 (그림 안쪽 거리로 닿지 않는 떨어진 조각은 가장 가까운 뼈 선분)
   const owners = Array.from({length: N}, (_,k) => {
     if (nearestOfCell[k] >= 0) return nearestOfCell[k];
     const p = [(k%cols+.5)*cell, (Math.floor(k/cols)+.5)*cell];
@@ -131,91 +150,250 @@ export function buildMesh(prep, bones) {
     }
     return owner;
   });
-  const pos = [], uv = [], skinIdx = [], skinW = [];
-  const BLEND = Math.max(2, 0.03 * rows); // 관절 주변 섞이는 폭(칸)
-  // Only blend at the actual joint, never along distant touching edges.
-  const jointFor = (i,j) => bones[i].parent===bones[j].name ? bones[i].head
-    : bones[j].parent===bones[i].name ? bones[j].head : null;
-  const hipRoot = bones.findIndex(b => b.name === 'root');
-  const leftThigh = bones.findIndex(b => b.name === 'LupperLeg');
-  const rightThigh = bones.findIndex(b => b.name === 'RupperLeg');
-  const pelvis = leftThigh >= 0 && rightThigh >= 0 && hipRoot >= 0;
-  const lowerBody = bones.findIndex(b => b.name === 'lower');
-  const spineBone = bones.findIndex(b => b.name === 'spine');
-  const upperOnly = !pelvis && lowerBody >= 0 && spineBone >= 0 && hipRoot >= 0;
-  const waistY = upperOnly ? bones[hipRoot].head[1] : 0;
-  const waistSpan = h*.1;
-  const hipY = pelvis ? (bones[leftThigh].head[1] + bones[rightThigh].head[1]) / 2 : 0;
-  const thighLength = pelvis ? Math.min(len2(sub2(bones[leftThigh].tail,bones[leftThigh].head)),len2(sub2(bones[rightThigh].tail,bones[rightThigh].head))) : 0;
-  const blendEnd = hipY + thighLength * .5;
+
   const smooth = t => { t=Math.max(0,Math.min(1,t)); return t*t*(3-2*t); };
+  const BLEND = Math.max(4, 0.06 * rows); // 관절에서 두 뼈가 섞이는 폭(칸, 그림 안쪽 거리) — 넓을수록 부드럽게 접힘
+  const index = new Map(bones.map((b,i) => [b.name,i]));
+  const parentOf = bones.map(b => (b.parent != null && index.has(b.parent) ? index.get(b.parent) : -1));
+  const isRoot = i => bones[i].name === 'root';
+  const descends = (i, ancestor) => { for (let p = i; p >= 0; p = parentOf[p]) if (p === ancestor) return true; return false; };
+
+  // ── 관절 영역: 자식 뼈의 굵기(그림에서 잰 반폭)만큼 관절 둘레를 한 장으로 잇는다 ──
+  // 자식 뼈 방향으로는 반폭 정도까지만(옆구리에 붙은 팔이 몸통에 끌려가지 않게),
+  // 가로 방향으로는 넉넉히(어깨처럼 넓은 단면 전체가 이어지게).
+  const halfWidth = ci => {
+    const b = bones[ci], d = sub2(b.tail, b.head), L = len2(d);
+    if (L < 1e-6) return cell * 1.5;
+    const u = [d[0] / L, d[1] / L], n = [-u[1], u[0]];
+    const samples = [];
+    for (const t of [0.15, 0.25, 0.35, 0.45]) {
+      const c = lerp2(b.head, b.tail, t);
+      const reach = sign => {
+        let r = -1;
+        for (let s = 0; s <= L; s += cell * 0.5) {
+          const cx = Math.floor((c[0] + n[0] * s * sign) / cell), cy = Math.floor((c[1] + n[1] * s * sign) / cell);
+          if (!solid(cx, cy) || !descends(owners[cy * cols + cx], ci)) break;
+          r = s;
+        }
+        return r;
+      };
+      const a = reach(1), z = reach(-1);
+      if (a >= 0 && z >= 0) samples.push((a + z) / 2 + cell * 0.5);
+    }
+    if (!samples.length) return cell * 1.5;
+    return Math.max(cell, Math.max(...samples));
+  };
+  // ── 어깨: 그림에서 겨드랑이를 찾아 "어깨 끝 ↔ 겨드랑이" 선으로 팔과 몸통을 가른다 ──
+  // 종이인형을 가위로 오리듯이, 소매는 통째로 팔에 붙고 조끼·셔츠 몸판은 몸통에 남는다.
+  // 팔이 옆구리에 붙어 있어 겨드랑이 틈이 없으면 선을 만들지 않는다(아래 일반 관절 처리).
+  const spineBone = index.has('spine') ? index.get('spine') : -1;
+  const unit = v => { const l = len2(v) || 1; return [v[0] / l, v[1] / l]; };
+  const free = p => !solid(Math.floor(p[0] / cell), Math.floor(p[1] / cell));
+  const cuts = new Map(); // 위팔 번호 → { s:어깨 끝, a:겨드랑이, c, n(팔 쪽), len, band }
+  if (spineBone >= 0) for (const side of ['L', 'R']) {
+    const ai = index.get(side + 'upperArm');
+    if (ai == null || parentOf[ai] !== spineBone) continue;
+    const J = bones[ai].head, E = bones[ai].tail, armLen = len2(sub2(E, J));
+    const hip = index.has(side + 'upperLeg') ? bones[index.get(side + 'upperLeg')].head : bones[spineBone].head;
+    const toArm = unit(sub2(E, J)), toHip = unit(sub2(hip, J));
+    const wedge = Math.acos(Math.max(-1, Math.min(1, toArm[0] * toHip[0] + toArm[1] * toHip[1])));
+    // 팔이 아래쪽(차렷·A자)으로 내려온 그림에서만 — 팔을 든 그림이나 옆구리에 딱 붙은 팔은 일반 관절 처리
+    if (armLen < cell * 4 || wedge < 0.25 || toArm[1] < 0.2) continue;
+    // 팔 방향과 엉덩이 방향 사이로 선을 그어, 그림 밖(틈)이 가장 가까이 나오는 곳 = 겨드랑이
+    const a0 = Math.atan2(toHip[1], toHip[0]);
+    let da = Math.atan2(toArm[1], toArm[0]) - a0;
+    while (da > Math.PI) da -= 2 * Math.PI; while (da < -Math.PI) da += 2 * Math.PI;
+    let armpit = null, best = Infinity;
+    for (let k = 2; k <= 10; k++) {
+      const ang = a0 + da * k / 12, dir = [Math.cos(ang), Math.sin(ang)];
+      for (let t = cell; t <= armLen * 0.95; t += cell * 0.5) {
+        if (!free([J[0] + dir[0] * t, J[1] + dir[1] * t])) continue;
+        if (t < best) { best = t; armpit = [J[0] + dir[0] * (t - cell * 0.5), J[1] + dir[1] * (t - cell * 0.5)]; }
+        break;
+      }
+    }
+    if (!armpit) continue;
+    // 어깨 끝: 겨드랑이 → 어깨 관절 방향으로 계속 가서 그림이 끝나는 곳
+    const up = unit(sub2(J, armpit));
+    let top = J;
+    for (let t = cell * 0.5; t <= best * 1.5 + cell; t += cell * 0.5) {
+      const p = [J[0] + up[0] * t, J[1] + up[1] * t];
+      if (free(p)) break;
+      top = p;
+    }
+    const len = len2(sub2(armpit, top));
+    if (len < cell * 2) continue;
+    const c = unit(sub2(armpit, top));
+    let n = [-c[1], c[0]];
+    if ((E[0] - top[0]) * n[0] + (E[1] - top[1]) * n[1] < 0) n = [-n[0], -n[1]];
+    // 한 장으로 잇는 건 어깨 관절 둘레까지만(어깨 끝 → 관절 → 팔 반폭만큼 아래).
+    // 그 아래로 소매가 조끼 옆에 그냥 닿아 있던 부분은 팔을 들면 자연스럽게 떨어진다.
+    const hw = Math.max(cell, limbRadius(bones[ai]));
+    const share = Math.min(len, len2(sub2(J, top)) + hw * 0.5);
+    const cut = { arm: ai, s: top, a: armpit, c, n, len, share, band: Math.max(cell * 1.5, hw * 0.6) };
+    cuts.set(ai, cut);
+    // 선 근처 칸의 주인을 선의 어느 쪽인지로 다시 정한다 (팔 쪽 → 위팔, 몸통 쪽 → 몸통)
+    for (let cy = 0; cy < rows; cy++) for (let cx = 0; cx < cols; cx++) {
+      if (!solid(cx, cy)) continue;
+      const k = cy * cols + cx, o = owners[k];
+      if (o !== ai && o !== spineBone) continue;
+      const q = sub2([(cx + .5) * cell, (cy + .5) * cell], top);
+      const along = q[0] * c[0] + q[1] * c[1], sd = q[0] * n[0] + q[1] * n[1];
+      if (along < -len * 0.25 || along > len * 1.1 || Math.abs(sd) > len) continue;
+      owners[k] = sd > 0 ? ai : spineBone;
+    }
+  }
+  const cutOf = (i, j) => (i === spineBone ? cuts.get(j) : j === spineBone ? cuts.get(i) : undefined);
+  // 겨드랑이 선 기준 좌표: out = 이어 붙인 부분(어깨 끝~관절 조금 아래)에서 벗어난 길이, sd = 선에서 팔 쪽 거리
+  const cutCoords = (cut, px, py) => {
+    const q = [px - cut.s[0], py - cut.s[1]];
+    const along = q[0] * cut.c[0] + q[1] * cut.c[1];
+    return { out: Math.max(0, -along, along - cut.share), sd: q[0] * cut.n[0] + q[1] * cut.n[1] };
+  };
+  // ≤ 1 이면 한 장으로 잇는다
+  const cutZone = (cut, px, py) => { const { out, sd } = cutCoords(cut, px, py); return Math.hypot(out / (cell * 0.75), sd / (cut.band + cell * 0.5)); };
+  // 섞임 정도: 이어 붙인 부분 밖으로 짧게 줄어든다 (그 아래 소매·조끼가 닿아 있던 곳은 떨어진다)
+  const cutMix = (cut, px, py) => {
+    const { out, sd } = cutCoords(cut, px, py);
+    return (1 - smooth(out / (cell * 5))) * (1 - smooth((Math.abs(sd) - cut.band) / cut.band));
+  };
+  const cutSide = (cut, px, py) => (px - cut.s[0]) * cut.n[0] + (py - cut.s[1]) * cut.n[1];
+
+  const joints = [], jointByPair = new Map();
+  for (let ci = 0; ci < bones.length; ci++) {
+    const pi = parentOf[ci];
+    // 골반(root 아래 몸통·허벅지)은 아래 '골반' 처리에서 따로 잇는다
+    if (pi < 0 || isRoot(pi) || isRoot(ci)) continue;
+    const dir = sub2(bones[ci].tail, bones[ci].head), L = len2(dir);
+    if (L < 1e-6) continue;
+    const hw = halfWidth(ci);
+    const along = Math.max(cell * 1.5, Math.min(hw * 0.9 + cell * 0.5, L * 0.5));
+    const across = Math.max(along, hw * 2.5 + cell);
+    const joint = { parent: pi, child: ci, at: bones[ci].head, u: [dir[0] / L, dir[1] / L], along, across };
+    joints.push(joint);
+    jointByPair.set(Math.min(pi, ci) + '-' + Math.max(pi, ci), joint);
+  }
+  // 관절 영역 안 ≤ 1, 바깥으로 갈수록 커짐 (부모-자식이 아니면 Infinity)
+  const zone = (i, j, px, py) => {
+    const cut = cutOf(i, j);
+    if (cut) {
+      const r = cutZone(cut, px, py);
+      if (r <= 1) return r;
+      const m = cutMix(cut, px, py);
+      return m > 0 ? 1 + (1 - m) * (ZONE_FADE - 1) * 0.999 : Infinity;
+    }
+    const jt = jointByPair.get(Math.min(i, j) + '-' + Math.max(i, j));
+    if (!jt) return Infinity;
+    const dx = px - jt.at[0], dy = py - jt.at[1];
+    return Math.hypot((dx * jt.u[0] + dy * jt.u[1]) / jt.along, (dy * jt.u[0] - dx * jt.u[1]) / jt.across);
+  };
+  // 영역 경계(1)에서 이만큼(ZONE_FADE)까지 두 뼈의 섞임을 서서히 줄여, 떼어 둔 쪽이 갑자기 찢어지지 않게
+  const ZONE_FADE = 2.8;
+  const mixOf = r => (r <= 1 ? 1 : 1 - smooth((r - 1) / (ZONE_FADE - 1)));
+  // 겨드랑이 선은 이어 붙인 부분 바로 아래에서 빨리 떼어 낸다(소매가 조끼 옆에 닿아 있던 곳이 늘어나지 않게)
+
+
+  // ── 골반: 몸통 아래쪽과 두 허벅지를 한 장으로 (다리를 벌려도 바지가 이어지게) ──
+  const hipRoot = index.has('root') ? index.get('root') : -1;
+  const leftThigh = index.has('LupperLeg') ? index.get('LupperLeg') : -1;
+  const rightThigh = index.has('RupperLeg') ? index.get('RupperLeg') : -1;
+  const lowerBody = index.has('lower') ? index.get('lower') : -1;
+  const pelvis = leftThigh >= 0 && rightThigh >= 0 && hipRoot >= 0 && spineBone >= 0;
+  const upperOnly = !pelvis && lowerBody >= 0 && spineBone >= 0 && hipRoot >= 0;
+  const hipY = pelvis ? (bones[leftThigh].head[1] + bones[rightThigh].head[1]) / 2 : 0;
+  const thighLength = pelvis ? Math.min(len2(sub2(bones[leftThigh].tail, bones[leftThigh].head)), len2(sub2(bones[rightThigh].tail, bones[rightThigh].head))) : 0;
+  // 골반 영역은 엉덩이 선 조금 위(허리)부터 허벅지 절반까지 — 그 위 몸통은 척추를 따라 기울어진다
+  const pelvisTop = hipY - thighLength * 0.35, pelvisBottom = hipY + thighLength * 0.5;
+  const waistY = upperOnly ? bones[hipRoot].head[1] : 0;
+  const waistSpan = h * .1;
+  const trunk = /^(root|spine|[LR]upperLeg)$/, waistParts = /^(root|spine|lower)$/;
+
+  const vIndex = new Map();
+  const pos = [], uv = [], skinIdx = [], skinW = [];
   const vertexOf = (vx, vy, owner) => {
-    const group=region(owner);
-    // A continuous skin across the pelvis keeps the trousers joined when thighs rotate.
-    // Arms still have isolated seams so wrists cannot drag the shirt into ribbons.
-    const py0=Math.min(h,vy*cell);
-    const atPelvis=pelvis && /^(root|spine|[LR]upperLeg)$/.test(bones[owner].name) && py0<=blendEnd;
-    const atWaist=upperOnly && /^(root|spine|lower)$/.test(bones[owner].name) && Math.abs(py0-waistY)<=waistSpan;
-    const nearbyOwners=new Set([owner]);
-    for(let cy=vy-1;cy<=vy;cy++)for(let cx=vx-1;cx<=vx;cx++)if(solid(cx,cy))nearbyOwners.add(owners[cy*cols+cx]);
-    let jointPair=null;
-    // Join neighboring triangles only at an anatomical parent/child pivot.
-    // A wrist touching the torso has no such pivot and stays separate.
-    for(const other of nearbyOwners){
-      if(other===owner)continue;
-      const joint=jointFor(owner,other);if(!joint)continue;
-      const limb=/Arm|hand|Leg|foot/.test(bones[owner].name+bones[other].name);
-      if(!limb)continue;
-      const radius=cell*.95;
-      if(Math.hypot(Math.min(w,vx*cell)-joint[0],py0-joint[1])<=radius){jointPair=[owner,other].sort((a,b)=>a-b);break;}
+    const px = Math.min(w, vx * cell), py = Math.min(h, vy * cell);
+    const atPelvis = pelvis && trunk.test(bones[owner].name) && py >= pelvisTop && py <= pelvisBottom;
+    const atWaist = upperOnly && waistParts.test(bones[owner].name) && Math.abs(py - waistY) <= waistSpan;
+    // 이 꼭짓점을 둘러싼 칸들의 주인 뼈 중, 관절 영역 안에서 부모-자식으로 이어진 것끼리 한 무리 → 같은 정점
+    let group = [owner], seam;
+    if (atPelvis) seam = 'pelvis';
+    else if (atWaist) seam = 'waist';
+    else {
+      const around = [];
+      for (let cy = vy - 1; cy <= vy; cy++) for (let cx = vx - 1; cx <= vx; cx++) {
+        if (!solid(cx, cy)) continue;
+        const o = owners[cy * cols + cx];
+        if (!around.includes(o)) around.push(o);
+      }
+      for (let grew = true; grew;) {
+        grew = false;
+        for (const o of around) {
+          if (group.includes(o) || !group.some(g => zone(g, o, px, py) <= 1)) continue;
+          group.push(o); grew = true;
+        }
+      }
+      group.sort((a, b) => a - b);
+      seam = group.join('.');
     }
-    const seam=atPelvis?'pelvis':atWaist?'waist':jointPair?'joint-'+jointPair.join('-'):owner;
-    const key=`${seam}:${vy*(cols+1)+vx}`;
-    if(vIndex.has(key)) return vIndex.get(key);
-    const px=Math.min(w,vx*cell), py=Math.min(h,vy*cell);
-    const cand=new Float32Array(bones.length).fill(Infinity);
-    for(let cy=vy-1;cy<=vy;cy++) for(let cx=vx-1;cx<=vx;cx++) {
-      if(!solid(cx,cy)) continue;
-      const k=cy*cols+cx;
-      if(region(owners[k])!==group) continue;
-      for(let bi=0;bi<bones.length;bi++) if(region(bi)===group && dist[bi][k]<cand[bi]) cand[bi]=dist[bi][k];
+    const key = `${seam}:${vy * (cols + 1) + vx}`;
+    if (vIndex.has(key)) return vIndex.get(key);
+
+    const idx = pos.length / 3;
+    pos.push(px, py, 0); uv.push(px / w, 1 - py / h);
+    if (atPelvis) {
+      // 엉덩이 선 위는 척추(몸통 기울기), 아래로 갈수록 좌우 허벅지로
+      const legWeight = smooth((py - hipY) / (thighLength * .5));
+      const leftX = bones[leftThigh].head[0], rightX = bones[rightThigh].head[0];
+      const leftWeight = smooth((px - rightX) / (leftX - rightX || 1));
+      skinIdx.push(spineBone, leftThigh, rightThigh, 0);
+      skinW.push(1 - legWeight, legWeight * leftWeight, legWeight * (1 - leftWeight), 0);
+    } else if (atWaist) {
+      const upperWeight = smooth((waistY - py) / waistSpan);
+      skinIdx.push(hipRoot, spineBone, 0, 0); skinW.push(1 - upperWeight, upperWeight, 0, 0);
+    } else {
+      // 그림 안쪽 거리로 가장 가까운 뼈(무리 안에서) + 관절 근처에서만 이웃 뼈와 섞기
+      const cand = new Float32Array(bones.length).fill(Infinity);
+      for (let cy = vy - 1; cy <= vy; cy++) for (let cx = vx - 1; cx <= vx; cx++) {
+        if (!solid(cx, cy)) continue;
+        const k = cy * cols + cx;
+        for (let bi = 0; bi < bones.length; bi++) if (dist[bi][k] < cand[bi]) cand[bi] = dist[bi][k];
+      }
+      let b1 = owner, d1 = cand[owner];
+      for (const g of group) if (cand[g] < d1) { b1 = g; d1 = cand[g]; }
+      // 겨드랑이 선이 있는 어깨: 선에서 팔 쪽으로 갈수록 팔을 따라감 (호스처럼 부드럽게 접힘)
+      let shoulder = null;
+      for (const cut of cuts.values()) {
+        if (!group.includes(cut.arm) && !group.includes(spineBone)) continue;
+        const mix = cutMix(cut, px, py);
+        if (mix > 0) { shoulder = { cut, mix }; break; }
+      }
+      if (shoulder) {
+        const { cut, mix } = shoulder;
+        const profile = smooth((cutSide(cut, px, py) + cut.band) / (2 * cut.band));
+        const hasArm = group.includes(cut.arm), hasBody = group.includes(spineBone);
+        const own = hasArm && !hasBody ? 1 : hasBody && !hasArm ? 0 : profile;
+        const wArm = mix * profile + (1 - mix) * own;
+        // 팔 무게가 없는 몸통 쪽 정점은 아래 일반 처리로(목 관절 섞임 등을 지키도록)
+        if (wArm > 1e-3 || hasArm) {
+          skinIdx.push(spineBone, cut.arm, 0, 0); skinW.push(1 - wArm, wArm, 0, 0);
+          vIndex.set(key, idx);
+          return idx;
+        }
+      }
+      let b2 = 0, w2 = 0;
+      if (Number.isFinite(d1)) {
+        for (let bi = 0; bi < bones.length; bi++) {
+          if (bi === b1 || !Number.isFinite(cand[bi])) continue;
+          const mix = mixOf(zone(b1, bi, px, py));
+          if (mix <= 0) continue;
+          // 두 뼈까지의 거리가 같으면 반반, BLEND 칸 차이 나면 0 (양쪽 정점이 같은 값이 되도록 대칭)
+          const share = mix * Math.max(0, Math.min(1, 0.5 * (1 - (cand[bi] - d1) / BLEND)));
+          if (share > w2) { w2 = share; b2 = bi; }
+        }
+      }
+      skinIdx.push(b1, b2, 0, 0); skinW.push(1 - w2, w2, 0, 0);
     }
-    const b1=owner, d1=cand[owner];
-    let b2=b1,d2=Infinity;
-    for(let bi=0;bi<bones.length;bi++) {
-      if(bi===b1 || region(bi)!==group) continue;
-      const joint=jointFor(b1,bi);
-      if(!joint) continue;
-      // Bound the blend radius to the shorter segment, for short forearms too.
-      const radius=Math.min(cell*BLEND*2,
-        Math.max(cell,Math.min(len2(sub2(bones[b1].tail,bones[b1].head)),len2(sub2(bones[bi].tail,bones[bi].head))))*.35);
-      if(Math.hypot(px-joint[0],py-joint[1])>radius) continue;
-      if(cand[bi]<d2){b2=bi;d2=cand[bi];}
-    }
-    let w2=0;
-    if(Number.isFinite(d2) && Number.isFinite(d1) && d2-d1<BLEND) w2=.5*(1-Math.max(0,d2-d1)/BLEND);
-    const idx=pos.length/3;
-    pos.push(px,py,0); uv.push(px/w,1-py/h);
-    if(atWaist) {
-      const upperWeight=smooth((waistY-py)/waistSpan);
-      skinIdx.push(hipRoot,spineBone,0,0);skinW.push(1-upperWeight,upperWeight,0,0);
-    } else if(jointPair && !atPelvis) {
-      const [i,j]=jointPair;
-      const child=bones[i].parent===bones[j].name?i:j;
-      const parent=child===i?j:i;
-      const d=sub2(bones[child].tail,bones[child].head), n=len2(d) || 1;
-      const rad=cell*.95;
-      const along=((px-bones[child].head[0])*d[0]+(py-bones[child].head[1])*d[1])/n;
-      const weight=smooth((along+rad*.4)/(rad*1.2));
-      skinIdx.push(parent,child,0,0);skinW.push(1-weight,weight,0,0);
-    } else if(atPelvis) {
-      const legWeight=smooth((py-hipY)/(thighLength*.5));
-      const leftX=bones[leftThigh].head[0], rightX=bones[rightThigh].head[0];
-      const leftWeight=smooth((px-rightX)/(leftX-rightX || 1));
-      skinIdx.push(hipRoot,leftThigh,rightThigh,0);
-      skinW.push(1-legWeight,legWeight*leftWeight,legWeight*(1-leftWeight),0);
-    } else { skinIdx.push(b1,b2,0,0); skinW.push(1-w2,w2,0,0); }
-    vIndex.set(key,idx);
+    vIndex.set(key, idx);
     return idx;
   };
 
@@ -230,6 +408,10 @@ export function buildMesh(prep, bones) {
       tris[layer].push(a, d, b, b, d, c);
     }
   }
-  return { pos, uv, skinIdx, skinW, index: [].concat(...tris), armTouch };
+  // cuts·jointZone: 겨드랑이 선과 관절 영역 (점검·테스트용). jointZone ≤ 1 이면 한 장으로 이어지는 곳,
+  // ≤ zoneFade 이면 두 뼈가 섞일 수 있는 곳.
+  return { pos, uv, skinIdx, skinW, index: [].concat(...tris), armTouch,
+    cuts: [...cuts.values()].map(c => ({ arm: bones[c.arm].name, s: c.s, a: c.a, share: c.share, band: c.band })),
+    jointZone: (a, b, x, y) => (index.has(a) && index.has(b) ? zone(index.get(a), index.get(b), x, y) : Infinity),
+    zoneFade: ZONE_FADE };
 }
-
