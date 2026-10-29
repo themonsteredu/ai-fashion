@@ -28,6 +28,8 @@ const CAMERA_FRAMING = {
   mission:{ pos: new THREE.Vector3(0, 0.98, 4.3), look: new THREE.Vector3(0, 0.98, 0), shift: 0.34, shiftY: -0.03 },
   // 수학 퀴즈: 아바타 가운데(양옆은 답 카드, 위는 문제). 손을 번쩍 들어도 머리 위가 안 잘리게
   quiz:   { pos: new THREE.Vector3(0, 1.3, 5.3), look: new THREE.Vector3(0, 1.3, 0), shift: 0 },
+  // 체육: 맞춤 영역(setFitProvider)을 쓰지만, 아바타 로드 전 등 맞춤값이 없을 때를 위한 고정 배치
+  pe:     { pos: new THREE.Vector3(0, 0.98, 4.6), look: new THREE.Vector3(0, 0.98, 0), shift: 0.18, shiftY: -0.03 },
 };
 CAMERA_FRAMING.custom = CAMERA_FRAMING.start; // 하위호환
 // 그림 아바타(팔 벌린 그림이라 3D보다 넓음): 조금 멀리·오른쪽에서 보여 첫 화면 패널 안에 들어오게
@@ -39,6 +41,7 @@ const CAMERA_FRAMING_MOBILE = {
   preview:{ pos: new THREE.Vector3(0, 0.98, 5.3), look: new THREE.Vector3(0, 0.98, 0), shift: 0, shiftY: 0 },
   mission:{ pos: new THREE.Vector3(0, 1.0, 3.7), look: new THREE.Vector3(0, 1.0, 0), shift: 0, shiftY: -0.14 },
   quiz:   { pos: new THREE.Vector3(0, 1.07, 9.0), look: new THREE.Vector3(0, 1.07, 0), shift: 0 },
+  pe:     { pos: new THREE.Vector3(0, 1.0, 6.0), look: new THREE.Vector3(0, 1.0, 0), shift: 0, shiftY: -0.02 },
 };
 CAMERA_FRAMING_MOBILE.custom = CAMERA_FRAMING_MOBILE.start;
 CAMERA_FRAMING_MOBILE.startWide = { pos: new THREE.Vector3(0, 0.95, 4.1), look: new THREE.Vector3(0, 0.95, 0), shift: 0, shiftY: -0.05 };
@@ -199,8 +202,8 @@ function fitCamera(rect) {
   const cam = state.camera;
   const w = window.innerWidth, h = window.innerHeight;
   const hgt = standHeight();
-  const y0 = -0.06, y1 = hgt * 1.3;  // 발끝(신발 밑창·그림자 여유) ~ 두 손을 번쩍 든 높이
-  const halfW = hgt * 0.6;           // 양팔을 옆으로 쫙 편 폭의 절반
+  const y0 = -0.06, y1 = hgt * (rect.reach || 1.3);  // 발끝(신발 밑창·그림자 여유) ~ 두 손을 번쩍 든 높이 (체육·기본 그림 아바타: 1.18)
+  const halfW = hgt * (rect.halfWScale || 0.6);       // 양팔을 옆으로 쫙 편 폭의 절반 (체육·세로·기본 그림: 0.5)
   const t = Math.tan(THREE.MathUtils.degToRad(cam.fov / 2));
   const s = Math.min((rect.bottom - rect.top) / (y1 - y0), (rect.right - rect.left) / (2 * halfW)); // 1m당 화면 px
   const d = h / (2 * s * t);
@@ -284,6 +287,15 @@ function setupVrm(gltf) {
   state.scene.add(vrm.scene);
   state.vrm = vrm;
   vrm.scene.userData.standHeight = standHeight(); // 포즈가 바뀌기 전(차렷)에 키를 재 둔다
+  { // 체육 시범: 엉덩이 제자리·발 높이 기준 (applyDemoPose opts.root / opts.plant)
+    const hipsN = vrm.humanoid.getNormalizedBoneNode('hips');
+    if (hipsN) vrm.scene.userData.hipsRest = hipsN.position.clone();
+    const fl = vrm.humanoid.getRawBoneNode('leftFoot'), fr = vrm.humanoid.getRawBoneNode('rightFoot');
+    if (fl && fr) {
+      vrm.scene.updateMatrixWorld(true);
+      vrm.scene.userData.footRestY = Math.min(fl.getWorldPosition(new THREE.Vector3()).y, fr.getWorldPosition(new THREE.Vector3()).y);
+    }
+  }
 
   // 아바타가 항상 관람객(화면) 쪽을 바라보게 — 눈맞춤 디테일
   if (vrm.lookAt) vrm.lookAt.target = state.camera;
@@ -608,7 +620,13 @@ function mirrorBoneName(name) {
   if (name.startsWith('right')) return 'left' + name.slice(5);
   return name; // spine/chest/neck/head 등 중앙 본
 }
-export function applyDemoPose(spec, dt) {
+let _plantDy = 0;
+const _tmpV3 = new THREE.Vector3();
+const ROOT_RESET = ['leftShoulder', 'rightShoulder', 'upperChest', 'leftHand', 'rightHand', 'leftFoot', 'rightFoot'];
+// opts(체육만 사용, 없으면 예전과 똑같이 동작):
+//  root {x, y}: 웹캠 추적이 남긴 엉덩이 이동·회전과 어깨·손·발 회전을 지우고 (x, y)만큼만 옮김 (그림 아바타는 엉덩이 x를 따라감)
+//  plant (3D 아바타만): 가장 낮은 발이 처음 발 높이(바닥)에 닿도록 엉덩이를 내림 — 한 프레임 늦어도 됨
+export function applyDemoPose(spec, dt, opts = null) {
   if (!state.vrm) return;
   const h = state.vrm.humanoid;
   const targets = {};
@@ -632,6 +650,21 @@ export function applyDemoPose(spec, dt) {
         if (n) n.quaternion.slerp(_tmpQuat.identity(), k);
       }
     }
+  }
+  if (opts && opts.root) {
+    const ud = state.vrm.scene.userData, hips = h.getNormalizedBoneNode('hips'), rest = ud.hipsRest;
+    if (opts.plant && ud.footRestY != null) {
+      const fl = h.getRawBoneNode('leftFoot'), fr = h.getRawBoneNode('rightFoot');
+      if (fl && fr) {
+        const fy = Math.min(fl.getWorldPosition(_tmpV3).y, fr.getWorldPosition(_tmpV3).y);
+        _plantDy = THREE.MathUtils.clamp(_plantDy + (ud.footRestY - fy) * k, -0.6, 0.05);
+      }
+    } else _plantDy += (0 - _plantDy) * k;
+    if (hips && rest) {
+      hips.position.lerp(_tmpV3.set(rest.x + (opts.root.x || 0), rest.y + (opts.root.y || 0) + _plantDy, rest.z), k);
+      hips.quaternion.slerp(_tmpQuat.identity(), k);
+    }
+    for (const n of ROOT_RESET) { const b = h.getNormalizedBoneNode(n); if (b) b.quaternion.slerp(_tmpQuat.identity(), k); }
   }
 }
 
