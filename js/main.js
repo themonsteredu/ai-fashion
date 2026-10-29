@@ -487,6 +487,7 @@ function bindUI() {
   OperatorPin.init();
   AvatarLibrary.init({
     onChoose: chooseSavedAvatar,
+    onPrepare: prepareSavedAvatar,
     authorizeDelete: () => OperatorPin.request('저장한 아바타 삭제'),
     isOtherDialogOpen: () => OperatorPin.isOpen(),
   });
@@ -609,6 +610,16 @@ function finishPictureActivation(mode, armsTouching, saveFailed = false) {
     : mode === 'upper' ? '그림 아바타를 만들었어요! 팔·몸통이 따라 움직여요'
     : armsTouching ? '팔과 옷이 겹쳐 있어 원본을 유지하며 몸 전체만 움직여요'
     : '그림 전체가 함께 움직여요 (정면 전신 그림이면 팔·다리도 움직여요)', 4500);
+}
+
+async function prepareSavedAvatar(image) {
+  try {
+    const prepared = await RealifyUI.convert(image, { purpose: 'prepare' });
+    if (prepared) await chooseSavedAvatar(prepared);
+  } catch (error) {
+    console.error('아바타 자세 준비 실패', error);
+    alert(error.userMessage || '아바타 자세를 준비하지 못했어요. 다시 시도해 주세요.');
+  } finally { resetIdleTimer(); }
 }
 
 async function chooseSavedAvatar(image) {

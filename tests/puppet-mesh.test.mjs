@@ -43,13 +43,21 @@ export function longestEdge(mesh,points){let max=0;
  const a=mesh.index[t+i],b=mesh.index[t+j];max=Math.max(max,Math.hypot(points[a][0]-points[b][0],points[a][1]-points[b][1]));
  }return max;
 }
-test('touching arm and torso do not share deforming triangle vertices',()=>{
- const {prep,bones}=fixture(),mesh=buildMesh(prep,bones);
+test('only connected anatomical joints can share a triangle',()=>{
+ const {prep,bones}=fixture(),mesh=buildMesh(prep,bones),cell=prep.h/120;
+ let joined=0;
  for(let t=0;t<mesh.index.length;t+=3){
-  const owners=mesh.index.slice(t,t+3).map(v=>mesh.skinIdx[v*4]);
-  assert.equal(new Set(owners).size,1,'A triangle must belong to one body segment');
+  const vertices=mesh.index.slice(t,t+3),owners=[...new Set(vertices.map(v=>mesh.skinIdx[v*4]))];
+  if(owners.length===1)continue;
+  assert.equal(owners.length,2);
+  const [a,b]=owners.map(i=>bones[i]);
+  const child=a.parent===b.name?a:b.parent===a.name?b:null;
+  assert(child,'Unrelated body parts must stay separate');
+  for(const v of vertices) assert(Math.hypot(mesh.pos[v*3]-child.head[0],mesh.pos[v*3+1]-child.head[1])<cell*3);
+  joined++;
  }
- assert(mesh.armTouch>2,'Fixture must exercise the formerly unsafe touching-arm path');
+ assert(joined>0,'A real joint should share vertices');
+ assert(mesh.armTouch>2,'Fixture must exercise the touching-arm path');
 });
 test('raising and folding attached arms cannot create wrist-to-hip ribbons',()=>{
  const {prep,bones}=fixture(),mesh=buildMesh(prep,bones);
@@ -88,6 +96,20 @@ test('pelvis shares continuous vertices across the torso and both thighs',()=>{
   const x=mesh.pos[v*3],y=mesh.pos[v*3+1],owner=mesh.skinIdx[v*4];
   if(x<210||x>390||y<500||y>630||/Arm|hand/.test(bones[owner].name))continue;
   const key=x+':'+y;assert(!seen.has(key),'Hip seam has duplicate independently moving vertices');seen.set(key,v);tested++;
+ }
+ assert(tested>100);
+});
+
+test('a skirt stays joined to the torso while upper-body pose moves',()=>{
+ const {prep,bones}=fixture();
+ bones.push({name:'lower',parent:'root',head:[300,550],tail:[300,940],drive:'none',layer:0});
+ const mesh=buildMesh(prep,bones),seen=new Map();let tested=0;
+ for(let v=0;v<mesh.pos.length/3;v++){
+  const x=mesh.pos[v*3],y=mesh.pos[v*3+1],owner=mesh.skinIdx[v*4];
+  if(x<210||x>390||y<500||y>630||/Arm|hand/.test(bones[owner].name))continue;
+  const key=x+':'+y;
+  assert(!seen.has(key),'Waist has duplicate independently moving vertices');
+  seen.set(key,v);tested++;
  }
  assert(tested>100);
 });
