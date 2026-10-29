@@ -561,7 +561,7 @@ function bindUI() {
           loading.classList.remove('hidden');
         }
         loadingText.textContent = '아바타 움직임을 준비하는 중…';
-        const { mode, armsTouching } = await Puppet.activate(avatarImage, { onStatus: (t) => { loadingText.textContent = t; } });
+        const { mode, armsTouching } = await Puppet.activate(avatarImage, { allowCorrection: true, onStatus: (t) => { loadingText.textContent = t; } });
         let saveFailed = false;
         if (direct) {
           try { await AvatarLibrary.saveAvatar(avatarImage, { source: 'imported', name: file.name }); }
@@ -603,6 +603,7 @@ function finishPictureActivation(mode, armsTouching, saveFailed = false) {
   Avatar.setFraming('start');
   $('#loading').classList.add('hidden');
   indicateAvatarReady(mode, armsTouching);
+  goPreview();
   toast(saveFailed ? '아바타는 적용했지만 기기에 저장하지 못했어요. 브라우저 저장 공간을 확인해 주세요.'
     : mode === 'full' ? '그림 아바타를 만들었어요! 팔·다리가 따라 움직여요'
     : mode === 'upper' ? '그림 아바타를 만들었어요! 팔·몸통이 따라 움직여요'
@@ -615,7 +616,7 @@ async function chooseSavedAvatar(image) {
   loading.classList.remove('hidden');
   loadingText.textContent = '저장한 아바타를 불러오는 중…';
   try {
-    const { mode, armsTouching } = await Puppet.activate(image, { onStatus: (t) => { loadingText.textContent = t; } });
+    const { mode, armsTouching } = await Puppet.activate(image, { allowCorrection: true, onStatus: (t) => { loadingText.textContent = t; } });
     finishPictureActivation(mode, armsTouching);
   } catch (error) {
     loading.classList.add('hidden');

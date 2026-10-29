@@ -9,6 +9,7 @@
 //  - 관절을 못 찾은 그림은 "등신대" 방식(그림 전체가 한 덩어리로 옆걸음·앉기·기울이기)으로 움직인다.
 import * as THREE from 'three';
 import * as Avatar from './avatar.js';
+import { correctJoints } from './rig-editor.js';
 import { DEMO, DEMO_FLAT, DEMO_FLAT_RULE_OK } from './missionvisuals.js';
 
 const MAX_SIDE = 2048;     // 그림 긴 변 최대 픽셀 (큰 사진은 줄여서 사용)
@@ -21,6 +22,7 @@ const MESSAGES = {
   decode: '그림 파일을 열 수 없어요. PNG 또는 JPG 그림인지 확인해 주세요.\n(아이폰 HEIC 사진은 JPG로 바꿔서 가져와 주세요)',
   small: '그림이 너무 작아요. 더 큰 그림(가로·세로 200픽셀 이상)을 선택해 주세요.',
   empty: '그림에 보이는 부분이 없어요. 다른 그림을 선택해 주세요.',
+  rig_cancelled: '관절 맞추기를 취소했어요. 그림을 다시 선택하면 이어서 맞출 수 있어요.',
 };
 export class ImageAvatarError extends Error {
   constructor(reason, detail) {
@@ -200,20 +202,32 @@ async function detectJoints(prep) {
     runningMode: 'IMAGE', numPoses: 1,
   });
   try {
-    // 투명 부분은 회색으로 채워 인식시킨다
-    const c = document.createElement('canvas'); c.width = prep.w; c.height = prep.h;
-    const g = c.getContext('2d'); g.fillStyle = '#808080'; g.fillRect(0, 0, c.width, c.height);
-    g.drawImage(prep.canvas, 0, 0);
-    const res = pl.detect(c);
-    const lm = res && res.landmarks && res.landmarks[0];
-    if (!lm) return null;
-    const joints = {}, vis = {};
-    for (const [k, i] of Object.entries(LM)) {
-      const p = lm[i];
-      if (!p) continue;
-      joints[k] = [p.x * prep.w, p.y * prep.h];
-      vis[k] = p.visibility == null ? 1 : p.visibility;
+    // Tight crops and transparent backgrounds can hide limbs from the detector.
+    // Retry locally with padding and different background contrast before correction.
+    let best = null;
+    for (const background of ['#808080', '#ffffff', '#202020']) {
+      const pad = Math.round(Math.max(prep.w, prep.h) * .12);
+      const c = document.createElement('canvas'); c.width = prep.w + pad*2; c.height = prep.h + pad*2;
+      const g = c.getContext('2d'); g.fillStyle = background; g.fillRect(0, 0, c.width, c.height);
+      g.drawImage(prep.canvas, pad, pad);
+      const res = pl.detect(c);
+      const lm = res?.landmarks?.[0];
+      if (!lm) continue;
+      const joints = {}, vis = {};
+      for (const [k, i] of Object.entries(LM)) {
+        const p = lm[i]; if (!p) continue;
+        joints[k] = [p.x*c.width-pad, p.y*c.height-pad];
+        vis[k] = p.visibility ?? 1;
+      }
+      const candidate = { joints, vis };
+      const score = ['L_SH','R_SH','L_EL','R_EL','L_WR','R_WR','L_HIP','R_HIP','L_KNEE','R_KNEE','L_ANK','R_ANK']
+        .reduce((n,k) => n + (vis[k] || 0), 0);
+      const rank = {standee: 0, upper: 1, full: 2}[chooseMode(candidate, prep)];
+      if (!best || rank > best.rank || (rank === best.rank && score > best.score)) best = { ...candidate, score, rank };
+      if (rank === 2) break;
     }
+    if (!best) return null;
+    const { joints, vis } = best;
     // 그림의 오른쪽(화면 오른쪽)이 L_* 가 되도록 맞춘다 (3D 아바타의 left* 뼈가 화면 오른쪽에 있음).
     // 뒷모습·특이한 그림에서 좌우가 바뀌어 인식되면 팔이 몸을 가로지르는 것 방지
     const dx = (p, q) => (joints[p] && joints[q] ? joints[p][0] - joints[q][0] : 0);
@@ -618,7 +632,7 @@ function wrapAngle(a) { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.P
 
 // ── 공개 함수 ──
 // source: Blob/File. rig: { joints: {키: [x01, y01]} } (원본 그림 비율 좌표) — 없으면 자동 인식
-export async function activate(source, { rig = null, onStatus = null } = {}) {
+export async function activate(source, { rig = null, onStatus = null, allowCorrection = false } = {}) {
   const vrm = Avatar.state.vrm;
   if (!vrm) throw new ImageAvatarError('decode', '3D 기준 아바타 없음');
   onStatus && onStatus('그림을 준비하는 중…');
@@ -629,23 +643,37 @@ export async function activate(source, { rig = null, onStatus = null } = {}) {
     const joints = {}, vis = {};
     for (const [k, v] of Object.entries(rig.joints)) { joints[k] = prep.toCanvas(v[0], v[1]); vis[k] = 1; }
     found = { joints, vis };
-  } else if (!prep.cardLike) {
+  } else {
     onStatus && onStatus('그림에서 팔·다리 위치를 찾는 중…');
     try { found = await detectJoints(prep); } catch (e) { console.warn('관절 자동 인식 실패 → 등신대 방식', e); found = null; }
   }
-  const mode = rig && rig.mode ? rig.mode : chooseMode(found, prep);
+  let mode = rig && rig.mode ? rig.mode : chooseMode(found, prep);
+  let corrected = false;
+  const requestCorrection = async () => {
+    onStatus?.('관절점을 그림에 맞춰 주세요.');
+    const result = await correctJoints(prep, found);
+    if (!result) throw new ImageAvatarError('rig_cancelled');
+    found = result; corrected = true; mode = 'full';
+  };
+  if (allowCorrection && !(rig && rig.joints) && mode !== 'full') await requestCorrection();
 
-  deactivate();
   let finalMode = mode;
   let built = build(prep, finalMode, found && found.joints, vrm);
   // 자동 인식한 그림에서 팔이 몸에 붙어 있으면(움직일 때 찢어져 보임) 그림 전체가 함께 움직이는 방식으로
-  if (!(rig && rig.joints) && finalMode !== 'standee' && built.armTouch > 2) {
+  if (!corrected && !(rig && rig.joints) && finalMode !== 'standee' && built.armTouch > 2) {
     console.info(`팔이 몸에 붙어 있음(${built.armTouch}칸) → 등신대 방식`);
     built.geo.dispose(); built.mat.dispose(); built.tex.dispose(); built.skeleton.dispose();
-    finalMode = 'standee';
-    built = build(prep, finalMode, null, vrm);
-    built.armsTouching = true;
+    if (allowCorrection) {
+      await requestCorrection();
+      finalMode = mode;
+      built = build(prep, finalMode, found.joints, vrm);
+    } else {
+      finalMode = 'standee';
+      built = build(prep, finalMode, null, vrm);
+      built.armsTouching = true;
+    }
   }
+  deactivate();
   built.vrmRest = captureVrmRest(vrm, built.bones);
   built.smooth = {};
   built.rel = {};
