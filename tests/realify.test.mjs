@@ -81,6 +81,12 @@ test('default prompt asks for a stylized realistic avatar while preserving the d
   assert.match(prompt, /semi-realistic 3D animated avatar/i);
   assert.match(prompt, /apparent age/); assert.match(prompt, /same outfit/);
   assert.match(prompt, /transparent background/); assert.match(prompt, /do not crop/i);
+  assert.match(prompt, /front-facing relaxed A-pose/i);
+  assert.match(prompt, /hands and entire sleeves clearly separated from the torso/i);
+  assert.match(prompt, /skirt or long dress, preserve the original garment intact/i);
+  assert.match(prompt, /both legs are already visible.*slightly apart/i);
+  assert.match(prompt, /legs hidden by it covered/i);
+  assert.doesNotMatch(prompt, /keep the original pose/i);
   assert.notEqual(prompt, buildPrompt({ style: 'real' }));
 });
 

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHandler } from '../supabase/functions/ai-fashion-api/handler.js';
+import { buildPrompt } from '../js/realify.js';
 
 const APP_KEY = 'public-test-app-key';
 const OPENAI_KEY = ['sk', 'fixture'.repeat(8)].join('-');
@@ -47,6 +48,8 @@ test('conversion sends a fixed prompt and stored server key upstream once and ne
   assert.equal(call.request.body.get('model'), 'gpt-image-2.5-flare');
   assert.match(call.request.body.get('prompt'), /semi-realistic 3D animated avatar/);
   assert.doesNotMatch(call.request.body.get('prompt'), /MALICIOUS OVERRIDE/);
+  assert.equal(call.request.body.get('prompt'), buildPrompt({ style: 'semi' }));
+  assert.match(call.request.body.get('prompt'), /front-facing relaxed A-pose/i);
 });
 
 test('rejected and unconfigured requests never call the paid image API', async () => {
