@@ -132,8 +132,9 @@ test('the torso follows the spine instead of being pinned to the hips',()=>{
  const mesh=buildMesh(prep,bones),spine=bones.findIndex(b=>b.name==='spine');
  let torso=0;
  for(let v=0;v<mesh.pos.length/3;v++){
-  for(let k=0;k<4;k++) if(mesh.skinW[v*4+k]>0) assert.notEqual(bones[mesh.skinIdx[v*4+k]].name,'root','No picture pixel may be pinned to the non-rotating root');
   const x=mesh.pos[v*3],y=mesh.pos[v*3+1];
+  // Only the trousers' top band (around the hip pivot) may stay upright with the root.
+  if(y<550-210*.35) for(let k=0;k<4;k++) if(mesh.skinW[v*4+k]>0) assert.notEqual(bones[mesh.skinIdx[v*4+k]].name,'root','The torso must not be pinned to the non-rotating root');
   if(x>250&&x<350&&y>280&&y<450){torso++;assert.equal(mesh.skinIdx[v*4],spine);assert(mesh.skinW[v*4]>.99);}
  }
  assert(torso>100);
@@ -241,5 +242,54 @@ test('the forearm pulls on the upper arm only right around the elbow',()=>{
    if(t<0.1||(1-t)*Math.sqrt(L2)<cell*6.5||Math.hypot(x-up.head[0]-d[0]*t,y-up.head[1]-d[1]*t)>25)continue;
    for(let k=0;k<4;k++)if(mesh.skinIdx[v*4+k]===lo)assert(mesh.skinW[v*4+k]<.01,`${side} upper arm at t=${t.toFixed(2)} follows the forearm`);
   }
+ }
+});
+
+// Raising the arm must not drag the vest/body next to the armhole (no bulge or bite in the vest edge).
+test('raising the arm barely moves the body next to the armhole',()=>{
+ const {prep,bones}=aPoseFixture(),mesh=buildMesh(prep,bones),cell=prep.h/120;
+ const points=deformed(mesh,bones,{LupperArm:-1.2,RupperArm:1.2});
+ let tested=0,max=0;
+ for(const cut of mesh.cuts){
+  const arm=bones.findIndex(b=>b.name===cut.arm);
+  const c=[cut.a[0]-cut.s[0],cut.a[1]-cut.s[1]],L=Math.hypot(...c),n=[-c[1]/L,c[0]/L];
+  const elbow=bones[arm].tail,sign=Math.sign((elbow[0]-cut.s[0])*n[0]+(elbow[1]-cut.s[1])*n[1]);
+  for(let v=0;v<mesh.pos.length/3;v++){
+   const x=mesh.pos[v*3],y=mesh.pos[v*3+1],q=[x-cut.s[0],y-cut.s[1]];
+   const along=(q[0]*c[0]+q[1]*c[1])/L,sd=sign*(q[0]*n[0]+q[1]*n[1]);
+   if(along<0||along>L||sd>-cell*.5||sd<-cut.band)continue; // body side, within one band of the cut
+   let top=-1,tw=-1;for(let k=0;k<4;k++)if(mesh.skinW[v*4+k]>tw){tw=mesh.skinW[v*4+k];top=mesh.skinIdx[v*4+k];}
+   if(/Arm|hand/.test(bones[top].name))continue; // the arm's own copy of a seam vertex
+   tested++;max=Math.max(max,Math.hypot(points[v][0]-x,points[v][1]-y));
+  }
+ }
+ assert(tested>10);
+ assert(max<cell*0.5,`Body next to the armhole moved ${max.toFixed(1)}px`);
+});
+
+test('a wide A-line skirt does not tear when the upper body leans',()=>{
+ const w=600,h=1000,alpha=new Uint8ClampedArray(w*h*4);
+ // Bodice, then a skirt flaring from the hips (x 215..385 at y 560) to a wide hem (x 40..560 at y 960).
+ for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+  const t=(y-560)/400,half=85+175*t;
+  if((x>=210&&x<=390&&y>=150&&y<=600)||(y>=560&&y<=960&&Math.abs(x-300)<=half))alpha[(y*w+x)*4+3]=255;
+ }
+ const prep={w,h,canvas:{getContext:()=>({getImageData:()=>({data:alpha})})}},cell=h/120;
+ const bones=[
+  {name:'root',parent:null,head:[300,550],tail:[300,550],drive:'none',layer:1},
+  {name:'spine',parent:'root',head:[300,550],tail:[300,170],drive:'delta',layer:1,region:[[210,200],[390,200],[390,580],[210,580]]},
+  {name:'lower',parent:'root',head:[300,550],tail:[300,940],drive:'none',layer:0},
+ ];
+ const mesh=buildMesh(prep,bones);
+ for(const lean of [.3,-.3]){
+  const points=deformed(mesh,bones,{spine:lean}),at=new Map();let max=0;
+  for(let v=0;v<mesh.pos.length/3;v++){
+   const x=mesh.pos[v*3],y=mesh.pos[v*3+1];if(y<=550)continue;
+   const key=x+':'+y;
+   if(at.has(key)){const u=at.get(key);max=Math.max(max,Math.hypot(points[v][0]-points[u][0],points[v][1]-points[u][1]));}
+   else at.set(key,v);
+  }
+  assert(at.size>500);
+  assert(max<cell*.5,`Skirt copies of one point drifted ${max.toFixed(1)}px apart at lean ${lean}`);
  }
 });

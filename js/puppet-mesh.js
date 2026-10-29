@@ -338,8 +338,18 @@ export function buildMesh(prep, bones) {
   const thighLength = pelvis ? Math.min(len2(sub2(bones[leftThigh].tail, bones[leftThigh].head)), len2(sub2(bones[rightThigh].tail, bones[rightThigh].head))) : 0;
   // 골반 영역은 엉덩이 선 조금 위(허리)부터 허벅지 절반까지 — 그 위 몸통은 척추를 따라 기울어진다
   const pelvisTop = hipY - thighLength * 0.35, pelvisBottom = hipY + thighLength * 0.5;
+  // 가랑이 꼭짓점: 두 엉덩이 관절 사이에서 엉덩이 선 아래로 처음 비는 칸
+  const crotchY = (() => {
+    if (!pelvis) return Infinity;
+    const lx = bones[leftThigh].head[0], rx = bones[rightThigh].head[0];
+    const x0 = Math.ceil(Math.min(lx, rx) / cell), x1 = Math.floor(Math.max(lx, rx) / cell);
+    for (let cy = Math.max(0, Math.floor(hipY / cell)); cy < rows; cy++) for (let cx = x0; cx < x1; cx++) if (!solid(cx, cy)) return cy * cell;
+    return Infinity;
+  })();
   const waistY = upperOnly ? bones[hipRoot].head[1] : 0;
   const waistSpan = h * .1;
+  // 상반신 모드: 엉덩이 선 아래(치마·다리)는 척추가 아니라 아랫몸 소속 — 넓게 퍼진 치마 옆자락이 몸통과 함께 돌아 찢어지지 않게
+  if (upperOnly) for (let k = 0; k < N; k++) if (owners[k] === spineBone && (Math.floor(k / cols) + .5) * cell > waistY) owners[k] = lowerBody;
   const trunk = /^(root|spine|[LR]upperLeg)$/, waistParts = /^(root|spine|lower)$/;
 
   const vIndex = new Map();
@@ -387,11 +397,15 @@ export function buildMesh(prep, bones) {
         if (dist[rightThigh][k] < dR) dR = dist[rightThigh][k];
       }
       const span = Math.abs(bones[leftThigh].head[0] - bones[rightThigh].head[0]) / cell || 1;
-      const leftWeight = Number.isFinite(dL) && Number.isFinite(dR)
-        ? smooth(0.5 + (dR - dL) / (2 * span * Math.max(1e-3, 1 - legWeight)))
-        : (dL < dR ? 1 : 0);
-      skinIdx.push(spineBone, leftThigh, rightThigh, 0);
-      skinW.push(1 - legWeight, legWeight * leftWeight, legWeight * (1 - leftWeight), 0);
+      // 가랑이 꼭짓점 바로 위부터는 정점마다 한쪽 허벅지만 (무릎을 들 때 가랑이 틈이 벌어지지 않게)
+      const leftWeight = !(Number.isFinite(dL) && Number.isFinite(dR)) ? (dL < dR ? 1 : 0)
+        : py >= crotchY - cell * 2 ? (dL < dR ? 1 : dL > dR ? 0 : 0.5)
+        : smooth(0.5 + (dR - dL) / (2 * span * Math.max(1e-3, 1 - legWeight)));
+      // 척추는 엉덩이 가운데를 축으로 돈다: 축 아래(바지 윗부분)까지 척추를 따르면 옆으로 기울일 때
+      // 반대쪽으로 휘어 엉덩이가 S자로 들어가 보인다 → 엉덩이 선으로 내려올수록 돌지 않는 root 로 넘긴다
+      const spineShare = smooth((hipY - py) / Math.max(1e-6, hipY - pelvisTop));
+      skinIdx.push(spineBone, leftThigh, rightThigh, hipRoot);
+      skinW.push((1 - legWeight) * spineShare, legWeight * leftWeight, legWeight * (1 - leftWeight), (1 - legWeight) * (1 - spineShare));
     } else if (atWaist) {
       const upperWeight = smooth((waistY - py) / waistSpan);
       skinIdx.push(hipRoot, spineBone, 0, 0); skinW.push(1 - upperWeight, upperWeight, 0, 0);
@@ -414,6 +428,12 @@ export function buildMesh(prep, bones) {
         for (let bi = 0; bi < bones.length; bi++) {
           if (bi === base || bi === skip || !Number.isFinite(cand[bi]) || cutOf(base, bi)) continue;
           if (nearHead && isArm(bi) !== isArm(base)) continue;
+          // 겨드랑이 선이 없는 어깨에서, 관절보다 목 쪽(뒤)이면서 머리에 가까운 정점(어깨에 얹힌 큰 머리의 턱)은 팔을 따라가지 않는다
+          const ua = /^[LR]upperArm$/.test(bones[bi].name) ? bi : /^[LR]upperArm$/.test(bones[base].name) ? base : -1;
+          if (ua >= 0 && (ua === bi ? base : bi) === spineBone && !cuts.has(ua) && headBone >= 0 && cand[headBone] < cand[spineBone] + 6) {
+            const d = sub2(bones[ua].tail, bones[ua].head);
+            if ((px - bones[ua].head[0]) * d[0] + (py - bones[ua].head[1]) * d[1] < 0) continue;
+          }
           const mix = mixOf(zone(base, bi, px, py));
           if (mix <= 0) continue;
           // 두 뼈까지의 거리가 같으면 반반, BLEND 칸 차이 나면 0 (양쪽 정점이 같은 값이 되도록 대칭)
@@ -433,7 +453,8 @@ export function buildMesh(prep, bones) {
       }
       if (shoulder) {
         const { cut, mix } = shoulder;
-        const profile = smooth((cutSide(cut, px, py) + cut.band) / (2 * cut.band));
+        // 섞이는 폭은 거의 팔 쪽에 둔다 (몸통 쪽까지 많이 섞으면 조끼 겨드랑이 선이 부풀고 파임)
+        const profile = smooth((cutSide(cut, px, py) + 0.6 * cut.band) / (2 * cut.band));
         const hasArm = group.includes(cut.arm), hasBody = !group.every(g => g === cut.arm);
         const own = hasArm && !hasBody ? 1 : hasBody && !hasArm ? 0 : profile;
         const wArm = nearHead ? 0 : mix * profile + (1 - mix) * own;
