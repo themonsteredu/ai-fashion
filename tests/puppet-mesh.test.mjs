@@ -76,3 +76,18 @@ test('every visible cell is retained and normalized weights stay within one limb
   }
  }
 });
+
+// Shared source positions at the hip must use the very same vertex even when
+// neighboring cells used to be assigned to opposite thighs or the torso.
+test('pelvis shares continuous vertices across the torso and both thighs',()=>{
+ const {prep,bones}=fixture();
+ bones.push({name:'LupperLeg',parent:'root',head:[360,550],tail:[370,760],drive:'delta',layer:0},
+ {name:'RupperLeg',parent:'root',head:[240,550],tail:[230,760],drive:'delta',layer:0});
+ const mesh=buildMesh(prep,bones),seen=new Map();let tested=0;
+ for(let v=0;v<mesh.pos.length/3;v++){
+  const x=mesh.pos[v*3],y=mesh.pos[v*3+1],owner=mesh.skinIdx[v*4];
+  if(x<210||x>390||y<500||y>630||/Arm|hand/.test(bones[owner].name))continue;
+  const key=x+':'+y;assert(!seen.has(key),'Hip seam has duplicate independently moving vertices');seen.set(key,v);tested++;
+ }
+ assert(tested>100);
+});

@@ -136,8 +136,21 @@ export function buildMesh(prep, bones) {
   // Only blend at the actual joint, never along distant touching edges.
   const jointFor = (i,j) => bones[i].parent===bones[j].name ? bones[i].head
     : bones[j].parent===bones[i].name ? bones[j].head : null;
+  const hipRoot = bones.findIndex(b => b.name === 'root');
+  const leftThigh = bones.findIndex(b => b.name === 'LupperLeg');
+  const rightThigh = bones.findIndex(b => b.name === 'RupperLeg');
+  const pelvis = leftThigh >= 0 && rightThigh >= 0 && hipRoot >= 0;
+  const hipY = pelvis ? (bones[leftThigh].head[1] + bones[rightThigh].head[1]) / 2 : 0;
+  const thighLength = pelvis ? Math.min(len2(sub2(bones[leftThigh].tail,bones[leftThigh].head)),len2(sub2(bones[rightThigh].tail,bones[rightThigh].head))) : 0;
+  const blendEnd = hipY + thighLength * .5;
+  const smooth = t => { t=Math.max(0,Math.min(1,t)); return t*t*(3-2*t); };
   const vertexOf = (vx, vy, owner) => {
-    const group=region(owner), key=`${owner}:${vy*(cols+1)+vx}`;
+    const group=region(owner);
+    // A continuous skin across the pelvis keeps the trousers joined when thighs rotate.
+    // Arms still have isolated seams so wrists cannot drag the shirt into ribbons.
+    const py0=Math.min(h,vy*cell);
+    const atPelvis=pelvis && /^(root|spine|[LR]upperLeg)$/.test(bones[owner].name) && py0<=blendEnd;
+    const key=`${atPelvis?'pelvis':owner}:${vy*(cols+1)+vx}`;
     if(vIndex.has(key)) return vIndex.get(key);
     const px=Math.min(w,vx*cell), py=Math.min(h,vy*cell);
     const cand=new Float32Array(bones.length).fill(Infinity);
@@ -163,7 +176,13 @@ export function buildMesh(prep, bones) {
     if(Number.isFinite(d2) && Number.isFinite(d1) && d2-d1<BLEND) w2=.5*(1-Math.max(0,d2-d1)/BLEND);
     const idx=pos.length/3;
     pos.push(px,py,0); uv.push(px/w,1-py/h);
-    skinIdx.push(b1,b2,0,0); skinW.push(1-w2,w2,0,0);
+    if(atPelvis) {
+      const legWeight=smooth((py-hipY)/(thighLength*.5));
+      const leftX=bones[leftThigh].head[0], rightX=bones[rightThigh].head[0];
+      const leftWeight=smooth((px-rightX)/(leftX-rightX || 1));
+      skinIdx.push(hipRoot,leftThigh,rightThigh,0);
+      skinW.push(1-legWeight,legWeight*leftWeight,legWeight*(1-leftWeight),0);
+    } else { skinIdx.push(b1,b2,0,0); skinW.push(1-w2,w2,0,0); }
     vIndex.set(key,idx);
     return idx;
   };
