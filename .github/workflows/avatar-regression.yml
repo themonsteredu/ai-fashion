@@ -20,6 +20,7 @@ jobs:
       - run: npm test
       - run: npm run test:avatar
       - run: node tests/puppet-stretch-browser.mjs
+      - run: node tests/pelvis-browser.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
