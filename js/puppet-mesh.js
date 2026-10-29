@@ -140,6 +140,11 @@ export function buildMesh(prep, bones) {
   const leftThigh = bones.findIndex(b => b.name === 'LupperLeg');
   const rightThigh = bones.findIndex(b => b.name === 'RupperLeg');
   const pelvis = leftThigh >= 0 && rightThigh >= 0 && hipRoot >= 0;
+  const lowerBody = bones.findIndex(b => b.name === 'lower');
+  const spineBone = bones.findIndex(b => b.name === 'spine');
+  const upperOnly = !pelvis && lowerBody >= 0 && spineBone >= 0 && hipRoot >= 0;
+  const waistY = upperOnly ? bones[hipRoot].head[1] : 0;
+  const waistSpan = h*.1;
   const hipY = pelvis ? (bones[leftThigh].head[1] + bones[rightThigh].head[1]) / 2 : 0;
   const thighLength = pelvis ? Math.min(len2(sub2(bones[leftThigh].tail,bones[leftThigh].head)),len2(sub2(bones[rightThigh].tail,bones[rightThigh].head))) : 0;
   const blendEnd = hipY + thighLength * .5;
@@ -150,7 +155,22 @@ export function buildMesh(prep, bones) {
     // Arms still have isolated seams so wrists cannot drag the shirt into ribbons.
     const py0=Math.min(h,vy*cell);
     const atPelvis=pelvis && /^(root|spine|[LR]upperLeg)$/.test(bones[owner].name) && py0<=blendEnd;
-    const key=`${atPelvis?'pelvis':owner}:${vy*(cols+1)+vx}`;
+    const atWaist=upperOnly && /^(root|spine|lower)$/.test(bones[owner].name) && Math.abs(py0-waistY)<=waistSpan;
+    const nearbyOwners=new Set([owner]);
+    for(let cy=vy-1;cy<=vy;cy++)for(let cx=vx-1;cx<=vx;cx++)if(solid(cx,cy))nearbyOwners.add(owners[cy*cols+cx]);
+    let jointPair=null;
+    // Join neighboring triangles only at an anatomical parent/child pivot.
+    // A wrist touching the torso has no such pivot and stays separate.
+    for(const other of nearbyOwners){
+      if(other===owner)continue;
+      const joint=jointFor(owner,other);if(!joint)continue;
+      const limb=/Arm|hand|Leg|foot/.test(bones[owner].name+bones[other].name);
+      if(!limb)continue;
+      const radius=cell*.95;
+      if(Math.hypot(Math.min(w,vx*cell)-joint[0],py0-joint[1])<=radius){jointPair=[owner,other].sort((a,b)=>a-b);break;}
+    }
+    const seam=atPelvis?'pelvis':atWaist?'waist':jointPair?'joint-'+jointPair.join('-'):owner;
+    const key=`${seam}:${vy*(cols+1)+vx}`;
     if(vIndex.has(key)) return vIndex.get(key);
     const px=Math.min(w,vx*cell), py=Math.min(h,vy*cell);
     const cand=new Float32Array(bones.length).fill(Infinity);
@@ -176,7 +196,19 @@ export function buildMesh(prep, bones) {
     if(Number.isFinite(d2) && Number.isFinite(d1) && d2-d1<BLEND) w2=.5*(1-Math.max(0,d2-d1)/BLEND);
     const idx=pos.length/3;
     pos.push(px,py,0); uv.push(px/w,1-py/h);
-    if(atPelvis) {
+    if(atWaist) {
+      const upperWeight=smooth((waistY-py)/waistSpan);
+      skinIdx.push(hipRoot,spineBone,0,0);skinW.push(1-upperWeight,upperWeight,0,0);
+    } else if(jointPair && !atPelvis) {
+      const [i,j]=jointPair;
+      const child=bones[i].parent===bones[j].name?i:j;
+      const parent=child===i?j:i;
+      const d=sub2(bones[child].tail,bones[child].head), n=len2(d) || 1;
+      const rad=cell*.95;
+      const along=((px-bones[child].head[0])*d[0]+(py-bones[child].head[1])*d[1])/n;
+      const weight=smooth((along+rad*.4)/(rad*1.2));
+      skinIdx.push(parent,child,0,0);skinW.push(1-weight,weight,0,0);
+    } else if(atPelvis) {
       const legWeight=smooth((py-hipY)/(thighLength*.5));
       const leftX=bones[leftThigh].head[0], rightX=bones[rightThigh].head[0];
       const leftWeight=smooth((px-rightX)/(leftX-rightX || 1));

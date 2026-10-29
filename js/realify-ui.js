@@ -4,7 +4,7 @@ import { getSharedKeyStatus, saveSharedKey, deleteSharedKey, takeSetupToken, cle
 const $ = (id) => document.getElementById(id);
 let store, initialized = false, original = null, originalUrl = null;
 let results = [], selected = -1, sequence = 0, controller = null, resolveConversion = null;
-let settingsResolve = null, busy = false, elapsedTimer = null;
+let settingsResolve = null, busy = false, elapsedTimer = null, conversionPurpose = 'convert';
 let callbacks = {};
 let sharedState = { configured: false, registered: false, loaded: false }, setupToken = '', settingsBusy = false;
 let sharedStatusRevision = 0;
@@ -156,7 +156,7 @@ function closeSettings(saved) {
   const resolve = settingsResolve; settingsResolve = null; resolve?.(saved);
 }
 
-export async function convert(file) {
+export async function convert(file, { purpose = 'convert' } = {}) {
   if (resolveConversion) return null;
   await validateImage(file);
   let bitmap;
@@ -167,6 +167,7 @@ export async function convert(file) {
   if (tooSmall) {
     throw new RealifyError('small', '그림이 너무 작아요. 200픽셀 이상의 그림을 선택해 주세요.');
   }
+  conversionPurpose = purpose === 'prepare' ? 'prepare' : 'convert';
   original = file; originalUrl = URL.createObjectURL(file);
   $('realify-original').src = originalUrl;
   $('realify-result').hidden = true; $('realify-result').removeAttribute('src');
@@ -216,7 +217,7 @@ async function run() {
   setBusy(true); status('realify-status', `${describe(settings)} — 변환 중이에요.`);
   if (selected < 0) $('realify-placeholder').textContent = '원본의 얼굴과 옷을 살려 입체감을 더하고 있어요.';
   try {
-    const result = await transformImage(original, { shared: true, settings, signal: controller.signal });
+    const result = await transformImage(original, { shared: true, settings, purpose: conversionPurpose, signal: controller.signal });
     if (job !== sequence || !original) return;
     // Decode before offering a download or replacing a working avatar.
     const decoded = await createImageBitmap(result.file); decoded.close();
@@ -279,6 +280,6 @@ function finish(file) {
   if (originalUrl) URL.revokeObjectURL(originalUrl);
   for (const result of results) URL.revokeObjectURL(result.url);
   $('realify-history').replaceChildren();
-  original = null; originalUrl = null; results = []; selected = -1;
+  original = null; originalUrl = null; results = []; selected = -1; conversionPurpose = 'convert';
   const resolve = resolveConversion; resolveConversion = null; resolve?.(file);
 }

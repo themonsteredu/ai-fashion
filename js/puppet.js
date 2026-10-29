@@ -11,6 +11,7 @@ import * as THREE from 'three';
 import * as Avatar from './avatar.js';
 import { correctJoints } from './rig-editor.js';
 import { buildMesh } from './puppet-mesh.js';
+import { createArmJointCaps, disposeJointCaps } from './joint-caps.js';
 import { DEMO, DEMO_FLAT, DEMO_FLAT_RULE_OK } from './missionvisuals.js';
 
 const MAX_SIDE = 2048;     // 그림 긴 변 최대 픽셀 (큰 사진은 줄여서 사용)
@@ -405,6 +406,7 @@ function build(prep, mode, J, vrm) {
   skinned.add(bones[0]);
   skinned.updateMatrixWorld(true);
   skinned.bind(skeleton);
+  const jointCaps = mode === 'standee' ? [] : createArmJointCaps(prep, bonesDef, byName, s);
 
   // 눈 위치 (웹캠 크기 맞춤용) — 머리 뼈 기준 상대 위치로 저장
   let eyes = null;
@@ -416,7 +418,7 @@ function build(prep, mode, J, vrm) {
     eyes = [top.clone().setX(top.x + 0.035), top.clone().setX(top.x - 0.035)];
   }
 
-  return { mesh: skinned, bones, byName, skeleton, tex, mat, geo, mode, eyes, headBone, scale: s, worldH, armTouch: mesh.armTouch };
+  return { mesh: skinned, bones, byName, skeleton, tex, mat, geo, mode, eyes, headBone, scale: s, worldH, armTouch: mesh.armTouch, jointCaps };
 }
 
 // 3D 아바타(VRM)의 뼈 월드 위치
@@ -485,7 +487,9 @@ export async function activate(source, { rig = null, onStatus = null, allowCorre
     if (!result) throw new ImageAvatarError('rig_cancelled');
     found = result; mode = 'full';
   };
-  if (allowCorrection && !(rig && rig.joints) && mode !== 'full') await requestCorrection();
+  // Reliable arm detections can animate a skirt as a single lower-body piece.
+  // Ask for manual joints only when arm/torso landmarks are insufficient.
+  if (allowCorrection && !(rig && rig.joints) && mode === 'standee') await requestCorrection();
 
   let finalMode = mode;
   let built = build(prep, finalMode, found && found.joints, vrm);
@@ -493,7 +497,7 @@ export async function activate(source, { rig = null, onStatus = null, allowCorre
   if (!(rig && rig.joints) && finalMode !== 'standee' && built.armTouch > 2) {
     // Moving joint markers cannot reconstruct hidden sleeves. Never let manual
     // correction bypass this safety check and tear an uploaded picture apart.
-    built.geo.dispose(); built.mat.dispose(); built.tex.dispose(); built.skeleton.dispose();
+    disposeJointCaps(built.jointCaps); built.geo.dispose(); built.mat.dispose(); built.tex.dispose(); built.skeleton.dispose();
     finalMode = 'standee';
     built = build(prep, finalMode, null, vrm);
     built.armsTouching = true;
@@ -522,7 +526,7 @@ export async function activate(source, { rig = null, onStatus = null, allowCorre
 export function deactivate() {
   if (!active) return;
   Avatar.state.scene.remove(active.mesh);
-  active.geo.dispose(); active.mat.dispose(); active.tex.dispose(); active.skeleton.dispose();
+  disposeJointCaps(active.jointCaps); active.geo.dispose(); active.mat.dispose(); active.tex.dispose(); active.skeleton.dispose();
   active = null;
   Avatar.setEyeProvider(null);
   Avatar.setWideStart(false);

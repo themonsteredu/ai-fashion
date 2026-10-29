@@ -9,9 +9,10 @@ const STYLES = {
   animated: 'A polished 3D animated feature character with expressive but restrained stylization, tactile fabric and soft natural lighting. Not flat 2D, not chibi, not a plastic toy.',
 };
 
-function prompt(style) {
+function prompt(style, purpose = 'convert') {
   return [
-    'Transform the character in the supplied drawing into a high-quality rendered avatar.', STYLES[style],
+    purpose === 'prepare' ? 'Re-pose the supplied avatar for animation while preserving its visual appearance.' : 'Transform the character in the supplied drawing into a high-quality rendered avatar.',
+    purpose === 'prepare' ? 'Maintain the existing face, age, hair, outfit, accessories, palette, rendering style, proportions, and fine details. Do not redesign the character or change its material or style.' : STYLES[style],
     'Treat the uploaded image as the visual reference: preserve its recognizable facial features, apparent age, hairstyle, hair color, clothing design, clothing colors, accessories and overall silhouette. Do not age up or sexualize the character. Keep the same outfit and its coverage.',
     'Repose the character in a front-facing relaxed A-pose for a pose-driven 2D puppet: both upper arms angle gently outward and down from the shoulders, with hands and entire sleeves clearly separated from the torso by visible transparent gaps. Keep both arms anatomically complete, similarly proportioned and individually distinguishable. If the character has a skirt or long dress, preserve the original garment intact and keep any legs hidden by it covered; do not split the skirt into legs. If both legs are already visible in the reference, keep them slightly apart without changing the clothing. Arrange any ribbons or accessories so they do not bridge an arm and the body.',
     'Show one full-body character with the complete head and both hands, with space around the entire silhouette; do not crop any limbs. Keep feet visible if visible in the reference; do not shorten a long garment or uncover feet that were hidden by it. Preserve the outfit, colors and distinctive decorative details as closely as possible while changing the pose. Reconstruct obscured clothing and limbs consistently with the original, without adding or removing accessories.',
@@ -93,7 +94,8 @@ export function createHandler({ callerApiKey, rpc, upstreamFetch = fetch, now = 
       const form = await new Request('https://local.invalid/', { method: 'POST', headers: { 'Content-Type': request.headers.get('content-type') || '' }, body: bytes }).formData();
       const image = form.get('image'), type = await imageType(image);
       const model = form.get('model'), quality = form.get('quality'), size = form.get('size'), style = form.get('style');
-      if (!type || !MODELS.has(model) || !['low', 'medium', 'high'].includes(quality) || !Object.hasOwn(STYLES, style) ||
+      const purpose = form.get('purpose') || 'convert';
+      if (!['convert', 'prepare'].includes(purpose) || !type || !MODELS.has(model) || !['low', 'medium', 'high'].includes(quality) || !Object.hasOwn(STYLES, style) ||
           !['768x1024', '1024x1024', '1024x1536'].includes(size) ||
           (model === 'gpt-image-1-mini' && (size === '768x1024' || now() >= Date.parse('2026-12-01T00:00:00Z')))) return fail('invalid_input', 400, headers);
       const reservation = await rpc('ai_fashion_reserve_request', {});
@@ -102,7 +104,7 @@ export function createHandler({ callerApiKey, rpc, upstreamFetch = fetch, now = 
       if (!keyFormat(reservation?.key)) return fail('storage', 500, headers);
       const upstreamBody = new FormData();
       upstreamBody.append('image', new Blob([image], { type }), `drawing.${type === 'image/jpeg' ? 'jpg' : type.split('/')[1]}`);
-      for (const [name, value] of Object.entries({ model, quality, size, prompt: prompt(style), n: '1', background: 'transparent', output_format: 'png' })) upstreamBody.append(name, value);
+      for (const [name, value] of Object.entries({ model, quality, size, prompt: prompt(style, purpose), n: '1', background: 'transparent', output_format: 'png' })) upstreamBody.append(name, value);
       let response;
       try {
         response = await upstreamFetch('https://api.openai.com/v1/images/edits', { method: 'POST', headers: { Authorization: `Bearer ${reservation.key}` }, body: upstreamBody, signal: AbortSignal.timeout(140000), redirect: 'error' });

@@ -61,3 +61,18 @@ test('rejected and unconfigured requests never call the paid image API', async (
   limited = true; assert.equal((await handler(req('generate', { method: 'POST', body: form() }))).status, 429); limited = false;
   assert.equal(upstreamCalls.length, before);
 });
+
+test('preparing a saved avatar preserves appearance and only accepts a fixed purpose', async () => {
+  const before=upstreamCalls.length;
+  const result=await handler(req('generate',{method:'POST',body:form({purpose:'prepare'})}));
+  assert.equal(result.status,200);
+  assert.equal(upstreamCalls.length,before+1);
+  const body=upstreamCalls.at(-1).request.body;
+  assert.equal(body.get('prompt'),buildPrompt({style:'semi'},{purpose:'prepare'}));
+  assert.match(body.get('prompt'),/Do not redesign the character/);
+  assert.doesNotMatch(body.get('prompt'),/semi-realistic 3D animated avatar/);
+  assert.equal(body.has('purpose'),false);
+  const invalid=await handler(req('generate',{method:'POST',body:form({purpose:'arbitrary-user-instruction'})}));
+  assert.equal(invalid.status,400);
+  assert.equal(upstreamCalls.length,before+1);
+});

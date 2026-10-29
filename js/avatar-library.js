@@ -118,6 +118,9 @@ function tile(record) {
   apply.append(image, caption, callToAction);
   apply.addEventListener('click', () => { const blob = record.image; close(); void handlers.onChoose(blob); });
   const actions = document.createElement('div'); actions.className = 'saved-avatar-actions';
+  const prepare = document.createElement('button'); prepare.type = 'button'; prepare.className = 'realify-link'; prepare.textContent = 'AI 자세 보완';
+  prepare.setAttribute('aria-label', '이 아바타의 움직이는 자세를 AI로 보완하기. API 사용료가 발생합니다.');
+  prepare.addEventListener('click', () => { const blob = record.image; close(); void handlers.onPrepare?.(blob); });
   const download = document.createElement('button'); download.type = 'button'; download.className = 'realify-link'; download.textContent = '다운로드';
   download.addEventListener('click', () => {
     const ext = record.image.type === 'image/jpeg' ? 'jpg' : record.image.type === 'image/webp' ? 'webp' : 'png';
@@ -131,5 +134,5 @@ function tile(record) {
     try { await deleteAvatar(record.id); await render(); }
     catch { $('avatar-library-status').textContent = '삭제하지 못했어요. 다시 시도해 주세요.'; }
   });
-  actions.append(download, remove); article.append(apply, actions); return article;
+  actions.append(prepare, download, remove); article.append(apply, actions); return article;
 }

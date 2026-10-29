@@ -131,3 +131,15 @@ test('a storage failure leaves a generated result usable and tells the user to d
   element('realify-apply').click(); assert.equal((await completion).type, 'image/png');
   saveFails = false;
 });
+
+test('preparing an existing avatar sends the preparation purpose only for that conversion', async () => {
+  mode='ok';
+  const before=requests.length;
+  const prepared=UI.convert(source,{purpose:'prepare'}); await settle();
+  assert.equal(requests.length,before+1);
+  assert.equal(requests.at(-1).request.body.get('purpose'),'prepare');
+  element('realify-apply').click(); await prepared;
+  const normal=UI.convert(source); await settle();
+  assert.equal(requests.at(-1).request.body.get('purpose'),null);
+  element('realify-apply').click(); await normal;
+});
