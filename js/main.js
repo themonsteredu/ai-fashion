@@ -607,7 +607,7 @@ function finishPictureActivation(mode, armsTouching, saveFailed = false) {
   toast(saveFailed ? '아바타는 적용했지만 기기에 저장하지 못했어요. 브라우저 저장 공간을 확인해 주세요.'
     : mode === 'full' ? '그림 아바타를 만들었어요! 팔·다리가 따라 움직여요'
     : mode === 'upper' ? '그림 아바타를 만들었어요! 팔·몸통이 따라 움직여요'
-    : armsTouching ? '팔이 몸에 붙어 있어 몸 전체가 함께 움직여요'
+    : armsTouching ? '팔과 옷이 겹쳐 있어 원본을 유지하며 몸 전체만 움직여요'
     : '그림 전체가 함께 움직여요 (정면 전신 그림이면 팔·다리도 움직여요)', 4500);
 }
 
@@ -626,7 +626,7 @@ async function chooseSavedAvatar(image) {
 
 function indicateAvatarReady(mode, armsTouching) {
   const explanation = mode === 'standee'
-    ? (armsTouching ? '팔이 몸에 붙어 있어 몸 전체가 함께 움직여요. 자동 동작으로 확인해 보세요.' : '이 그림은 몸 전체가 함께 움직여요. 자동 동작으로 확인해 보세요.')
+    ? (armsTouching ? '팔과 옷이 겹쳐 있어 원본을 유지하며 몸 전체만 움직여요. 자동 동작으로 확인해 보세요.' : '이 그림은 몸 전체가 함께 움직여요. 자동 동작으로 확인해 보세요.')
     : mode === 'upper' ? '팔과 몸통이 움직여요. 자동 동작 또는 카메라 따라 하기를 선택해 주세요.'
     : '아바타가 준비됐어요. 자동 동작 또는 카메라 따라 하기를 선택해 주세요.';
   $('#screen-start .sub').textContent = explanation;
