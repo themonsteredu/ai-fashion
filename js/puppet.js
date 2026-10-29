@@ -479,30 +479,24 @@ export async function activate(source, { rig = null, onStatus = null, allowCorre
     try { found = await detectJoints(prep); } catch (e) { console.warn('관절 자동 인식 실패 → 등신대 방식', e); found = null; }
   }
   let mode = rig && rig.mode ? rig.mode : chooseMode(found, prep);
-  let corrected = false;
   const requestCorrection = async () => {
     onStatus?.('관절점을 그림에 맞춰 주세요.');
     const result = await correctJoints(prep, found);
     if (!result) throw new ImageAvatarError('rig_cancelled');
-    found = result; corrected = true; mode = 'full';
+    found = result; mode = 'full';
   };
   if (allowCorrection && !(rig && rig.joints) && mode !== 'full') await requestCorrection();
 
   let finalMode = mode;
   let built = build(prep, finalMode, found && found.joints, vrm);
   // 자동 인식한 그림에서 팔이 몸에 붙어 있으면(움직일 때 찢어져 보임) 그림 전체가 함께 움직이는 방식으로
-  if (!corrected && !(rig && rig.joints) && finalMode !== 'standee' && built.armTouch > 2) {
-    console.info(`팔이 몸에 붙어 있음(${built.armTouch}칸) → 등신대 방식`);
+  if (!(rig && rig.joints) && finalMode !== 'standee' && built.armTouch > 2) {
+    // Moving joint markers cannot reconstruct hidden sleeves. Never let manual
+    // correction bypass this safety check and tear an uploaded picture apart.
     built.geo.dispose(); built.mat.dispose(); built.tex.dispose(); built.skeleton.dispose();
-    if (allowCorrection) {
-      await requestCorrection();
-      finalMode = mode;
-      built = build(prep, finalMode, found.joints, vrm);
-    } else {
-      finalMode = 'standee';
-      built = build(prep, finalMode, null, vrm);
-      built.armsTouching = true;
-    }
+    finalMode = 'standee';
+    built = build(prep, finalMode, null, vrm);
+    built.armsTouching = true;
   }
   deactivate();
   built.vrmRest = captureVrmRest(vrm, built.bones);
