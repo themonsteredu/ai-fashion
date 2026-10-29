@@ -79,11 +79,14 @@ test('every visible cell is retained and normalized weights stay within one limb
  for(let v=0;v<mesh.pos.length/3;v++){
   const ids=mesh.skinIdx.slice(v*4,v*4+4),weights=mesh.skinW.slice(v*4,v*4+4);
   assert(Math.abs(weights.reduce((a,b)=>a+b,0)-1)<1e-7);
-  for(let k=1;k<4;k++)if(weights[k]>0){
-   const a=bones[ids[0]],b=bones[ids[k]];
-   assert(a.parent===b.name||b.parent===a.name);
+  // Every weighted bone is joined to another weighted bone by a parent/child link (one chain, e.g. head-spine-upperArm-lowerArm).
+  const used=[...new Set([0,1,2,3].filter(k=>weights[k]>0).map(k=>ids[k]))].map(i=>bones[i]);
+  for(const a of used){
+   if(used.length===1)break;
+   const linked=used.filter(b=>b!==a&&(a.parent===b.name||b.parent===a.name));
+   assert(linked.length,`${a.name} blends with unrelated ${used.map(b=>b.name)}`);
    // An arm may blend into the body only at the shoulder, and only around that joint.
-   if(/Arm|hand/.test(a.name)!==/Arm|hand/.test(b.name)){
+   for(const b of linked) if(/Arm|hand/.test(a.name)!==/Arm|hand/.test(b.name)){
     const pair=[a.name,b.name].sort().join('/');
     assert.match(pair,/^[LR]upperArm\/spine$/);
     assert(mesh.jointZone(a.name,b.name,mesh.pos[v*3],mesh.pos[v*3+1])<=mesh.zoneFade);
@@ -190,4 +193,53 @@ test('an A-pose arm is cut along the armhole and its shoulder skin stays joined'
   max=Math.max(max,longestEdge(mesh,points));
  }
  assert(max<cell*4,`Maximum deformed edge was ${max.toFixed(2)}px`);
+});
+
+// A big head (or long hair) resting on the shoulders: the armhole search must not climb into it,
+// and face/hair pixels must not follow the arms.
+test('a big head touching the shoulders never follows the arms',()=>{
+ const {prep,bones}=aPoseFixture(),alpha=prep.canvas.getContext().getImageData().data,w=prep.w,h=prep.h;
+ const inHead=(x,y)=>Math.hypot((x-300)/115,(y-110)/105)<=1; // wide chibi head resting on the shoulder line
+ for(let y=0;y<h;y++)for(let x=0;x<w;x++)if(inHead(x,y))alpha[(y*w+x)*4+3]=255;
+ const head={name:'head',parent:'spine',head:[300,215],tail:[300,10],drive:'delta',layer:2};
+ bones.splice(2,0,head);
+ const mesh=buildMesh(prep,bones);
+ for(const cut of mesh.cuts) assert(!inHead(...cut.s),`armhole cut starts inside the head at ${cut.s.map(Math.round)}`);
+ let face=0;
+ for(let v=0;v<mesh.pos.length/3;v++){
+  const x=mesh.pos[v*3],y=mesh.pos[v*3+1];
+  if(Math.hypot((x-300)/95,(y-100)/85)>1)continue; // well inside the face
+  face++;
+  for(let k=0;k<4;k++)if(/Arm|hand/.test(bones[mesh.skinIdx[v*4+k]].name))assert(mesh.skinW[v*4+k]<.05,`face vertex ${Math.round(x)},${Math.round(y)} follows ${bones[mesh.skinIdx[v*4+k]].name}`);
+ }
+ assert(face>50);
+});
+
+// Spreading the legs: the inner thighs below the crotch follow only their own leg (no ledge where the pelvis band ends).
+test('spreading the legs leaves no ledge on the inner thighs',()=>{
+ const {prep,bones}=aPoseFixture(),mesh=buildMesh(prep,bones),cell=prep.h/120;
+ let max=0;
+ for(const spread of [.2,.35,.5]){
+  const points=deformed(mesh,bones,{LupperLeg:-spread,RupperLeg:spread});
+  for(let t=0;t<mesh.index.length;t+=3)for(const [i,j] of [[0,1],[1,2],[2,0]]){
+   const a=mesh.index[t+i],b=mesh.index[t+j];
+   if(mesh.pos[a*3+1]<560||mesh.pos[a*3+1]>760)continue;
+   max=Math.max(max,Math.hypot(points[a][0]-points[b][0],points[a][1]-points[b][1]));
+  }
+ }
+ assert(max<cell*3,`Maximum deformed edge around the hips was ${max.toFixed(2)}px`);
+});
+
+// The elbow blends only near the elbow, so a deep bend does not thin the whole upper arm.
+test('the forearm pulls on the upper arm only right around the elbow',()=>{
+ const {prep,bones}=aPoseFixture(),mesh=buildMesh(prep,bones),cell=prep.h/120;
+ for(const side of ['L','R']){
+  const up=bones.find(b=>b.name===side+'upperArm'),lo=bones.findIndex(b=>b.name===side+'lowerArm');
+  const d=[up.tail[0]-up.head[0],up.tail[1]-up.head[1]],L2=d[0]*d[0]+d[1]*d[1];
+  for(let v=0;v<mesh.pos.length/3;v++){
+   const x=mesh.pos[v*3],y=mesh.pos[v*3+1],t=((x-up.head[0])*d[0]+(y-up.head[1])*d[1])/L2;
+   if(t<0.1||(1-t)*Math.sqrt(L2)<cell*6.5||Math.hypot(x-up.head[0]-d[0]*t,y-up.head[1]-d[1]*t)>25)continue;
+   for(let k=0;k<4;k++)if(mesh.skinIdx[v*4+k]===lo)assert(mesh.skinW[v*4+k]<.01,`${side} upper arm at t=${t.toFixed(2)} follows the forearm`);
+  }
+ }
 });
