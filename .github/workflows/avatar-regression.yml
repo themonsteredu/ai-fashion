@@ -19,6 +19,7 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
       - run: npm test
       - run: npm run test:avatar
+      - run: node tests/puppet-stretch-browser.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
