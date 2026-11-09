@@ -372,7 +372,7 @@ function renderPlay({ phase, turn, total, mission, step, target, progress, hint,
   visible(els.buttons.complete, phase === 'active');
   visible(els.buttons.next, phase === 'handoff' && turn < total);
   const canRecognize = relay.camera === 'ready' && deps.isMotionReady();
-  updateText(els.stageLabel, phase === 'active' && canRecognize ? '내 움직임' : '시범 아바타');
+  updateText(els.stageLabel, phase === 'active' && canRecognize ? '따라 하는 아바타' : '시범 아바타');
   els.buttons.complete.classList.toggle('relay-primary', !canRecognize);
   visible(els.hold, phase === 'active' && canRecognize);
   els.hold.value = progress || 0;
