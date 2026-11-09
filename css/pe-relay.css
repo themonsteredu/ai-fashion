@@ -37,25 +37,25 @@ body.relay-on #cam-wrap {
   height: var(--relay-cam-height, 1px);
   transform: none;
   opacity: 0;
-  border: 1px solid rgba(255,255,255,0.8);
-  border-radius: 14px;
-  box-shadow: 0 8px 25px rgba(17,44,38,0.18);
+  border: 1px solid rgba(8,99,75,0.24);
+  border-radius: 18px;
+  box-shadow: none;
   pointer-events: none;
 }
 
 body.relay-on.relay-cam-on #cam-wrap { opacity: 1; }
 
 body.relay-on #cam-wrap::before {
-  content: '카메라';
+  content: '내 모습';
   position: absolute;
-  left: 6px;
-  top: 6px;
+  left: 9px;
+  bottom: 9px;
   z-index: 5;
-  padding: 3px 7px;
+  padding: 5px 10px;
   color: #fff;
   background: rgba(17,44,38,0.88);
-  border-radius: 6px;
-  font: 700 10px/1.25 "S-Core Dream", "Malgun Gothic", sans-serif;
+  border-radius: 99px;
+  font: 700 clamp(10px, 1.15vw, 15px)/1.25 "S-Core Dream", "Malgun Gothic", sans-serif;
 }
 
 .relay-header {
@@ -166,15 +166,27 @@ body.relay-on #cam-wrap::before {
   line-height: 1.25;
 }
 
-.relay-cam-slot {
-  display: none;
-  grid-area: 1 / 2;
-  align-self: start;
-  width: 100%;
-  aspect-ratio: 4 / 3;
+.relay-cam-slot { display: none; }
+
+body.relay-cam-on .relay-stage {
+  grid-template: minmax(0, 1fr) / repeat(2, minmax(0, 1fr));
+  gap: clamp(8px, 1vw, 16px);
+  padding: 0;
+  border: 0;
 }
-body.relay-cam-on .relay-stage { grid-template-columns: minmax(0, 1fr) clamp(76px, 13vw, 200px); column-gap: 6px; }
-body.relay-cam-on .relay-cam-slot { display: block; }
+body.relay-cam-on .relay-stage-fit {
+  border: 1px solid rgba(8,99,75,0.24);
+  border-radius: 18px;
+}
+body.relay-cam-on .relay-stage-label {
+  grid-area: 1 / 1;
+  align-self: end;
+  margin: 10px;
+}
+body.relay-cam-on .relay-cam-slot {
+  display: block;
+  grid-area: 1 / 2;
+}
 
 .relay-panel {
   display: grid;
@@ -354,6 +366,24 @@ body.relay-cam-on .relay-cam-slot { display: block; }
 .relay-counts dt { font-size: clamp(11px, 1.3vw, 16px); color: var(--relay-muted); }
 .relay-counts dd { font-size: clamp(18px, 2.4vw, 34px); color: var(--relay-green); font-weight: 900; }
 
+@media (orientation: landscape) {
+  body.relay-cam-on .relay-layout {
+    grid-template-columns: minmax(0, 3fr) minmax(270px, 1fr);
+  }
+  body.relay-cam-on .relay-play { padding: clamp(10px, 1.35vw, 26px); }
+  body.relay-cam-on .relay-target {
+    grid-template-columns: clamp(40px, 4vw, 72px) minmax(0, 1fr);
+  }
+  body.relay-cam-on .relay-target h2 { font-size: clamp(18px, 2vw, 32px); }
+}
+
+@media (orientation: portrait) and (min-height: 700px) {
+  body.relay-cam-on .relay-stage {
+    grid-template: repeat(2, minmax(0, 1fr)) / minmax(0, 1fr);
+  }
+  body.relay-cam-on .relay-cam-slot { grid-area: 2 / 1; }
+}
+
 @media (orientation: portrait) {
   .relay-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
   .relay-panel { max-height: 53dvh; padding: clamp(10px, 2.1vw, 20px); }
@@ -368,6 +398,7 @@ body.relay-cam-on .relay-cam-slot { display: block; }
 }
 
 @media (orientation: landscape) and (max-height: 580px) {
+  body.relay-cam-on .relay-layout { grid-template-columns: minmax(0, 3fr) minmax(220px, 1fr); }
   #pe-relay-root { --relay-gap: 8px; padding-block: 7px; }
   .relay-header { border-radius: 12px; }
   .relay-brand h1 { font-size: clamp(18px, 5.9vh, 31px); }

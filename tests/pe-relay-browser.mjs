@@ -186,6 +186,11 @@ async function checkLayout(page) {
   if (camera) {
     assert(inside(camera, stage), JSON.stringify(layout));
     assert(!overlap(avatar, camera), `Avatar overlaps camera ${JSON.stringify(layout)}`);
+    assert(!overlap(fit, camera), `Avatar and camera panes overlap ${JSON.stringify(layout)}`);
+    assert(Math.abs((camera.right - camera.left) - (fit.right - fit.left)) <= 1,
+      `Avatar and camera panes must be equally wide ${JSON.stringify(layout)}`);
+    assert(Math.abs((camera.bottom - camera.top) - (fit.bottom - fit.top)) <= 1,
+      `Avatar and camera panes must be equally tall ${JSON.stringify(layout)}`);
   }
   return layout;
 }
