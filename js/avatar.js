@@ -9,6 +9,7 @@ export const state = {
   camera: null,
   vrm: null,
   usingSample: false,
+  isDefault3d: false,
   parts: { top: [], bottom: [], hair: [] },   // 부위별 머티리얼 목록
   chosen: {                                    // 부위별 현재 선택
     top:    { color: null, pattern: 'solid' },
@@ -308,6 +309,19 @@ function setupVrm(gltf) {
 export async function loadAvatar(onProgress) {
   const loader = makeLoader();
   let gltf;
+  state.isDefault3d = false;
+  // 원본 그림은 비교/호환용으로 계속 제공한다. 일반 입장은 관절형 3D 샘플.
+  if (new URLSearchParams(window.location.search).get('avatar') !== 'picture') {
+    try {
+      gltf = await loadWithProgress(loader, './assets/orange-boy.vrm', onProgress);
+      const vrm = setupVrm(gltf);
+      state.usingSample = false;
+      state.isDefault3d = true;
+      return vrm;
+    } catch (e) {
+      console.warn('3D 샘플 로드 실패 → 기존 그림 샘플 사용', e);
+    }
+  }
   try {
     gltf = await loadWithProgress(loader, './character.vrm', onProgress);
     state.usingSample = false;
@@ -430,6 +444,7 @@ export async function loadAvatarFromFile(file, onProgress) {
     throw new VrmFileError('parse-failed', e && (e.message || String(e)));
   }
   state.usingSample = false;
+  state.isDefault3d = false;
   return setupVrm(gltf);
 }
 
@@ -613,7 +628,7 @@ function demoNeutralQuat(name) {
   return q;
 }
 // spec: [[boneName,[ax,ay,az],angle], ...]. dt로 부드럽게 보간. 명시 안 된 팔/몸통은 차렷.
-const DEMO_BONES = ['leftUpperArm', 'leftLowerArm', 'rightUpperArm', 'rightLowerArm', 'spine', 'chest', 'neck', 'head', 'leftUpperLeg', 'leftLowerLeg', 'rightUpperLeg', 'rightLowerLeg'];
+const DEMO_BONES = ['leftShoulder', 'rightShoulder', 'leftUpperArm', 'leftLowerArm', 'rightUpperArm', 'rightLowerArm', 'spine', 'chest', 'neck', 'head', 'leftUpperLeg', 'leftLowerLeg', 'rightUpperLeg', 'rightLowerLeg'];
 // 거울 모드: 시범 포즈를 학생이 볼 때(=플레이 시 미러 결과)와 같게 좌우 반전
 function mirrorBoneName(name) {
   if (name.startsWith('left')) return 'right' + name.slice(4);
@@ -634,6 +649,15 @@ export function applyDemoPose(spec, dt, opts = null) {
     // 좌우 반전 + 각도 부호 반전 (거울 대칭)
     const mBone = mirrorBoneName(bone);
     targets[mBone] = _tmpQuat.clone().setFromAxisAngle(_tmpAxis.set(axis[0], axis[1], axis[2]), -angle).clone();
+  }
+  if (state.isDefault3d) {
+    for (const [side, sign] of [['left', 1], ['right', -1]]) {
+      const upper = targets[side + 'UpperArm'] || demoNeutralQuat(side + 'UpperArm').clone();
+      const elevation = Math.max(0, new THREE.Vector3(sign, 0, 0).applyQuaternion(upper).y);
+      const shoulder = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), sign * elevation * .3);
+      targets[side + 'Shoulder'] = shoulder;
+      targets[side + 'UpperArm'] = shoulder.clone().invert().multiply(upper);
+    }
   }
   const k = 1 - Math.exp(-dt * 16);
   for (const name of DEMO_BONES) {
@@ -664,7 +688,7 @@ export function applyDemoPose(spec, dt, opts = null) {
       hips.position.lerp(_tmpV3.set(rest.x + (opts.root.x || 0), rest.y + (opts.root.y || 0) + _plantDy, rest.z), k);
       hips.quaternion.slerp(_tmpQuat.identity(), k);
     }
-    for (const n of ROOT_RESET) { const b = h.getNormalizedBoneNode(n); if (b) b.quaternion.slerp(_tmpQuat.identity(), k); }
+    for (const n of ROOT_RESET) { if (targets[n]) continue; const b = h.getNormalizedBoneNode(n); if (b) b.quaternion.slerp(_tmpQuat.identity(), k); }
   }
 }
 

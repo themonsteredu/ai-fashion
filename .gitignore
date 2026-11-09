@@ -3,3 +3,6 @@ chrome-profile/
 
 node_modules/
 test-results/
+
+assets/source/textures/
+assets/source/*.blend1

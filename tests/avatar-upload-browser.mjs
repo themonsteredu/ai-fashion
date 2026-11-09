@@ -42,7 +42,7 @@ try{
   const filename=new URL(route.request().url()).pathname.split('/').pop();
   return route.fulfill({body:await readFile(resolve(process.env.FONT_DIR,filename)),contentType:'font/woff'});
  });
- await page.goto(`http://127.0.0.1:${server.address().port}/`);
+ await page.goto(`http://127.0.0.1:${server.address().port}/?avatar=picture`);
  await page.waitForFunction(()=>document.querySelector('#loading').classList.contains('hidden'),{timeout:60000});
  const [chooser]=await Promise.all([page.waitForEvent('filechooser'),page.click('#btn-upload-direct')]);
  await chooser.setFiles(inputFixture);

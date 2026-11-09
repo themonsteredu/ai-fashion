@@ -32,7 +32,7 @@ try {
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
   page.on('console', msg => { if (msg.type() === 'error') errors.push(msg.text()); });
-  await page.goto(`http://127.0.0.1:${server.address().port}/`);
+  await page.goto(`http://127.0.0.1:${server.address().port}/?avatar=picture`);
   const result = await page.evaluate(async () => {
     const [A, P, { DEMO }] = await Promise.all([
       import('/js/avatar.js'), import('/js/puppet.js'), import('/js/missionvisuals.js'),

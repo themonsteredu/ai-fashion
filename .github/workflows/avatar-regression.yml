@@ -23,6 +23,7 @@ jobs:
       - run: node tests/sample-underarm-browser.mjs
       - run: node tests/pelvis-browser.mjs
       - run: node tests/avatar-upload-browser.mjs
+      - run: node tests/avatar-3d-browser.mjs
       - run: node tests/pe-relay-browser.mjs
       - uses: actions/upload-artifact@v4
         if: always()
