@@ -13,6 +13,7 @@ import { correctJoints } from './rig-editor.js';
 import { buildMesh } from './puppet-mesh.js';
 import { DEMO, DEMO_FLAT, DEMO_FLAT_RULE_OK } from './missionvisuals.js';
 import { SAMPLE_UNDERARM_CLEANUP, sampleUnderarmMask, underarmFade } from './underarm-cleanup.js';
+import { attachSampleSleeves, loadSampleSleeveImage } from './sample-raised-sleeve.js';
 
 const MAX_SIDE = 2048;     // 그림 긴 변 최대 픽셀 (큰 사진은 줄여서 사용)
 const GRID_ROWS = 120;     // 메시 세로 격자 수
@@ -350,7 +351,7 @@ function vrmHeight(vrm) {
   return THREE.MathUtils.clamp(hgt || 1.5, 1.2, 1.9);
 }
 
-function build(prep, mode, J, vrm, cleanSampleUnderarms = false) {
+function build(prep, mode, J, vrm, cleanSampleUnderarms = false, sleeveImage = null) {
   const bonesDef = buildBoneDefs(mode, J, prep);
   const worldH = vrmHeight(vrm);
   const originX = bonesDef[0].name === 'root' && mode !== 'standee' ? bonesDef[0].head[0] : prep.w / 2;
@@ -432,7 +433,8 @@ function build(prep, mode, J, vrm, cleanSampleUnderarms = false) {
     geo.addGroup(0, bodyCount, 0);
     geo.addGroup(bodyCount, mesh.layerCounts[3], 1);
     material = [bodyMat, mat];
-    cleanup = { bodyMat, maskTexture, uniforms };
+    const sleeves = sleeveImage ? attachSampleSleeves(sleeveImage, prep, P, byName) : null;
+    cleanup = { bodyMat, maskTexture, uniforms, sleeves };
   }
   const skinned = new THREE.SkinnedMesh(geo, material);
   skinned.frustumCulled = false;
@@ -526,7 +528,8 @@ export async function activate(source, { rig = null, onStatus = null, allowCorre
 
   let finalMode = mode;
   const cleanSampleUnderarms = rig?.underarmCleanup === SAMPLE_UNDERARM_CLEANUP && rig.bytes === source.size;
-  let built = build(prep, finalMode, found && found.joints, vrm, cleanSampleUnderarms);
+  const sleeveImage = cleanSampleUnderarms && finalMode !== 'standee' ? await loadSampleSleeveImage() : null;
+  let built = build(prep, finalMode, found && found.joints, vrm, cleanSampleUnderarms, sleeveImage);
   // 자동 인식한 그림에서 팔이 몸에 붙어 있으면(움직일 때 찢어져 보임) 그림 전체가 함께 움직이는 방식으로
   if (!(rig && rig.joints) && finalMode !== 'standee' && built.armTouch > 2) {
     // Moving joint markers cannot reconstruct hidden sleeves. Never let manual
@@ -561,7 +564,11 @@ export function deactivate() {
   if (!active) return;
   Avatar.state.scene.remove(active.mesh);
   active.geo.dispose(); active.mat.dispose(); active.tex.dispose(); active.skeleton.dispose();
-  if (active.cleanup) { active.cleanup.bodyMat.dispose(); active.cleanup.maskTexture.dispose(); }
+  if (active.cleanup) {
+    active.cleanup.bodyMat.dispose();
+    active.cleanup.maskTexture.dispose();
+    active.cleanup.sleeves?.dispose();
+  }
   active = null;
   Avatar.setEyeProvider(null);
   Avatar.setWideStart(false);
@@ -712,6 +719,7 @@ export function update(dt, live) {
       const spine = deltas.spine || 0;
       A.cleanup.uniforms.leftLift.value = underarmFade('L', wrapAngle((deltas.LupperArm || 0) - spine));
       A.cleanup.uniforms.rightLift.value = underarmFade('R', wrapAngle((deltas.RupperArm || 0) - spine));
+      A.cleanup.sleeves?.update();
     }
   }
 
