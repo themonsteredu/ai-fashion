@@ -60,11 +60,12 @@ async function boot() {
   }
   Motion.setAvatar(Avatar.state.vrm, Avatar.getSkeletonMeasures());
 
-  // 폴더에 character.png(그림 캐릭터)가 있으면 그 그림으로 보여 준다.
-  // 3D 아바타는 숨겨진 채로 동작 계산에만 쓰인다. (그림을 지우면 다시 3D 캐릭터)
+  // 기본 샘플은 입체 VRM. 그림 비교 모드/3D 로드 실패 시 기존 그림을 사용한다.
   let usingPicture = false;
   try {
-    usingPicture = !!(await Puppet.activateDefault((t) => { loadingText.textContent = t; }));
+    if (!Avatar.state.isDefault3d) {
+      usingPicture = !!(await Puppet.activateDefault((t) => { loadingText.textContent = t; }));
+    }
   } catch (e) {
     console.warn('그림 캐릭터 준비 실패 → 3D 캐릭터 사용', e);
     setTimeout(() => toast('그림 캐릭터(character.png)를 열지 못해 3D 캐릭터로 시작했어요'), 500);

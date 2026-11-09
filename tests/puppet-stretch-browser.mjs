@@ -18,7 +18,7 @@ const browser=await chromium.launch({headless:true,...(process.env.CHROMIUM_PATH
 try{
  const page=await browser.newPage({viewport:{width:800,height:800}}),errors=[];
  page.on('pageerror',e=>errors.push(e.message));
- await page.goto(`http://127.0.0.1:${server.address().port}/`);
+ await page.goto(`http://127.0.0.1:${server.address().port}/?avatar=picture`);
  await page.evaluate(async()=>{
   const A=await import('/js/avatar.js'),P=await import('/js/puppet.js');
   await A.initStage(document.querySelector('#stage'));await A.loadAvatar();

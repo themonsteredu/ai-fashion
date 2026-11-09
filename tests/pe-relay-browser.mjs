@@ -157,8 +157,14 @@ async function checkLayout(page) {
       const { left, right, top, bottom } = document.querySelector(selector).getBoundingClientRect();
       return { left, right, top, bottom };
     };
-    const joints = Puppet.jointWorld();
-    if (!joints) throw Error('Expected the bundled articulated picture');
+    const joints = Puppet.jointWorld() || Object.fromEntries(
+      ['hips', 'head', 'leftUpperArm', 'rightUpperArm', 'leftLowerArm', 'rightLowerArm',
+        'leftHand', 'rightHand', 'leftUpperLeg', 'rightUpperLeg', 'leftLowerLeg',
+        'rightLowerLeg', 'leftFoot', 'rightFoot'].map(name => {
+        const bone = Avatar.state.vrm.humanoid.getRawBoneNode(name);
+        if (!bone) throw Error(`Missing 3D joint: ${name}`);
+        return [name, bone.getWorldPosition(new Three.Vector3())];
+      }));
     const points = Object.values(joints).map(({ x, y, z }) => {
       const position = new Three.Vector3(x, y, z).project(Avatar.state.camera);
       return { x: (position.x + 1) * innerWidth / 2, y: (1 - position.y) * innerHeight / 2 };

@@ -33,7 +33,7 @@ for(const [width,height] of [[1920,1080],[1366,768],[1024,768],[768,1024],[390,8
  source=source.replace('if (document.hidden) return;', 'if (window.__freeze || document.hidden) return;');
  await route.fulfill({body:source,contentType:'text/javascript'});
  });
- await page.goto(`http://127.0.0.1:${server.address().port}/`);
+ await page.goto(`http://127.0.0.1:${server.address().port}/?avatar=picture`);
  await page.waitForFunction(()=>document.querySelector('#loading').classList.contains('hidden'),{timeout:60000});
  await page.evaluate(()=>{localStorage.setItem('fas_mission_enabled_v1',JSON.stringify({both_up:true,left_up:false,right_up:false}));localStorage.setItem('fas_mission_settings_v1',JSON.stringify({totalMissions:1,passCount:1}));});
  // Deterministic pool (all other definitions explicitly disabled).

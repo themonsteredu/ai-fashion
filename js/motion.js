@@ -13,6 +13,7 @@
 // 10. render          ← main.js에서 호출
 import * as THREE from 'three';
 import { FilesetResolver, PoseLandmarker, FaceLandmarker, HandLandmarker } from '../lib/mediapipe/vision_bundle.mjs';
+import { localArmQuaternion } from './arm-retarget.js';
 import { OneEuroVec3, safeNormalize, isFiniteVec } from './filters.js';
 import { HAND_PRESETS, blendHandPose, GestureDetector, HAND_GESTURE_DEFS, HeartDetector, HEART_ARM_PRESET, HEART_ARM_MIX } from './gestures.js';
 
@@ -861,7 +862,8 @@ function computeTargets(vrm, now, dt) {
         }
       }
     }
-    applyGated(ua, _q3.copy(parentWorld).invert().multiply(qUpperWorld), gate);
+    const shoulderLocal = vrm.humanoid.getNormalizedBoneNode(sh) ? targets[sh] : IDENTITY;
+    applyGated(ua, localArmQuaternion(parentWorld, shoulderLocal, qUpperWorld), gate);
 
     if (!lowerDir) {
       // 손목만 잠깐 놓친 경우: 아래팔은 마지막 자세 유지 (팔이 홱 펴지는 것 방지)
