@@ -58,7 +58,7 @@ for(const [width,height] of [[1920,1080],[1366,768],[1024,768],[768,1024],[390,8
  for(const id of ['both_up','left_up','right_up','both_side','lean_left','lean_right']) {
  for(let i=0;i<90;i++){A.applyDemoPose(P.flattenDemo(V.demoFor(id)),1/60);A.state.vrm.update(1/60);P.update(1/60,true);}
  A.state.renderer.render(A.state.scene,A.state.camera);
- const points=[]; A.state.scene.traverse(o=>{if(o.isSkinnedMesh && o.visible && o.material?.transparent){o.skeleton.update(); for(let i=0;i<o.geometry.attributes.position.count;i++){const v=o.getVertexPosition(i,new T.Vector3()).applyMatrix4(o.matrixWorld).project(A.state.camera);points.push({x:(v.x+1)*innerWidth/2,y:(1-v.y)*innerHeight/2});}}});
+ const points=[]; A.state.scene.traverse(o=>{if(o.isSkinnedMesh && o.visible && (Array.isArray(o.material) ? o.material.some(m=>m.transparent) : o.material?.transparent)){o.skeleton.update(); for(let i=0;i<o.geometry.attributes.position.count;i++){const v=o.getVertexPosition(i,new T.Vector3()).applyMatrix4(o.matrixWorld).project(A.state.camera);points.push({x:(v.x+1)*innerWidth/2,y:(1-v.y)*innerHeight/2});}}});
  if(!points.length)throw Error('No picture skin vertices tested');
  rows.push({id,left:Math.min(...points.map(p=>p.x)),right:Math.max(...points.map(p=>p.x)),top:Math.min(...points.map(p=>p.y)),bottom:Math.max(...points.map(p=>p.y))});
  }const countdown=document.querySelector('#mm-countdown');
