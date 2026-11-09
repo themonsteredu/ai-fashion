@@ -10,19 +10,24 @@ let session=null, recordStart=0, countdownToken=0, mergeController=null, combine
 let frame=0, previousTime=0, lastStatus='', recordingMeta=null;
 const scene=new THREE.Scene();scene.background=new THREE.Color('#f5f3ed');
 const camera=new THREE.PerspectiveCamera(34,4/3,.05,30);
-const target=new THREE.Vector3(0,.91,0);
+const target=new THREE.Vector3(0,.85,0);
 const renderer=new THREE.WebGLRenderer({antialias:true,alpha:false,preserveDrawingBuffer:true});
 renderer.setSize(960,720,false);renderer.setPixelRatio(1);renderer.outputColorSpace=THREE.SRGBColorSpace;
+renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.12;
+renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
 renderer.domElement.setAttribute('aria-label','움직임을 따라 하는 전신 3D 아바타');
 $('avatar-stage').append(renderer.domElement);
-scene.add(new THREE.HemisphereLight(0xffffff,0xaab8b1,2.2));
-const key=new THREE.DirectionalLight(0xffffff,2.3);key.position.set(3,5,4);scene.add(key);
-const floor=new THREE.Mesh(new THREE.CircleGeometry(1.3,64),new THREE.MeshBasicMaterial({color:0xe6e5dc}));
-floor.rotation.x=-Math.PI/2;floor.position.y=-.015;scene.add(floor);
+scene.add(new THREE.HemisphereLight(0xfffaf2,0xcbd3db,2.0));
+const key=new THREE.DirectionalLight(0xfff3e6,2.4);key.position.set(-3,5,4);key.castShadow=true;
+key.shadow.mapSize.set(1024,1024);Object.assign(key.shadow.camera,{left:-2,right:2,top:3,bottom:-2,near:.5,far:12});
+key.shadow.bias=-.00015;key.shadow.normalBias=.008;scene.add(key);
+const fill=new THREE.DirectionalLight(0xe8efff,.8);fill.position.set(3,2,1);scene.add(fill);
+const floor=new THREE.Mesh(new THREE.PlaneGeometry(10,10),new THREE.ShadowMaterial({opacity:.16,color:0x4e5555}));
+floor.rotation.x=-Math.PI/2;floor.position.y=.022;floor.receiveShadow=true;scene.add(floor);
 const recordCanvas=document.createElement('canvas');recordCanvas.width=960;recordCanvas.height=768;
 const recordCtx=recordCanvas.getContext('2d');
 function notice(text){$('notice').textContent=text;}
-function view(){const a=Number($('view').value);camera.position.set(Math.sin(a)*3.7,1.05,Math.cos(a)*3.7);camera.lookAt(target);}
+function view(){const a=Number($('view').value);camera.position.set(Math.sin(a)*3.25,1.0,Math.cos(a)*3.25);camera.lookAt(target);}
 function safeName(s){return (s||'우리모둠').replace(/[^\p{L}\p{N}_-]/gu,'_').slice(0,40);}
 function revision(){return crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`;}
 async function persist(key,value){if(!db)return false;try{await db.put(key,value);return true;}catch(e){notice('기기 저장 공간이 부족해요. 페이지를 닫기 전에 영상을 내려받아 주세요.');return false;}}
@@ -66,7 +71,8 @@ function showCombined(){
 async function loadAvatar(){
   busy=true;controls();notice('3D 아바타를 불러오고 있어요.');
   try{
-    const gltf=await new GLTFLoader().loadAsync(`./assets/kids/${$('avatar').value}.glb`);
+    const gltf=await new GLTFLoader().loadAsync(`./assets/kids/${$('avatar').value}.glb?v=2`);
+    gltf.scene.traverse(o=>{if(o.isMesh){o.castShadow=!/eye|iris|pupil|sparkle|brow|smile|lip|patch|stitch/.test(o.name);o.receiveShadow=true;}});
     const next=createKidRig(gltf.scene);if(rig){scene.remove(rig.scene);rig.dispose();}rig=next;scene.add(rig.scene);
     Motion.setAvatar(rig,rig.measures);notice('아바타 준비 완료. 카메라를 켜거나 시범 동작을 볼 수 있어요.');
   }catch(e){notice(`아바타를 불러오지 못했어요. 새로고침해 주세요. ${e.message}`);}

@@ -2,7 +2,8 @@ import bpy, bmesh, math, os, json, sys
 from mathutils import Vector, Quaternion
 from math import sin, cos, pi
 
-OUT = os.path.dirname(os.path.abspath(__file__))
+OUT = os.environ.get('KIDS_AVATAR_OUT', os.path.dirname(os.path.abspath(__file__)))
+os.makedirs(OUT, exist_ok=True)
 bpy.ops.object.select_all(action='SELECT'); bpy.ops.object.delete(use_global=False)
 for b in bpy.data.materials: bpy.data.materials.remove(b)
 
@@ -11,22 +12,22 @@ def material(name, color, rough=.5, metallic=0):
     p=m.node_tree.nodes.get('Principled BSDF');p.inputs['Base Color'].default_value=(*color,1);p.inputs['Roughness'].default_value=rough;p.inputs['Metallic'].default_value=metallic
     if 'Skin' in name: p.inputs['Subsurface Weight'].default_value=.055
     return m
-skin=material('Skin warm peach',(.64,.37,.22),.52)
-earmat=material('Skin inner ear',(.57,.25,.18),.65)
+skin=material('Skin warm peach',(.76,.49,.35),.62)
+earmat=material('Skin inner ear',(.72,.33,.27),.72)
 white=material('Warm ivory',(.91,.88,.79),.6)
-eyewhite=material('Eye sclera',(.95,.93,.87),.24)
-iris=material('Brown irises',(.075,.034,.014),.25)
-pupil=material('Pupils',(.006,.004,.003),.2)
+eyewhite=material('Eye sclera',(.93,.91,.85),.38)
+iris=material('Brown irises',(.16,.072,.034),.32)
+pupil=material('Pupils',(.018,.009,.007),.3)
 shine=material('Eye highlights',(1,1,1),.08)
 mouthmat=material('Smile',(.21,.055,.025),.6)
-lip=material('Skin lips',(.57,.22,.15),.6)
-navy=material('Navy shorts',(.022,.043,.086),.78)
-navyseam=material('Shorts seams',(.075,.11,.18),.8)
-hairmats=[material('Hair '+str(i),c,.63) for i,c in enumerate([(.044,.021,.012),(.062,.030,.018),(.077,.038,.022),(.052,.025,.014)])]
-yellow=material('Sunflower shirt',(.98,.58,.032),.72)
-yellowedge=material('Sunflower seam',(.79,.37,.018),.78)
-purple=material('Lavender shirt',(.49,.32,.69),.74)
-purpleedge=material('Lavender seam',(.35,.2,.49),.8)
+lip=material('Skin lips',(.65,.30,.23),.66)
+navy=material('Navy shorts',(.055,.091,.145),.87)
+navyseam=material('Shorts seams',(.089,.139,.20),.9)
+hairmats=[material('Hair '+str(i),c,.50) for i,c in enumerate([(.032,.019,.016),(.039,.023,.019),(.046,.027,.021),(.035,.021,.017)])]
+yellow=material('Sunflower shirt',(.92,.62,.17),.85)
+yellowedge=material('Sunflower seam',(.69,.40,.085),.9)
+purple=material('Lavender shirt',(.48,.37,.68),.85)
+purpleedge=material('Lavender seam',(.34,.25,.51),.9)
 rubber=material('Shoe sole',(.74,.73,.68),.8)
 
 def mesh(name,verts,faces,mat):
@@ -78,11 +79,43 @@ def lock(name,points,width,depth,mat):
         t=i/(len(ps)-1);tan=(ps[min(i+1,len(ps)-1)]-ps[max(0,i-1)]).normalized()
         ref=Vector((0,-1,0));a=tan.cross(ref)
         if a.length<.01:a=tan.cross(Vector((1,0,0)))
-        a.normalize();b=tan.cross(a).normalized();f=max(.025,sin(pi*(.12+.88*t))**.7)*(1-.55*t)
+        a.normalize();b=tan.cross(a).normalized();f=max(.012,(.85+.20*sin(pi*t))*(1-t**3))
         for j in range(n):vs.append(tuple(p+a*cos(j*2*pi/n)*width*f+b*sin(j*2*pi/n)*depth*f))
     for i in range(len(ps)-1):
         for j in range(n):faces.append((i*n+j,i*n+(j+1)%n,(i+1)*n+(j+1)%n,(i+1)*n+j))
     faces.extend([tuple(range(n-1,-1,-1)),tuple((len(ps)-1)*n+j for j in range(n))]);return mesh(name,vs,faces,mat)
+
+# Facial details conform to the head surface instead of sitting on protruding
+# spherical eyeballs. All details remain weighted only to the head bone.
+def face_y(x,z):
+    zz=(z-1.292)/.184
+    fac=.92+.08*min(1,max(0,(zz+.8)/.9))
+    return -.160*math.sqrt(max(.025,1-(x/(.192*fac))**2-zz**2))
+
+def face_patch(name,cx,cz,rx,rz,depth,mat):
+    vs=[];fc=[];segs=40;rows=8
+    for j in range(rows+1):
+        r=j/rows
+        for i in range(segs):
+            a=2*pi*i/segs;x=cx+rx*r*cos(a);z=cz+rz*r*sin(a)
+            vs.append((x,face_y(x,z)-depth-.003*(1-r*r),z))
+    for j in range(rows):
+        for i in range(segs):fc.append((j*segs+i,j*segs+(i+1)%segs,(j+1)*segs+(i+1)%segs,(j+1)*segs+i))
+    return mesh(name,vs,fc,mat)
+
+def face_curve(name,xz,radius,mat,depth=.008):
+    return tube(name,[(x,face_y(x,z)-depth,z) for x,z in xz],radius,mat)
+
+def cheek_colour(ob):
+    m=skin.copy();m.name='Soft peach face with cheek colour'
+    node=m.node_tree.nodes.new('ShaderNodeVertexColor');node.layer_name='Color'
+    m.node_tree.links.new(node.outputs['Color'],m.node_tree.nodes['Principled BSDF'].inputs['Base Color'])
+    ob.data.materials.clear();ob.data.materials.append(m)
+    colors=ob.data.color_attributes.new(name='Color',type='FLOAT_COLOR',domain='CORNER')
+    for loop in ob.data.loops:
+        x,y,z=ob.data.vertices[loop.vertex_index].co
+        blush=.38*math.exp(-((abs(x)-.112)/.039)**2-((z-1.268)/.029)**2)*max(0,min(1,-y/.11))
+        colors.data[loop.index].color=(.76+.04*blush,.49-.20*blush,.35-.08*blush,1)
 
 def character(kind,offset):
     boy=kind=='boy';color=yellow if boy else purple;edge=yellowedge if boy else purpleedge
@@ -119,7 +152,7 @@ def character(kind,offset):
         if z<.91:return smoothmix('hips','spine',(z-.78)/.13)
         return smoothmix('spine','chest',(z-.91)/.11)
     # torso and clothing use explicit zones, never head or hand influences
-    bind(ringmesh(kind+'_shirt',[((0,0,z),rx,ry) for z,rx,ry in [(.725,.151,.087),(.735,.155,.09),(.77,.158,.094),(.84,.151,.09),(.93,.167,.094),(.99,.193,.092),(1.035,.17,.085),(1.075,.113,.064),(1.09,.055,.045)]],color),upperweights)
+    bind(ringmesh(kind+'_shirt',[((0,0,z),rx,ry) for z,rx,ry in [(.715,.157,.091),(.725,.163,.095),(.75,.165,.097),(.78,.162,.098),(.84,.157,.097),(.90,.164,.098),(.96,.177,.094),(.99,.182,.090),(1.02,.172,.084),(1.05,.137,.071),(1.075,.105,.057),(1.09,.055,.045)]],color),upperweights)
     bind(ringmesh(kind+'_hem',[((0,0,z),.153,.089) for z in [.727,.737]],edge), 'hips')
     bind(ringmesh(kind+'_neck',[((0,0,z),r,r*.87) for z,r in [(1.075,.044),(1.15,.043),(1.17,.05)]],skin),'neck')
     bind(ringmesh(kind+'_collar',[((0,0,z),rx,ry) for z,rx,ry in [(1.085,.058,.047),(1.095,.057,.046),(1.101,.051,.041)]],white),'chest')
@@ -133,8 +166,10 @@ def character(kind,offset):
             return smoothmix(s+'LowerArm',s+'Hand',(x-.555)/.055)
         sections=[((sgn*x,0,1.04),ry,rz) for x,ry,rz in [(.145,.055,.056),(.18,.058,.06),(.235,.055,.052),(.30,.048,.047),(.355,.043,.043),(.385,.041,.041),(.418,.043,.043),(.47,.040,.04),(.53,.032,.032),(.58,.027,.027),(.602,.027,.023)]]
         bind(ringmesh(kind+'_'+s+'_arm',sections,skin,'X'),aw)
-        sleeve=ringmesh(kind+'_'+s+'_sleeve',[((sgn*x,0,z),ry,rz) for x,z,ry,rz in [(.133,1.032,.045,.048),(.15,1.036,.061,.065),(.18,1.037,.068,.071),(.205,1.039,.068,.068),(.245,1.04,.063,.059),(.263,1.04,.059,.055)]],color,'X')
-        bind(sleeve,s+'UpperArm');bind(ringmesh(kind+'_'+s+'_sleeve_seam',[((sgn*x,0,1.04),.0595,.0555) for x in [.257,.263]],edge,'X'),s+'UpperArm')
+        sleeve=ringmesh(kind+'_'+s+'_sleeve',[((sgn*x,0,z),ry,rz) for x,z,ry,rz in [(.12,1.030,.041,.042),(.14,1.033,.053,.052),(.165,1.036,.062,.061),(.19,1.038,.065,.064),(.22,1.04,.064,.061),(.25,1.04,.061,.057),(.275,1.04,.059,.054)]],color,'X')
+        bind(sleeve,s+'UpperArm')
+        bind(uvshape(kind+'_'+s+'_shoulder_cap',(sgn*.171,0,1.037),(.060,.063,.062),color,32,20),s+'UpperArm')
+        bind(ringmesh(kind+'_'+s+'_sleeve_seam',[((sgn*x,0,1.04),.0595,.0545) for x in [.267,.275]],white,'X'),s+'UpperArm')
         bind(uvshape(kind+'_'+s+'_palm',(sgn*.623,0,1.04),(.050,.043,.020),skin),s+'Hand')
         for fname,y,l in [('Index',-.027,.078),('Middle',-.009,.086),('Ring',.012,.079),('Little',.031,.061)]:
             names=[s+fname+j for j in ['Proximal','Intermediate','Distal']];base=.647;cuts=[base,base+l*.42,base+l*.75,base+l]
@@ -183,43 +218,70 @@ def character(kind,offset):
         bind(uvshape(kind+'_'+s+'_heel',(sgn*.09,.044,.075),(.048,.023,.032),color,28,16),s+'Foot')
         for q in range(4):
             yy=-.044+q*.018;bind(tube(kind+'_'+s+'_lace_'+str(q),[(sgn*.09-.031,yy,.113),(sgn*.09,yy-.004,.122),(sgn*.09+.031,yy,.113)],.0025,white),s+'Foot')
+    # Small, sewn chest mark; understated sportswear, no printed brand.
+    bind(uvshape(kind+'_chest_patch',(.085,-.096,.948),(.018,.002,.023),white,24,16),'chest')
+    bind(tube(kind+'_chest_patch_stitch',[(.077,-.100,.947),(.084,-.102,.940),(.095,-.099,.957)],.0022,edge),'chest')
     # all face and hair geometry is bound exclusively to head
     def egg(v):
-        x,y,z=v;fac=.80+.20*min(1,max(0,(z+.85)/.9));return Vector((x*fac,y,z))
-    bind(uvshape(kind+'_head',(0,0,1.285),(.181,.155,.201),skin,64,40,egg),'head')
+        x,y,z=v;fac=.92+.08*min(1,max(0,(z+.8)/.9));return Vector((x*fac,y,z))
+    head=bind(uvshape(kind+'_head',(0,0,1.292),(.192,.160,.184),skin,64,40,egg),'head');cheek_colour(head)
     for s,sgn in [('left',1),('right',-1)]:
-        bind(uvshape(kind+'_'+s+'_ear',(sgn*.167,.004,1.282),(.035,.024,.048),skin),'head');bind(uvshape(kind+'_'+s+'_ear_inner',(sgn*.18,-.016,1.282),(.016,.006,.027),earmat),'head')
-        bind(uvshape(kind+'_'+s+'_eye_white',(sgn*.069,-.139,1.325),(.051,.025,.059),eyewhite),'head')
-        bind(uvshape(kind+'_'+s+'_iris',(sgn*.067,-.162,1.322),(.031,.009,.039),iris),'head');bind(uvshape(kind+'_'+s+'_pupil',(sgn*.067,-.170,1.323),(.017,.003,.026),pupil),'head')
-        bind(uvshape(kind+'_'+s+'_eye_sparkle',(sgn*.067-.010,-.174,1.341),(.009,.002,.011),shine,24,16),'head');bind(uvshape(kind+'_'+s+'_eye_sparkle_small',(sgn*.067+.012,-.173,1.308),(.004,.002,.005),shine,20,12),'head')
-        brow=[(sgn*(.035+i*.019),-.142-(.004 if i==2 else 0),1.393+.012*sin(pi*i/4)) for i in range(5)];bind(tube(kind+'_'+s+'_brow',brow,.0055 if boy else .0045,hairmats[0]),'head')
-        upper=[(sgn*(.069+.052*cos(a)),-.148,1.325+.058*sin(a)) for a in [pi*i/10 for i in range(11)]];bind(tube(kind+'_'+s+'_eyelid',upper,.0025,hairmats[0]),'head')
-    bind(uvshape(kind+'_nose',(0,-.151,1.274),(.023,.030,.024),skin,32,20),'head')
-    bind(tube(kind+'_smile',[(-.044,-.148,1.235),(-.022,-.160,1.222),(0,-.163,1.219),(.022,-.160,1.222),(.044,-.148,1.235)],.0033,mouthmat),'head')
-    bind(tube(kind+'_lower_lip',[(-.026,-.158,1.216),(0,-.164,1.211),(.026,-.158,1.216)],.0038,lip),'head')
+        bind(uvshape(kind+'_'+s+'_ear',(sgn*.181,.008,1.285),(.029,.022,.038),skin),'head');bind(uvshape(kind+'_'+s+'_ear_inner',(sgn*.193,-.010,1.284),(.012,.006,.021),earmat),'head')
+        cx=sgn*.070;cz=1.323
+        bind(face_patch(kind+'_'+s+'_eye_white',cx,cz,.038,.044,.003,eyewhite),'head')
+        bind(face_patch(kind+'_'+s+'_iris_rim',cx-sgn*.001,cz,.0255,.032,.008,pupil),'head')
+        bind(face_patch(kind+'_'+s+'_iris',cx-sgn*.001,cz,.0235,.030,.0095,iris),'head')
+        bind(face_patch(kind+'_'+s+'_pupil',cx-sgn*.001,cz+.002,.012,.021,.011,pupil),'head')
+        bind(face_patch(kind+'_'+s+'_eye_sparkle',cx-.008,cz+.016,.006,.008,.013,shine),'head')
+        bind(face_patch(kind+'_'+s+'_eye_sparkle_small',cx+.010,cz-.014,.0025,.0035,.013,shine),'head')
+        brow=[(sgn*(.038+i*.015),1.382+.009*sin(pi*i/4)) for i in range(5)]
+        bind(face_curve(kind+'_'+s+'_brow',brow,.0042 if boy else .0035,hairmats[0],.005),'head')
+        upper=[(cx+.039*cos(a),cz+.043*sin(a)) for a in [pi*i/16 for i in range(17)]]
+        bind(face_curve(kind+'_'+s+'_eyelid',upper,.0018 if boy else .0025,hairmats[0],.005),'head')
+    bind(uvshape(kind+'_nose',(0,-.157,1.274),(.018,.018,.018),skin,32,20),'head')
+    # A small open smile with a curved tooth edge, rather than a painted line.
+    mouthvs=[];mouthfc=[]
+    for j in range(2):
+        for i in range(25):
+            t=(i-12)/12;x=.037*t;z=(1.234+.007*t*t) if j==0 else (1.215+.026*t*t)
+            mouthvs.append((x,face_y(x,z)-.004,z))
+    for i in range(24):mouthfc.append((i,i+1,26+i,25+i))
+    bind(mesh(kind+'_smile',mouthvs,mouthfc,mouthmat),'head')
+    teethvs=[];teethfc=[]
+    for j in range(2):
+        for i in range(19):
+            t=(i-9)/12;x=.037*t;z=1.234+.007*t*t-j*.005*(1-t*t)
+            teethvs.append((x,face_y(x,z)-.006,z))
+    for i in range(18):teethfc.append((i,i+1,20+i,19+i))
+    bind(mesh(kind+'_smile_teeth',teethvs,teethfc,eyewhite),'head')
+    bind(face_curve(kind+'_lower_lip',[(-.025,1.219),(0,1.212),(.025,1.219)],.0027,lip,.004),'head')
     # scalp cap with asymmetrical sculpted fringe
     vs=[];fc=[];segs=64;rows=24
     for j in range(rows+1):
         for i in range(segs):
-            ph=2*pi*i/segs;maxth=(1.58+.40*sin(ph)) if boy else (1.85+.67*sin(ph));th=maxth*j/rows
-            xx=.187*sin(th)*cos(ph);yy=.161*sin(th)*sin(ph);zz=1.305+.207*cos(th)
-            if not boy and sin(ph)>-.35:zz-=.045*(j/rows)**3
+            ph=2*pi*i/segs;maxth=(1.56+.39*sin(ph)) if boy else (1.88+.66*sin(ph));th=maxth*j/rows
+            xx=.199*sin(th)*cos(ph);yy=.170*sin(th)*sin(ph);zz=1.310+.187*cos(th)
+            if not boy and sin(ph)>-.40:zz-=.075*(j/rows)**3
             vs.append((xx,yy,zz))
     for j in range(rows):
         for i in range(segs):fc.append((j*segs+i,j*segs+(i+1)%segs,(j+1)*segs+(i+1)%segs,(j+1)*segs+i))
     bind(mesh(kind+'_hair_cap',vs,fc,hairmats[0]),'head')
     if boy:
-        locks=[([(-.17,.0,1.40),(-.15,-.07,1.49),(-.09,-.145,1.49),(-.135,-.15,1.39)],.055,.024),([(-.13,.01,1.47),(-.09,-.05,1.55),(.025,-.11,1.54),(-.05,-.168,1.398)],.065,.025),([(-.07,.065,1.50),(.01,.00,1.568),(.12,-.07,1.53),(.02,-.163,1.42)],.064,.027),([(.0,.09,1.49),(.08,.055,1.55),(.17,-.01,1.49),(.11,-.133,1.39)],.054,.025),([(.07,.09,1.43),(.15,.055,1.50),(.19,-.02,1.43),(.17,-.075,1.34)],.040,.024)]
-        for i,(p,w,d) in enumerate(locks):bind(lock(kind+'_hair_sweep_'+str(i),p,w,d,hairmats[i%4]),'head')
+        locks=[([(.10,.015,1.485),(.055,-.080,1.501),(-.035,-.141,1.455),(-.133,-.135,1.365)],.064,.008),([(.13,.025,1.475),(.097,-.079,1.480),(.048,-.155,1.434),(-.025,-.165,1.368)],.058,.008),([(.16,.030,1.450),(.156,-.064,1.448),(.129,-.137,1.390),(.098,-.145,1.353)],.044,.007),([(-.070,.040,1.475),(-.140,-.030,1.460),(-.176,-.075,1.383),(-.175,-.066,1.326)],.037,.008)]
+        for i,(p,w,d) in enumerate(locks):
+            p[0]=(p[0][0]*.88,p[0][1]+.012,p[0][2]-.045)
+            bind(lock(kind+'_hair_sweep_'+str(i),p,w,d,hairmats[i%4]),'head')
         for s,sgn in [('L',1),('R',-1)]:
-            for j in range(3):bind(lock(kind+'_side_hair_'+s+str(j),[(sgn*.11,.075-j*.035,1.46),(sgn*.18,.055-j*.035,1.40),(sgn*.176,.028-j*.03,1.30)],.026,.013,hairmats[(j+1)%4]),'head')
+            bind(lock(kind+'_side_hair_'+s,[(sgn*.135,.045,1.395),(sgn*.196,-.008,1.37),(sgn*.187,-.026,1.305)],.033,.007,hairmats[1]),'head')
     else:
-        for i,x in enumerate([-.13,-.075,-.02,.04,.10]):
-            bind(lock(kind+'_bang_'+str(i),[(x*.45,.0,1.50),(x*.8,-.10,1.48),(x,-.16,1.425),(x+.018,-.154,1.39)],.040,.014,hairmats[i%4]),'head')
+        bangs=[([(.075,.015,1.490),(.01,-.101,1.480),(-.075,-.151,1.438),(-.145,-.123,1.365)],.064),([(.10,.010,1.482),(.065,-.101,1.455),(.010,-.166,1.412),(-.030,-.165,1.382)],.051),([(.12,.025,1.470),(.143,-.066,1.439),(.162,-.108,1.366),(.177,-.076,1.307)],.048)]
+        for i,(p,w) in enumerate(bangs):
+            p[0]=(p[0][0]*.9,p[0][1]+.01,p[0][2]-.045)
+            bind(lock(kind+'_bang_'+str(i),p,w,.007,hairmats[i%4]),'head')
         for s,sgn in [('L',1),('R',-1)]:
-            for j in range(5):
-                y=-.055+j*.035;bind(lock(kind+'_bob_'+s+str(j),[(sgn*.13,y,1.46),(sgn*.19,y-.018,1.34),(sgn*.20,y-.012,1.19),(sgn*.15,y-.022,1.116)],.035,.026,hairmats[(j+1)%4]),'head')
-        bind(tube(kind+'_hairclip',[(.145,-.112,1.41),(.169,-.105,1.439),(.177,-.098,1.434),(.153,-.11,1.405),(.145,-.112,1.41)],.004,purple),'head')
+            for j in range(2):
+                y=-.025+j*.075;bind(lock(kind+'_bob_'+s+str(j),[(sgn*.138,y+.015,1.38),(sgn*.204,y-.018,1.315),(sgn*.211,y-.012,1.205),(sgn*.166,y-.022,1.135)],.048,.009,hairmats[(j+1)%4]),'head')
+        for j in range(2):bind(tube(kind+'_hairclip_'+str(j),[(.147+j*.009,-.131,1.397),(.167+j*.009,-.115,1.419)],.0033,white),'head')
     rig.location.x=offset
     return rig,objects,defs
 
