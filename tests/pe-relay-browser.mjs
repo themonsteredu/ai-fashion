@@ -55,6 +55,18 @@ export async function startCamera() {
   camera = true;
 }
 export function stopCamera() { camera = false; input.stops++; }
+export const getCameraZoom = () => input.zoom ?? null;
+export const canRequestCameraZoom = () => camera;
+export async function enableCameraZoom() {
+  input.zoomRequests++;
+  if (innerWidth < 1000) return null;
+  input.zoom = { min: 1, max: 2, step: 0.1, value: 1 };
+  return input.zoom;
+}
+export async function setCameraZoom(value) {
+  input.zoom.value = value;
+  return input.zoom;
+}
 export function resetForNextStudent() {
   input.resets++;
   frame = { snap: { present: false, calibrated: false, frameId }, ov: null };
@@ -86,7 +98,7 @@ async function openRelay(browser, viewport, rejectCamera = false) {
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.addInitScript(reject => {
-    window.__relayInput = { pose: {}, stale: false, rejectCamera: reject, starts: 0, stops: 0, resets: 0, frames: 0 };
+    window.__relayInput = { pose: {}, stale: false, rejectCamera: reject, starts: 0, stops: 0, resets: 0, frames: 0, zoomRequests: 0 };
   }, rejectCamera);
   await page.route('**/js/motion.js', route => route.fulfill({ body: tracker, contentType: 'text/javascript' }));
   await page.route('**/js/cambg.js', async route => {
@@ -125,6 +137,40 @@ async function setPose(page, pose, stale = false) {
     }
     input.stale = stale;
   }, { pose, stale });
+}
+
+async function checkCameraSetup(page, cameraDenied, zoomSupported) {
+  const setup = page.locator(ref('cameraSetup'));
+  if (cameraDenied) {
+    await page.locator(ref('camera')).filter({ hasText: '카메라 없이' }).waitFor({ state: 'visible' });
+    assert.equal(await setup.isVisible(), false);
+    return;
+  }
+  await setup.waitFor({ state: 'visible' });
+  assert.match(await page.locator(ref('setupTitle')).innerText(), /전신 맞추기/);
+  await setPose(page, { camH: 1.4 });
+  await page.locator(`${ref('framing')}[data-state="feet"]`).waitFor({ state: 'visible', timeout: 5000 });
+  await setPose(page, { camD: 2.65, camH: 0.72 });
+  await page.locator(`${ref('framing')}[data-state="ready"]`).waitFor({ state: 'visible', timeout: 5000 });
+  const [camera, stage] = await Promise.all([
+    page.locator('#cam-wrap').boundingBox(),
+    page.locator('.relay-stage').boundingBox(),
+  ]);
+  assert(Math.abs(camera.width - stage.width) <= 1 && Math.abs(camera.height - stage.height) <= 1);
+  assert.equal(await page.evaluate(() => window.__relayInput.zoomRequests), 0);
+  await click(page, 'zoom');
+  if (zoomSupported) {
+    const slider = page.locator(ref('zoomInput'));
+    await slider.waitFor({ state: 'visible' });
+    await slider.press('End');
+    await page.waitForFunction(() => window.__relayInput.zoom?.value === 2);
+    assert.equal(await slider.inputValue(), '2');
+  } else {
+    await page.locator(ref('zoomNote')).filter({ hasText: '줌을 조절할 수 없어요' }).waitFor({ state: 'visible' });
+    assert.equal(await page.locator(ref('zoomInput')).isVisible(), false);
+    assert.equal(await setup.isVisible(), true);
+  }
+  await setPose(page, {});
 }
 
 const hint = (page, type) => page.locator(`${ref('status')}[data-hint="${type}"]`).waitFor({ state: 'visible' });
@@ -298,6 +344,7 @@ try {
     const cameraDenied = width === 1024;
     const { page, errors } = await openRelay(browser, { width, height }, cameraDenied);
     try {
+      await checkCameraSetup(page, cameraDenied, width === 1366);
       const layout = width === 1366 ? await automaticThenManual(page) : await firstTurn(page, cameraDenied);
       assert.equal(!!layout.camera, !cameraDenied);
       await click(page, 'exit');

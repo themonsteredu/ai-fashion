@@ -188,6 +188,12 @@ body.relay-cam-on .relay-cam-slot {
   grid-area: 1 / 2;
 }
 
+body.relay-cam-on #pe-relay-root[data-phase="setup"] .relay-stage {
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+}
+body.relay-cam-on #pe-relay-root[data-phase="setup"] .relay-cam-slot { grid-area: 1 / 1; }
+body.relay-cam-on #pe-relay-root[data-phase="setup"] .relay-stage-label { display: none; }
+
 .relay-panel {
   display: grid;
   align-content: center;
@@ -221,14 +227,37 @@ body.relay-cam-on .relay-cam-slot {
 
 .relay-description, .relay-camera-note { color: var(--relay-muted); }
 
-.relay-concepts { display: flex; flex-wrap: wrap; gap: 6px; }
-.relay-concepts span {
-  border-radius: 99px;
-  padding: 5px 10px;
+.relay-camera-setup {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+}
+.relay-framing-status {
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: #fff5df;
+  color: #754908;
+  font-size: clamp(13px, 1.4vw, 18px);
+  font-weight: 700;
+  line-height: 1.5;
+  word-break: keep-all;
+}
+.relay-framing-status[data-state="ready"] {
   background: var(--relay-soft);
   color: var(--relay-green);
-  font-size: clamp(11px, 1.3vw, 16px);
+}
+.relay-zoom-control {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  color: var(--relay-green);
   font-weight: 700;
+}
+.relay-zoom-control input {
+  width: 100%;
+  min-height: 36px;
+  accent-color: var(--relay-green);
 }
 
 .relay-mode {
@@ -369,6 +398,9 @@ body.relay-cam-on .relay-cam-slot {
 @media (orientation: landscape) {
   body.relay-cam-on .relay-layout {
     grid-template-columns: minmax(0, 3fr) minmax(270px, 1fr);
+  }
+  body.relay-cam-on #pe-relay-root[data-phase="setup"] .relay-layout {
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
   }
   body.relay-cam-on .relay-play { padding: clamp(10px, 1.35vw, 26px); }
   body.relay-cam-on .relay-target {

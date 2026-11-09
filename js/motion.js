@@ -15,6 +15,7 @@ import * as THREE from 'three';
 import { FilesetResolver, PoseLandmarker, FaceLandmarker, HandLandmarker } from '../lib/mediapipe/vision_bundle.mjs';
 import { OneEuroVec3, safeNormalize, isFiniteVec } from './filters.js';
 import { HAND_PRESETS, blendHandPose, GestureDetector, HAND_GESTURE_DEFS, HeartDetector, HEART_ARM_PRESET, HEART_ARM_MIX } from './gestures.js';
+import { applyTrackZoom, canRequestTrackZoom, getTrackZoom, requestTrackZoomStream } from './pe-relay-camera.js';
 
 // ── 필터 파라미터 (부위별 One Euro) ──
 export const FILTER_PARAMS = {
@@ -297,6 +298,59 @@ export async function startCamera(videoEl) {
   video.srcObject = stream;
   await video.play();
   resetTracking();
+}
+
+export function getCameraZoom() {
+  return getTrackZoom(stream?.getVideoTracks()[0]);
+}
+
+export function canRequestCameraZoom() {
+  return canRequestTrackZoom(stream?.getVideoTracks()[0]);
+}
+
+export async function enableCameraZoom() {
+  const previous = stream;
+  const camera = video;
+  const existingZoom = getCameraZoom();
+  if (existingZoom) return existingZoom;
+
+  const candidate = await requestTrackZoomStream(previous?.getVideoTracks()[0]);
+  if (!candidate) return null;
+
+  const isCurrent = () => stream === previous && video === camera;
+  try {
+    const zoom = getTrackZoom(candidate.getVideoTracks()[0]);
+    if (!zoom || !isCurrent() || camera?.srcObject !== previous) return null;
+
+    camera.srcObject = candidate;
+    try {
+      await camera.play();
+    } catch (error) {
+      if (isCurrent() && camera.srcObject === candidate) {
+        camera.srcObject = previous;
+        camera.play().catch(() => {});
+      }
+      throw error;
+    }
+    if (!isCurrent() || camera.srcObject !== candidate) return null;
+
+    stream = candidate;
+    for (const track of previous.getTracks()) track.stop();
+    resetForNextStudent();
+    return zoom;
+  } finally {
+    if (stream !== candidate) for (const track of candidate.getTracks()) track.stop();
+  }
+}
+
+export async function setCameraZoom(value) {
+  const activeStream = stream;
+  const track = activeStream?.getVideoTracks()[0];
+  const before = getTrackZoom(track)?.value;
+  const zoom = await applyTrackZoom(track, value);
+  if (!zoom || stream !== activeStream || video?.srcObject !== activeStream) return null;
+  if (zoom.value !== before) resetForNextStudent();
+  return zoom;
 }
 
 export function stopCamera() {
