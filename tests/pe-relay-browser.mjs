@@ -138,14 +138,15 @@ async function beginTurn(page, name, student, captureDemo = false) {
   assert.match(await page.locator(ref('status')).innerText(), /시범/);
   assert.equal(await page.locator(action('complete')).isVisible(), false);
   if (captureDemo) await screenshot(page, 'demo');
-  if (student >= 19) {
+  const twoSteps = [8, 14, 20].includes(student);
+  if (twoSteps) {
     const watchFocus = page.locator(`${relay}[data-phase="watch"] [data-ref="focus"]`);
     await watchFocus.filter({ hasText: '1/2' }).waitFor({ state: 'visible' });
     await watchFocus.filter({ hasText: '2/2' }).waitFor({ state: 'visible' });
   }
   await phase(page, 'active');
   assert.equal(await turn(page), student);
-  if (student >= 19) assert.match(await page.locator(ref('focus')).innerText(), /1\/2/);
+  if (twoSteps) assert.match(await page.locator(ref('focus')).innerText(), /1\/2/);
 }
 
 async function checkLayout(page) {
@@ -207,20 +208,20 @@ async function automaticThenManual(page) {
 
   assert.equal(await completed(page), 0);
   assert.equal(await page.locator(ref('hold')).evaluate(el => el.value), 0);
-  const waist = { eR: 50, fR: -100 };
-  await setPose(page, waist);
+  const armsOut = { eL: 90, eR: 90 };
+  await setPose(page, armsOut);
   await page.waitForFunction(selector => document.querySelector(selector).value > 0, ref('hold'));
   await setPose(page, null);
   await hint(page, 'framing');
   assert.equal(await completed(page), 0, 'A brief correct pose cannot complete a turn');
   assert.equal(await page.locator(ref('hold')).evaluate(el => el.value), 0, 'Lost tracking resets the hold');
 
-  await setPose(page, waist, true);
+  await setPose(page, armsOut, true);
   await page.waitForTimeout(1100);
   await hint(page, 'framing');
   assert.match(await page.locator(ref('status')).innerText(), /영상이 다시 들어오면/);
   assert.equal(await completed(page), 0, 'One stale tracker frame cannot complete a turn');
-  await setPose(page, waist);
+  await setPose(page, armsOut);
   await phase(page, 'handoff');
   assert.match(await page.locator(ref('status')).innerText(), /미션 성공/);
   assert.equal(await page.locator(action('complete')).isVisible(), false);
@@ -231,9 +232,13 @@ async function automaticThenManual(page) {
   for (let student = 2; student <= 20; student++) {
     await beginTurn(page, 'next', student);
     assert.equal(await completed(page), student - 1);
+    if (student === 3) {
+      assert.match(await page.locator(ref('status')).innerText(), /선생님이 확인/);
+      assert.equal(await page.locator(ref('hold')).isVisible(), false);
+    }
     if (student === 13) {
-      assert.match(await page.locator(ref('title')).innerText(), /몸통을 왼쪽/,
-        'Upper-body setup replaces the original left-foot task');
+      assert.match(await page.locator(ref('title')).innerText(), /두 손을 옆으로/,
+        'Upper-body setup replaces the sliding footwork with an arm movement');
     }
     await click(page, 'complete');
     await phase(page, student < 20 ? 'handoff' : 'done');
@@ -276,7 +281,7 @@ async function firstTurn(page, cameraDenied) {
   await screenshot(page, cameraDenied ? 'camera-denied' : 'active');
   await click(page, 'complete');
   await phase(page, 'handoff');
-  assert.match(await page.locator(ref('status')).innerText(), /교사가 자세를 확인/);
+  assert.match(await page.locator(ref('status')).innerText(), /교사가 동작을 확인/);
   assert.equal(await completed(page), 1);
   return layout;
 }
