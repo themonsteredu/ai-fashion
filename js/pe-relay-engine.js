@@ -7,7 +7,7 @@ const SHOULDERS = ['L_SH', 'R_SH'];
 const HIPS = ['L_HIP', 'R_HIP'];
 const LEGS = ['L_KNEE', 'R_KNEE', 'L_ANK', 'R_ANK'];
 const IMAGE_JOINTS = {
-  NOSE: 0, L_EYE: 2, R_EYE: 5,
+  NOSE: 0,
   L_SH: 11, R_SH: 12, L_EL: 13, R_EL: 14, L_WR: 15, R_WR: 16,
   L_HIP: 23, R_HIP: 24, L_KNEE: 25, R_KNEE: 26, L_ANK: 27, R_ANK: 28,
 };
@@ -18,7 +18,6 @@ const between = (value, min, max) => value >= min && value <= max;
 const degrees = (radians) => radians * 180 / Math.PI;
 const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
 const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
-const onSide = (spec, side) => spec.filter(([bone]) => bone.startsWith(side === 'L' ? 'left' : 'right'));
 const z = (bone, angle) => [bone, Z, angle];
 
 function arm(side, elevation, bend = 0) {
@@ -29,26 +28,6 @@ function arm(side, elevation, bend = 0) {
 
 function condition(joints, hint, check) {
   return { joints, hint, check };
-}
-
-function wristAtWaist(side) {
-  return condition([side + '_WR', side + '_HIP'], `${sideName(side)}손을 허리 옆으로 가져와요.`, (p, unit) => {
-    const wrist = p[side + '_WR'], hip = p[side + '_HIP'];
-    return between((wrist.y - hip.y) / unit, 0.12, 0.78) && Math.abs(wrist.x - hip.x) <= 0.6 * unit;
-  });
-}
-
-function wristAtChest(side) {
-  return condition([side + '_WR'], `${sideName(side)}손을 가슴 앞으로 가져와요.`, (p, unit) => {
-    const wrist = p[side + '_WR'], center = mid(p.L_SH, p.R_SH);
-    return between((center.y - wrist.y) / unit, 0.15, 0.75) && Math.abs(wrist.x - center.x) <= 0.55 * unit;
-  });
-}
-
-function shoulderHeight(side, joint) {
-  const name = joint === 'WR' ? '손을' : '쪽 팔꿈치를';
-  return condition([side + '_' + joint], `${sideName(side)}${name} 어깨와 같은 높이에 맞춰요.`, (p, unit) =>
-    Math.abs(p[side + '_' + joint].y - p[side + '_SH'].y) <= 0.22 * unit);
 }
 
 function wristAboveHead(side) {
@@ -71,34 +50,6 @@ function armDirection(side, direction) {
   });
 }
 
-const headLeft = condition(['L_EYE', 'R_EYE'], '고개를 왼쪽 어깨 쪽으로 살짝 기울여요.', (p) => {
-  const eyes = Math.atan2(p.R_EYE.y - p.L_EYE.y, p.R_EYE.x - p.L_EYE.x);
-  const shoulders = Math.atan2(p.R_SH.y - p.L_SH.y, p.R_SH.x - p.L_SH.x);
-  return degrees(eyes - shoulders) >= 8;
-});
-
-function torsoLean(side) {
-  return condition(HIPS, `몸통을 ${sideName(side)}쪽으로 살짝 기울여요.`, (p) => {
-    const shoulders = mid(p.L_SH, p.R_SH), hips = mid(p.L_HIP, p.R_HIP);
-    return outward(side) * degrees(Math.atan2(shoulders.x - hips.x, shoulders.y - hips.y)) >= 8;
-  });
-}
-
-function footOut(side) {
-  return condition([...HIPS, ...LEGS], `${sideName(side)}발을 몸 옆 바닥에 한 걸음 옮겨요.`, (p, unit) => {
-    const other = side === 'L' ? 'R' : 'L';
-    const ankle = p[side + '_ANK'], otherAnkle = p[other + '_ANK'];
-    const sideOffset = outward(side) * (ankle.x - p[side + '_HIP'].x);
-    const otherOffset = Math.abs(otherAnkle.x - p[other + '_HIP'].x);
-    return sideOffset >= 0.25 * unit && sideOffset - otherOffset >= 0.2 * unit
-      && otherOffset <= 0.43 * unit
-      && Math.abs(ankle.y - otherAnkle.y) <= 0.28 * unit;
-  });
-}
-
-const rightKneeUp = condition(LEGS, '오른쪽 무릎과 발을 함께 살짝 들어요.', (p, unit) =>
-  p.R_KNEE.y - p.L_KNEE.y >= 0.18 * unit && p.R_ANK.y - p.L_ANK.y >= 0.2 * unit);
-
 function kneeAngle(hip, knee, ankle) {
   const a = [hip.x - knee.x, hip.y - knee.y, (hip.z ?? 0) - (knee.z ?? 0)];
   const b = [ankle.x - knee.x, ankle.y - knee.y, (ankle.z ?? 0) - (knee.z ?? 0)];
@@ -112,55 +63,113 @@ const kneesBent = condition([...HIPS, ...LEGS], '두 발은 바닥에 두고 양
   && kneeAngle(p.L_HIP, p.L_KNEE, p.L_ANK) <= 164
   && kneeAngle(p.R_HIP, p.R_KNEE, p.R_ANK) <= 164);
 
+function armFolded(side) {
+  return condition([side + '_EL', side + '_WR'], `${sideName(side)}쪽 팔꿈치를 접어 손을 어깨 가까이 가져와요.`, (p, unit) => {
+    const shoulder = p[side + '_SH'], elbow = p[side + '_EL'], wrist = p[side + '_WR'];
+    return distance(shoulder, wrist) <= 0.78 * (distance(shoulder, elbow) + distance(elbow, wrist))
+      && Math.abs(shoulder.y - wrist.y) <= 0.6 * unit;
+  });
+}
+
+const kneesStraight = condition([...HIPS, ...LEGS], '무릎을 펴고 일어서요.', (p) =>
+  kneeAngle(p.L_HIP, p.L_KNEE, p.L_ANK) >= 169 && kneeAngle(p.R_HIP, p.R_KNEE, p.R_ANK) >= 169);
+
 function step(instruction, demo, ...conditions) {
   const requiredLandmarks = [...new Set([...SHOULDERS, ...conditions.flatMap((c) => c.joints)])];
   return { instruction, demo, conditions, requiredLandmarks };
 }
 
 function mission(id, focus, title, steps) {
-  return { id, focus, title, steps, requiresFullBody: steps.some((s) => s.requiredLandmarks.some((k) => LEGS.includes(k))) };
+  const requiresFullBody = steps.some((s) => s.requiredLandmarks.some((key) => LEGS.includes(key)));
+  return { id, focus, title, steps, requiresFullBody, assessment: 'camera' };
 }
 
+// 연속 동작과 이동 경로는 교사가 관찰하고 완료를 누른다.
+function movement(id, focus, title, instruction, demoFrames, requiresFullBody = false) {
+  return { id, focus, title, steps: [step(instruction, demoFrames[0])], requiresFullBody, assessment: 'teacher', demoFrames };
+}
+
+const openArms = step('두 팔을 어깨 높이로 옆에 쭉 펴요.', KP.T, armDirection('L', 'level'), armDirection('R', 'level'));
+const foldArms = step('팔꿈치를 접고 두 손을 어깨 가까이 가져와요.', KP.SHOULDER, armFolded('L'), armFolded('R'));
 const vArms = [...arm('L', 0.88), ...arm('R', 0.88)];
-const chestArm = (side) => arm(side, -1.35, -2.5);
-const shoulderHands = step('두 손을 어깨 높이로 올려요.', KP.SHOULDER, shoulderHeight('L', 'WR'), shoulderHeight('R', 'WR'));
-const waistHands = step('두 손을 허리 높이로 가져와요.', KP.HIP, wristAtWaist('L'), wristAtWaist('R'));
-const tArms = step('두 팔을 어깨 높이로 옆에 뻗어요.', KP.T, armDirection('L', 'level'), armDirection('R', 'level'));
-const vArmsStep = step('두 팔을 위 대각선으로 뻗어 V를 만들어요.', vArms, armDirection('L', 'up'), armDirection('R', 'up'));
-const HEIGHT = '높이';
-const DIRECTION = '방향';
-const BODY = '몸통과 다리';
-const COMBINATION = '높이와 방향';
-const SEQUENCE = '순서';
+const upArms = step('두 손을 머리 위로 높이 뻗어요.', KP.UP, wristAboveHead('L'), wristAboveHead('R'));
+const downArms = step('두 팔을 아래쪽 대각선으로 뻗어요.', [...arm('L', -0.73), ...arm('R', -0.73)], armDirection('L', 'down'), armDirection('R', 'down'));
+const squat = MOVES.squat.keys.down.spec.filter(([bone]) => bone.endsWith('Leg'));
+const low = step('두 발을 바닥에 두고 무릎을 살짝 굽혀 몸을 낮춰요.', squat, kneesBent);
+const high = step('일어서서 두 손을 머리 위로 뻗어요.', KP.UP, kneesStraight, wristAboveHead('L'), wristAboveHead('R'));
+
+const X = [1, 0, 0], Y = [0, 1, 0];
+const turn = (angle) => [['spine', Y, angle], ['chest', Y, angle * 0.7], ['head', Y, angle * 0.55], ...KP.T];
+const reach = (side) => [...arm(side, 0.88), ...arm(side === 'L' ? 'R' : 'L', -0.73)];
+const swing = (side) => [...arm(side, -0.93, 1.3), ...arm(side === 'L' ? 'R' : 'L', -1.4)];
+const walkLeft = [...swing('R'), ['leftUpperLeg', X, -0.45], ['leftLowerLeg', X, 0.35], ['rightUpperLeg', X, 0.3]];
+const walkRight = [...swing('L'), ['rightUpperLeg', X, -0.45], ['rightLowerLeg', X, 0.35], ['leftUpperLeg', X, 0.3]];
+const leftKnee = MOVES.knee_up.keys.left.spec.filter(([bone]) => bone.endsWith('Leg'));
+const rightKnee = MOVES.knee_up.keys.right.spec.filter(([bone]) => bone.endsWith('Leg'));
+const stepLeft = [...KP.T, z('leftUpperLeg', 0.36)];
+const stepRight = [...KP.T, z('rightUpperLeg', -0.36)];
+const leanLeft = MOVES.side_bend.keys.left.spec;
+const leanRight = MOVES.side_bend.keys.right.spec;
 
 export const RELAY_MISSIONS = [
-  mission(1, HEIGHT, '오른손을 허리 높이로', [step('오른손을 허리 옆으로 가져와요.', onSide(KP.HIP, 'R'), wristAtWaist('R'))]),
-  mission(2, HEIGHT, '왼손을 가슴 높이로', [step('왼손을 가슴 앞으로 가져와요.', chestArm('L'), wristAtChest('L'))]),
-  mission(3, HEIGHT, '두 손을 어깨 높이로', [shoulderHands]),
-  mission(4, HEIGHT, '오른손을 머리 위로', [step('오른손을 머리 위로 올려요.', onSide(KP.UP, 'R'), wristAboveHead('R'))]),
-  mission(5, HEIGHT, '왼쪽 팔꿈치를 어깨 높이로', [step('왼쪽 팔꿈치를 어깨 높이로 올려요.', arm('L', 0, -0.8), shoulderHeight('L', 'EL'))]),
-  mission(6, DIRECTION, '오른팔을 오른쪽으로', [step('오른팔을 어깨 높이로 오른쪽에 뻗어요.', onSide(KP.T, 'R'), armDirection('R', 'level'))]),
-  mission(7, DIRECTION, '왼팔을 왼쪽으로', [step('왼팔을 어깨 높이로 왼쪽에 뻗어요.', onSide(KP.T, 'L'), armDirection('L', 'level'))]),
-  mission(8, DIRECTION, '오른팔을 위 대각선으로', [step('오른팔을 오른쪽 위 대각선으로 뻗어요.', arm('R', 0.88), armDirection('R', 'up'))]),
-  mission(9, DIRECTION, '왼팔을 아래 대각선으로', [step('왼팔을 왼쪽 아래 대각선으로 뻗어요.', arm('L', -0.73), armDirection('L', 'down'))]),
-  mission(10, DIRECTION, '두 팔로 V 만들기', [vArmsStep]),
-  mission(11, BODY, '고개를 왼쪽 어깨 쪽으로', [step('고개를 왼쪽 어깨 쪽으로 살짝 기울여요.', [z('neck', -0.2), z('head', -0.16)], headLeft)]),
-  mission(12, BODY, '몸통을 오른쪽으로', [step('몸통을 오른쪽으로 살짝 기울여요.', [z('spine', 0.22), z('chest', 0.13)], torsoLean('R'))]),
-  mission(13, BODY, '왼발을 왼쪽으로', [step('왼발을 왼쪽으로 한 걸음 옮겨요.', [z('leftUpperLeg', 0.3)], footOut('L'))]),
-  mission(14, BODY, '오른쪽 무릎을 위로', [step('오른쪽 무릎을 살짝 올려요.', MOVES.knee_up.keys.right.spec.filter(([bone]) => bone.endsWith('Leg')), rightKneeUp)]),
-  mission(15, BODY, '양 무릎을 살짝 굽히기', [step('두 발은 바닥에 두고 무릎을 살짝 굽혀요.', MOVES.squat.keys.down.spec.filter(([bone]) => bone.endsWith('Leg')), kneesBent)]),
-  mission(16, COMBINATION, '오른손은 머리 위, 왼손은 허리', [step('오른손은 머리 위에, 왼손은 허리 옆에 둬요.', [...onSide(KP.UP, 'R'), ...onSide(KP.HIP, 'L')], wristAboveHead('R'), wristAtWaist('L'))]),
-  mission(17, COMBINATION, '왼팔은 위, 오른팔은 아래', [step('왼팔은 위 대각선, 오른팔은 아래 대각선으로 뻗어요.', [...arm('L', 0.88), ...arm('R', -0.73)], armDirection('L', 'up'), armDirection('R', 'down'))]),
-  mission(18, COMBINATION, '왼팔은 왼쪽, 오른발은 오른쪽', [step('왼팔은 왼쪽으로 뻗고 오른발은 오른쪽으로 옮겨요.', [...onSide(KP.T, 'L'), z('rightUpperLeg', -0.3)], armDirection('L', 'level'), footOut('R'))]),
-  mission(19, SEQUENCE, '두 손을 허리에서 어깨로', [waistHands, shoulderHands]),
-  mission(20, SEQUENCE, '두 팔을 수평에서 V로', [tArms, vArmsStep]),
+  mission(1, '펴기 · 106~107쪽', '두 팔을 펴서 표지판 만들기', [openArms]),
+  mission(2, '접기 · 106~107쪽', '작은 소라처럼 팔 접기', [foldArms]),
+  movement(3, '비틀기 · 106~107쪽', '파도처럼 몸통 비틀기',
+    '발은 제자리에 두고 몸통을 왼쪽과 오른쪽으로 번갈아 비틀어요.', [turn(-0.5), KP.T, turn(0.5)]),
+  movement(4, '제자리 돌기 · 108~109쪽', '세탁기처럼 제자리 돌기',
+    '제자리에서 몸 전체를 한쪽으로 천천히 돌렸다가 정면으로 돌아와요.', [KP.T, turn(-0.95), KP.T], true),
+  movement(5, '털기 · 108~109쪽', '젖은 빨래처럼 손 털기',
+    '두 손을 내밀고 젖은 옷의 물기를 털듯 손목을 가볍게 털어요.',
+    [[...arm('L', -0.65, 1.0), ...arm('R', -0.65, 1.0)], [...arm('L', -0.65, 0.68), ...arm('R', -0.65, 0.68)]]),
+  movement(6, '흔들기 · 108~109쪽', '바람에 흔들리는 꽃',
+    '제자리에서 꽃이 바람에 흔들리듯 몸통을 양옆으로 움직여요.', [leanLeft, KP.HIP, leanRight, KP.HIP]),
+  movement(7, '워킹 · 102~103쪽', '숲길을 걷는 워킹',
+    '숲길을 걷듯 양발을 번갈아 짧게 내디뎌요.', [walkLeft, KP.DOWN, walkRight, KP.DOWN], true),
+  movement(8, '점핑 · 102~103쪽', '작은 통나무를 넘는 점핑',
+    '통나무를 넘는 흉내를 내요. 두 발로 살짝 뛰어 두 발로 내려와요.', [[...KP.DOWN, ...squat], KP.UP, [...KP.T, ...squat]], true),
+  movement(9, '호핑 · 102~103쪽', '한 발로 콩콩 호핑',
+    '한쪽 발을 들고, 바닥에 딛고 있는 발로 작게 뛰었다가 같은 발로 내려와요.',
+    [[...KP.T, ...leftKnee], [...KP.T, ...leftKnee, ['rightLowerLeg', X, 0.38]]], true),
+  movement(10, '스키핑 · 102~103쪽', '걸음과 뜀을 잇는 스키핑',
+    '한 발을 내디딘 뒤 그 발로 가볍게 뛰어요. 반대 발로 바꾸어 이어 가요.',
+    [walkLeft, [...swing('L'), ...rightKnee], walkRight, [...swing('R'), ...leftKnee]], true),
+  movement(11, '갤러핑 · 104~105쪽', '달리는 말처럼 갤러핑',
+    '한 발을 내디디며 가볍게 뛰고, 뒤 발을 재빨리 따라 붙여요. 같은 발이 앞에 와요.', [walkLeft, KP.DOWN, walkLeft], true),
+  movement(12, '리핑 · 104~105쪽', '무지개를 건너는 리핑',
+    '한 발로 바닥을 밀고 떠올라 반대 발로 내려와요. 짧게 건너요.',
+    [walkLeft, [...KP.T, ['leftUpperLeg', X, -0.7], ['rightUpperLeg', X, 0.58]], walkRight], true),
+  movement(13, '슬라이딩 · 104~105쪽', '오리처럼 옆으로 슬라이딩',
+    '한 발을 옆으로 내디딘 뒤 다른 발을 가까이 따라 붙여요.', [stepRight, KP.T, stepRight], true),
+  mission(14, '크기 · 116쪽', '작은 풍선이 커져요', [
+    foldArms,
+    step('커지는 풍선처럼 두 팔을 위 대각선으로 크게 펴요.', vArms, armDirection('L', 'up'), armDirection('R', 'up')),
+  ]),
+  mission(15, '높낮이 · 116쪽', '바닥에 내려앉는 풍선', [low]),
+  mission(16, '높낮이 · 116쪽', '하늘로 떠오르는 풍선', [upArms]),
+  movement(17, '경로 · 117쪽', '둥근 길 따라 움직이기',
+    '바닥에 반원을 그린다고 생각하며 짧은 걸음으로 둥글게 돌아가요.', [walkLeft, turn(-0.5), walkRight], true),
+  movement(18, '경로 · 117쪽', '지그재그 길 따라 움직이기',
+    '왼쪽 대각선, 오른쪽 대각선으로 방향을 바꾸며 짧게 걸어요.', [stepLeft, KP.DOWN, stepRight, KP.DOWN], true),
+  movement(19, '방향 · 117쪽', '앞으로, 뒤로, 옆으로',
+    '앞으로 한 걸음, 뒤로 한 걸음, 옆으로 한 걸음 움직여요.', [walkLeft, walkRight, stepRight], true),
+  mission(20, '높낮이 · 117쪽', '피아노 건반처럼 낮게, 높게', [low, high]),
 ];
 
 const UPPER_BODY = new Map([
-  [13, mission(13, '몸통과 팔', '몸통을 왼쪽으로', [step('몸통을 왼쪽으로 살짝 기울여요.', [z('spine', -0.22), z('chest', -0.13)], torsoLean('L'))])],
-  [14, mission(14, '몸통과 팔', '오른쪽 팔꿈치를 어깨 높이로', [step('오른쪽 팔꿈치를 어깨 높이로 올려요.', arm('R', 0, -0.8), shoulderHeight('R', 'EL'))])],
-  [15, mission(15, '몸통과 팔', '두 손을 가슴 높이로', [step('두 손을 가슴 앞으로 모아요.', [...chestArm('L'), ...chestArm('R')], wristAtChest('L'), wristAtChest('R'))])],
-  [18, mission(18, COMBINATION, '왼팔은 왼쪽, 오른손은 허리', [step('왼팔은 왼쪽으로 뻗고 오른손은 허리 옆에 둬요.', [...onSide(KP.T, 'L'), ...onSide(KP.HIP, 'R')], armDirection('L', 'level'), wristAtWaist('R'))])],
+  [4, movement(4, '돌기 · 상체 표현', '세탁기처럼 어깨 돌리기',
+    '두 어깨를 한쪽으로 돌렸다가 정면으로 돌아와요.', [KP.T, turn(-0.65), KP.T])],
+  [7, movement(7, '워킹 · 상체 표현', '숲길을 걷는 팔', '걷는 사람처럼 두 팔을 번갈아 움직여요.', [swing('L'), swing('R')])],
+  [8, mission(8, '점핑 · 상체 표현', '두 팔로 통나무 넘기', [downArms, upArms])],
+  [9, movement(9, '호핑 · 상체 표현', '한 팔로 콩콩', '같은 팔을 위로 두 번 가볍게 들어요.', [KP.DOWN, reach('R'), KP.DOWN, reach('R')])],
+  [10, movement(10, '스키핑 · 상체 표현', '왼팔과 오른팔로 박자 잇기', '왼팔과 오른팔을 차례로 접었다 펴요.', [swing('L'), reach('L'), swing('R'), reach('R')])],
+  [11, movement(11, '갤러핑 · 상체 표현', '먼저 가는 손, 따라오는 손', '한 손을 먼저 뻗고 다른 손을 그쪽으로 따라 보내요.', [reach('R'), leanRight, KP.DOWN])],
+  [12, movement(12, '리핑 · 상체 표현', '팔로 무지개 건너기', '한 팔을 위로 들어 올리고, 반대 팔로 무지개 끝을 이어요.', [reach('L'), KP.HANDS_UP, reach('R')])],
+  [13, movement(13, '슬라이딩 · 상체 표현', '두 손을 옆으로 미끄러뜨리기', '두 손을 가까이 모아 한쪽 옆으로 움직여요.', [KP.SHOULDER, leanRight, KP.SHOULDER])],
+  [15, mission(15, '높낮이 · 상체 표현', '풍선이 손 아래로 내려와요', [downArms])],
+  [17, movement(17, '경로 · 상체 표현', '손으로 둥근 길 그리기', '손으로 앞에 큰 반원을 그려요.', [reach('L'), KP.HANDS_UP, reach('R')])],
+  [18, movement(18, '경로 · 상체 표현', '손으로 지그재그 그리기', '손을 왼쪽 위, 오른쪽 아래로 번갈아 움직여요.', [reach('L'), reach('R'), reach('L')])],
+  [19, movement(19, '방향 · 상체 표현', '손을 앞으로, 안쪽으로, 옆으로', '손을 앞으로 뻗었다 가슴으로 가져온 뒤 양옆으로 펴요.', [KP.SHOULDER, KP.T])],
+  [20, mission(20, '높낮이 · 상체 표현', '손으로 낮고 높은 건반 누르기', [downArms, upArms])],
 ]);
 
 export function getRelayMissions({ upperBodyOnly = false } = {}) {
@@ -251,6 +260,8 @@ export class RelaySession {
     const fresh = frameId == null || frameId !== this.lastFrameId;
     this.lastFrameId = frameId;
     if (this.phase !== 'active' || this.paused) return this.getState();
+    const mission = this.missions[this.turn - 1];
+    if (mission.assessment === 'teacher') return this.getState();
     const dt = this.lastSampleAt == null ? 0 : nowMs - this.lastSampleAt;
     if (!fresh) {
       if (this.lastSampleAt == null) this.lastSampleAt = nowMs;
@@ -259,7 +270,7 @@ export class RelaySession {
     }
 
     this.lastSampleAt = nowMs;
-    const target = this.missions[this.turn - 1].steps[this.step];
+    const target = mission.steps[this.step];
     const check = evaluateRelayStep(snapshot, target, overlay);
     this.hint = check.hint;
     this.hintType = check.hintType;
@@ -270,7 +281,7 @@ export class RelaySession {
       else if (this.wasMatching) this.holdMs += dt;
       this.wasMatching = true;
       if (this.holdMs >= RELAY_HOLD_MS) {
-        if (this.step === this.missions[this.turn - 1].steps.length - 1) this.finishTurn('camera');
+        if (this.step === mission.steps.length - 1) this.finishTurn('camera');
         else { this.step += 1; this.clearHold(); }
       }
     }

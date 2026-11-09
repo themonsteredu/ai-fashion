@@ -4,6 +4,8 @@ import { loadPESettings } from './pe-moves.js';
 import * as Sound from './pe-sound.js';
 
 const WATCH_MS = 2000;
+const MOVEMENT_WATCH_MS = 2800;
+const MOVEMENT_FRAME_MS = 700;
 const TOTAL = 20;
 let deps, root, els, cam, layoutObserver;
 let relay = null;
@@ -40,10 +42,10 @@ export function init(d) {
       <div class="relay-panel" data-relay-view="setup">
         <p class="relay-eyebrow">수업 준비</p>
         <h2>한 명씩 나와 자세를 바꿔요</h2>
-        <p class="relay-description">20명이 번호 순서대로 한 가지 미션씩 수행해요. 앞 친구가 마치면 다음 번호 학생이 나와요.</p>
-        <div class="relay-concepts" aria-label="오늘의 학습 주제"><span>신체 부위</span><span>높낮이</span><span>방향</span></div>
+        <p class="relay-description">교과서에 나온 움직임을 20명이 번호 순서대로 하나씩 표현해요. 앞 친구가 마치면 다음 번호 학생이 나와요.</p>
+        <div class="relay-concepts" aria-label="오늘의 학습 주제"><span>제자리 움직임</span><span>이동 움직임</span><span>공간 표현</span></div>
         <label class="relay-mode" for="relay-upper-body">
-          <span><strong>상체만 사용</strong><small>다리 동작을 상체 미션으로 바꿔요.</small></span>
+          <span><strong>상체만 사용</strong><small>이동하거나 다리를 쓰는 미션을 팔과 몸통으로 표현해요.</small></span>
           <input type="checkbox" id="relay-upper-body" role="switch">
         </label>
         <div class="relay-setup-actions">
@@ -81,7 +83,7 @@ export function init(d) {
         <div class="relay-medal" data-ref="medal"></div>
         <p class="relay-eyebrow">릴레이 완료</p>
         <h2>20명 모두 마쳤어요!</h2>
-        <p class="relay-description">우리 반이 높낮이와 방향을 바꾸는 20가지 미션을 완주했어요.</p>
+        <p class="relay-description">우리 반이 교과서 속 움직임 미션 20가지를 완주했어요.</p>
         <dl class="relay-counts">
           <div><dt>카메라 인식</dt><dd data-ref="automatic">0명</dd></div>
           <div><dt>교사 확인</dt><dd data-ref="manual">0명</dd></div>
@@ -152,6 +154,9 @@ export function getDemoPose() {
   if (!relay) return null;
   const { phase, target } = getView();
   if (phase === 'active') return null;
+  const watch = relay.watch;
+  const frames = watch?.mission.demoFrames;
+  if (frames) return frames[Math.floor(watch.elapsed / MOVEMENT_FRAME_MS) % frames.length];
   return target?.demo || relay.missions[0].steps[0].demo;
 }
 
@@ -190,7 +195,7 @@ export function tick(nowMs) {
   const watch = relay.watch;
   if (watch) {
     watch.elapsed += dt;
-    const step = Math.floor(watch.elapsed / WATCH_MS);
+    const step = Math.floor(watch.elapsed / watch.interval);
     if (step >= watch.mission.steps.length) {
       relay.watch = null;
       if (!watch.retry) session.startTurn();
@@ -229,7 +234,8 @@ function beginWatch(retry = false) {
   if (retry) relay.session.retryTurn();
   else deps.resetStudent?.();
   relay.lastTick = null;
-  relay.watch = { turn, mission, retry, step: 0, elapsed: 0 };
+  const interval = mission.demoFrames ? MOVEMENT_WATCH_MS : WATCH_MS;
+  relay.watch = { turn, mission, retry, interval, step: 0, elapsed: 0 };
   Sound.unlock();
   announceDemo();
   render();
@@ -371,20 +377,24 @@ function renderPlay({ phase, turn, total, mission, step, target, progress, hint,
   visible(els.buttons.retry, phase === 'active');
   visible(els.buttons.complete, phase === 'active');
   visible(els.buttons.next, phase === 'handoff' && turn < total);
-  const canRecognize = relay.camera === 'ready' && deps.isMotionReady();
-  updateText(els.stageLabel, phase === 'active' && canRecognize ? '따라 하는 아바타' : '시범 아바타');
+  const trackingReady = relay.camera === 'ready' && deps.isMotionReady();
+  const teacherReview = mission.assessment === 'teacher';
+  const canRecognize = trackingReady && !teacherReview;
+  updateText(els.stageLabel, phase === 'active' && trackingReady ? '따라 하는 아바타' : '시범 아바타');
   els.buttons.complete.classList.toggle('relay-primary', !canRecognize);
   visible(els.hold, phase === 'active' && canRecognize);
   els.hold.value = progress || 0;
-  const watchSeconds = Math.ceil((WATCH_MS - (relay.watch?.elapsed || 0) % WATCH_MS) / 1000);
+  const interval = relay.watch?.interval ?? WATCH_MS;
+  const watchSeconds = Math.ceil((interval - (relay.watch?.elapsed || 0) % interval) / 1000);
   let status = {
     ready: `${turn}번 학생이 카메라 앞에 서면 시작해요.`,
     watch: `아바타의 시범을 봐요 · ${watchSeconds}초`,
     active: '자세를 만들고 잠깐 그대로 있어요.',
-    handoff: result?.method === 'teacher' ? '교사가 자세를 확인했어요!' : '자세를 인식했어요. 미션 성공!',
+    handoff: result?.method === 'teacher' ? '교사가 동작을 확인했어요!' : '자세를 인식했어요. 미션 성공!',
   }[phase];
   if (phase === 'active') {
-    if (relay.camera === 'failed') status = '카메라 없이 진행해요. 교사가 자세를 보고 완료를 눌러요.';
+    if (relay.camera === 'failed') status = '카메라 없이 진행해요. 교사가 동작을 보고 완료를 눌러요.';
+    else if (teacherReview) status = '동작을 끝내면 선생님이 확인해요.';
     else if (!canRecognize) status = '카메라 인식을 준비 중이에요. 교사가 직접 확인할 수 있어요.';
     else if (hint) status = hint;
   }
