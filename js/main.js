@@ -109,6 +109,14 @@ async function boot() {
     ...peDeps,
     onPractice: () => { Motion.stopCamera(); goMotion('pe'); },
     resetStudent: () => Motion.resetForNextStudent(),
+    getCameraZoom: () => Motion.getCameraZoom(),
+    canRequestCameraZoom: () => Motion.canRequestCameraZoom(),
+    enableCameraZoom: async () => {
+      const zoom = await Motion.enableCameraZoom();
+      if (zoom) syncCameraBackground();
+      return zoom;
+    },
+    setCameraZoom: value => Motion.setCameraZoom(value),
   });
   // 미션·퀴즈·체육: 설명 카드·정답 띠·코치 카드에 가리지 않는 빈 자리에 아바타 전신이 다 들어오게 (다리·발이 잘리지 않게)
   Avatar.setFitProvider((mode) => (mode === 'mission' ? missionFitRect() : mode === 'quiz' ? quizFitRect()
@@ -284,6 +292,14 @@ function goPreview() {
   show('motion');
 }
 
+function syncCameraBackground() {
+  const bg = $('#cam-bg');
+  const source = $('#cam').srcObject;
+  if (!bg || !source || bg.srcObject === source) return;
+  bg.srcObject = source;
+  bg.play().catch(() => {});
+}
+
 // mode: 'free' | 'mission' | 'quiz' | 'pe'(개별 체육 연습) | 'relay'(20명 포즈 릴레이)
 async function goMotion(mode) {
   const seq = ++motionSeq;
@@ -303,8 +319,7 @@ async function goMotion(mode) {
   try {
     await Motion.startCamera($('#cam'));
     // 흐릿한 배경 채움용 영상: 같은 스트림 공유 (전신이 다 보이도록 앞 영상은 contain)
-    const bg = $('#cam-bg');
-    if (bg && $('#cam').srcObject) { bg.srcObject = $('#cam').srcObject; bg.play().catch(() => {}); }
+    syncCameraBackground();
   } catch (e) {
     console.error('카메라 오류', e);
     cameraFailed = true;
@@ -395,7 +410,8 @@ function updateMissionPoseOverlay() {
 
   const points = MissionUI.isActive() || QuizUI.isActive() || PEUI.isActive() || RelayUI.isActive() ? Motion.getPoseOverlay() : null;
   const col = PEUI.isActive() || RelayUI.isActive() ? '#27c47b' : '#315cff'; // 체육은 초록 뼈대
-  const visible = !!points;
+  const framingGuide = RelayUI.isCheckingFraming();
+  const visible = !!points || framingGuide;
   canvas.classList.toggle('hidden', !visible);
   if (!visible) return;
 
@@ -415,6 +431,15 @@ function updateMissionPoseOverlay() {
   } else {
     drawH = h; drawW = h * videoAspect; offsetY = 0; offsetX = (w - drawW) / 2;
   }
+  if (framingGuide) {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([8, 6]);
+    ctx.strokeRect(offsetX + drawW * 0.05, offsetY + drawH * 0.04, drawW * 0.9, drawH * 0.92);
+    ctx.restore();
+  }
+  if (!points) return;
   const screenPoint = (p) => ({ x: offsetX + (1 - p.x) * drawW, y: offsetY + p.y * drawH });
   const usable = (p) => p && (p.visibility ?? 1) > 0.35;
 

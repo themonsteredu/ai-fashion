@@ -1,5 +1,6 @@
 import { RelaySession, getRelayMissions } from './pe-relay-engine.js';
 import { peFigure, peMedal } from './pe-figure.js';
+import { evaluateRelayFraming } from './pe-relay-framing.js';
 import { loadPESettings } from './pe-moves.js';
 import * as Sound from './pe-sound.js';
 
@@ -7,6 +8,7 @@ const WATCH_MS = 2000;
 const MOVEMENT_WATCH_MS = 2800;
 const MOVEMENT_FRAME_MS = 700;
 const TOTAL = 20;
+const FRAMING_INTERVAL_MS = 200;
 let deps, root, els, cam, layoutObserver;
 let relay = null;
 const visible = (el, show) => { el.hidden = !show; };
@@ -41,9 +43,17 @@ export function init(d) {
       </div>
       <div class="relay-panel" data-relay-view="setup">
         <p class="relay-eyebrow">수업 준비</p>
-        <h2>한 명씩 나와 자세를 바꿔요</h2>
-        <p class="relay-description">교과서에 나온 움직임을 20명이 번호 순서대로 하나씩 표현해요. 앞 친구가 마치면 다음 번호 학생이 나와요.</p>
-        <div class="relay-concepts" aria-label="오늘의 학습 주제"><span>제자리 움직임</span><span>이동 움직임</span><span>공간 표현</span></div>
+        <h2 data-ref="setupTitle">한 명씩 나와 자세를 바꿔요</h2>
+        <p class="relay-description" data-ref="setupDescription">교과서에 나온 움직임을 20명이 번호 순서대로 하나씩 표현해요.</p>
+        <section class="relay-camera-setup" data-ref="cameraSetup" aria-label="카메라 맞추기" hidden>
+          <p class="relay-framing-status" data-ref="framing" role="status"></p>
+          <div class="relay-zoom-control" data-ref="zoomControl" hidden>
+            <label for="relay-camera-zoom">카메라 줌</label>
+            <input id="relay-camera-zoom" data-ref="zoomInput" type="range">
+          </div>
+          <button type="button" data-relay-action="zoom" hidden>카메라 줌 연결</button>
+          <p class="relay-camera-note" data-ref="zoomNote" role="status" hidden></p>
+        </section>
         <label class="relay-mode" for="relay-upper-body">
           <span><strong>상체만 사용</strong><small>이동하거나 다리를 쓰는 미션을 팔과 몸통으로 표현해요.</small></span>
           <input type="checkbox" id="relay-upper-body" role="switch">
@@ -105,8 +115,11 @@ export function init(d) {
   visible(els.buttons.practice, !!deps.onPractice);
   root.addEventListener('click', onClick);
   els.upperBody.addEventListener('change', () => {
-    if (relay) relay.upperBodyOnly = els.upperBody.checked;
+    if (!relay) return;
+    relay.upperBodyOnly = els.upperBody.checked;
+    renderCameraSetup();
   });
+  els.zoomInput.addEventListener('change', () => adjustZoom(els.zoomInput.valueAsNumber));
   document.addEventListener('visibilitychange', () => {
     if (!relay) return;
     relay.lastTick = null;
@@ -135,10 +148,15 @@ export function prepare() {
 export function start({ cameraOk = true } = {}) {
   if (!relay) return;
   relay.camera = cameraOk ? 'ready' : 'failed';
+  relay.zoom = cameraOk ? deps.getCameraZoom() : null;
   render();
 }
 
 export function isActive() { return relay !== null; }
+
+export function isCheckingFraming() {
+  return relay?.camera === 'ready' && !relay.session;
+}
 
 export function forceStop() {
   if (!relay) return;
@@ -188,7 +206,13 @@ export function tick(nowMs) {
   const dt = relay.lastTick === null ? 0 : Math.max(0, Math.min(100, nowMs - relay.lastTick));
   relay.lastTick = nowMs;
   const session = relay.session;
-  if (!session) return;
+  if (!session) {
+    if (isCheckingFraming() && nowMs >= (relay.nextFramingAt ?? 0)) {
+      relay.nextFramingAt = nowMs + FRAMING_INTERVAL_MS;
+      renderFraming();
+    }
+    return;
+  }
   const isPaused = paused();
   session.setPaused(isPaused);
   if (isPaused) return;
@@ -251,6 +275,9 @@ function onClick(event) {
   const button = event.target.closest('[data-relay-action]');
   if (!button || button.disabled || !relay || paused()) return;
   switch (button.dataset.relayAction) {
+    case 'zoom':
+      adjustZoom();
+      break;
     case 'start':
       relay.missions = getRelayMissions({ upperBodyOnly: relay.upperBodyOnly });
       relay.session = new RelaySession({ upperBodyOnly: relay.upperBodyOnly });
@@ -322,19 +349,14 @@ function render() {
   visible(els.views.play, play);
   visible(els.views.done, phase === 'done');
   visible(els.progress, phase !== 'setup');
-  const camOn = play && relay.camera === 'ready';
+  const camOn = phase !== 'done' && relay.camera === 'ready';
   if (document.body.classList.contains('relay-cam-on') !== camOn || phaseChanged) {
     document.body.classList.toggle('relay-cam-on', camOn);
     refreshLayout();
   }
   updateText(els.buttons.sound, relay.muted ? '소리 꺼짐' : '소리 켜짐');
   els.buttons.sound.setAttribute('aria-pressed', String(relay.muted));
-  els.buttons.practice.disabled = relay.camera === 'pending';
-  updateText(els.camera, {
-    pending: '카메라 연결을 기다리는 중이에요. 교사가 직접 확인할 수 있어요.',
-    ready: '카메라 연결 완료',
-    failed: '카메라 없이 진행해요. 교사가 자세를 보고 완료를 눌러요.',
-  }[relay.camera]);
+  if (phase === 'setup') renderCameraSetup();
 
   if (play) renderPlay(view);
   if (phase === 'done') renderResult();
@@ -342,6 +364,73 @@ function render() {
   if (focused && focused.closest('[hidden]')) {
     const action = { setup: 'start', ready: 'student', handoff: 'next', done: 'restart' }[phase];
     if (action) els.buttons[action].focus({ preventScroll: true });
+  }
+}
+
+function renderFraming() {
+  const framing = deps.isMotionReady()
+    ? evaluateRelayFraming(deps.getOverlay(), { upperBodyOnly: relay.upperBodyOnly })
+    : { state: 'searching', message: '동작 인식을 준비하고 있어요.' };
+  if (els.framing.dataset.state !== framing.state) els.framing.dataset.state = framing.state;
+  updateText(els.framing, framing.message);
+}
+
+function renderCameraSetup() {
+  const cameraReady = isCheckingFraming();
+  visible(els.cameraSetup, cameraReady);
+  visible(els.camera, !cameraReady);
+  updateText(els.setupTitle, cameraReady ? (relay.upperBodyOnly ? '상체 맞추기' : '전신 맞추기') : '한 명씩 나와 자세를 바꿔요');
+  updateText(els.setupDescription, cameraReady
+    ? (relay.upperBodyOnly ? '가운데에 서서 머리와 허리, 양팔이 들어오게 맞춰요.' : '팔을 벌려도 머리와 손끝, 발끝이 화면 안에 들어오게 서요.')
+    : '교과서에 나온 움직임을 20명이 번호 순서대로 하나씩 표현해요.');
+  els.buttons.start.disabled = !!relay.zoomPending;
+  els.buttons.practice.disabled = relay.camera === 'pending' || !!relay.zoomPending;
+  if (!cameraReady) {
+    updateText(els.camera, relay.camera === 'pending'
+      ? '카메라 연결을 기다리는 중이에요. 교사가 직접 확인할 수 있어요.'
+      : '카메라 없이 진행해요. 교사가 자세를 보고 완료를 눌러요.');
+    return;
+  }
+  renderFraming();
+  const zoom = relay.zoom;
+  visible(els.zoomControl, !!zoom);
+  visible(els.buttons.zoom, !zoom && !relay.zoomUnavailable && deps.canRequestCameraZoom());
+  els.buttons.zoom.disabled = !!relay.zoomPending;
+  els.zoomInput.disabled = !!relay.zoomPending;
+  if (zoom && !relay.zoomPending) {
+    els.zoomInput.min = zoom.min;
+    els.zoomInput.max = zoom.max;
+    els.zoomInput.step = zoom.step;
+    els.zoomInput.value = zoom.value;
+  }
+  const zoomNote = relay.zoomPending ? '카메라 줌을 맞추고 있어요.' : relay.zoomNote;
+  visible(els.zoomNote, !!zoomNote);
+  updateText(els.zoomNote, zoomNote || '');
+}
+
+async function adjustZoom(value) {
+  if (!isCheckingFraming() || relay.zoomPending) return;
+  const setup = relay;
+  setup.zoomPending = true;
+  setup.zoomNote = '';
+  renderCameraSetup();
+  try {
+    const zoom = await (value === undefined ? deps.enableCameraZoom() : deps.setCameraZoom(value));
+    if (relay !== setup) return;
+    setup.zoom = zoom;
+    if (!zoom) {
+      setup.zoomUnavailable = true;
+      setup.zoomNote = '이 카메라는 웹에서 줌을 조절할 수 없어요. 화면을 보며 카메라 위치를 맞춰 주세요.';
+    }
+  } catch {
+    if (relay !== setup) return;
+    setup.zoom = deps.getCameraZoom();
+    setup.zoomNote = '줌을 적용하지 못했어요. 카메라 영상은 계속 사용할 수 있어요.';
+  } finally {
+    if (relay === setup) {
+      setup.zoomPending = false;
+      renderCameraSetup();
+    }
   }
 }
 
