@@ -16,6 +16,7 @@ import { FilesetResolver, PoseLandmarker, FaceLandmarker, HandLandmarker } from 
 import { OneEuroVec3, safeNormalize, isFiniteVec } from './filters.js';
 import { HAND_PRESETS, blendHandPose, GestureDetector, HAND_GESTURE_DEFS, HeartDetector, HEART_ARM_PRESET, HEART_ARM_MIX } from './gestures.js';
 import { applyTrackZoom, canRequestTrackZoom, getTrackZoom, requestTrackZoomStream } from './pe-relay-camera.js';
+import { bodyOrientation, groundedHipDrop } from './spatial-pose.js';
 
 // ── 필터 파라미터 (부위별 One Euro) ──
 export const FILTER_PARAMS = {
@@ -116,6 +117,7 @@ let calibStartMs = 0;
 let calibAccum = null;
 let skeleton = null;           // 아바타 골격 치수 (setAvatar에서 계산)
 let vrmVersion = '?';
+let spatialRig = false;
 
 // 발 잠금 상태
 const feet = {
@@ -202,6 +204,7 @@ export function getHeadHint() {
 // 새 아바타 등록: 골격 치수 측정 + 상태 초기화
 export function setAvatar(vrm, measures) {
   skeleton = measures || null;
+  spatialRig = vrm?.meta?.spatialRig === true;
   vrmVersion = (vrm && vrm.meta && (vrm.meta.metaVersion || vrm.meta.specVersion)) || '?';
   hipsRest = null;
   resetTracking();
@@ -236,7 +239,7 @@ function resetTracking() {
   heartBlendCur = 0;
 }
 
-export async function initTrackers(onStatus) {
+export async function initTrackers(onStatus, { face: enableFace = true } = {}) {
   onStatus && onStatus('모션 인식 준비 중…');
   const fileset = await FilesetResolver.forVisionTasks('./lib/mediapipe/wasm');
 
@@ -253,7 +256,7 @@ export async function initTrackers(onStatus) {
       minPosePresenceConfidence: 0.5,
       minTrackingConfidence: 0.6,
     });
-    const face = await FaceLandmarker.createFromOptions(fileset, {
+    const face = enableFace ? await FaceLandmarker.createFromOptions(fileset, {
       baseOptions: { modelAssetPath: './models/face_landmarker.task', delegate },
       runningMode: 'VIDEO',
       outputFaceBlendshapes: true,
@@ -261,7 +264,7 @@ export async function initTrackers(onStatus) {
       minFaceDetectionConfidence: 0.5,
       minFacePresenceConfidence: 0.5,
       minTrackingConfidence: 0.5,
-    });
+    }) : null;
     const hand = await HandLandmarker.createFromOptions(fileset, {
       baseOptions: { modelAssetPath: './models/hand_landmarker.task', delegate },
       runningMode: 'VIDEO',
@@ -449,7 +452,7 @@ function ingestPose(world, dt, now) {
       y: (poseImg[idx].y - originY) * scale,
       z: world[idx].z,
     };
-    const p = conv(hybrid);
+    const p = conv(spatialRig ? world[idx] : hybrid);
     if (!isFiniteVec(p)) continue;
     raw.set(idx, p.clone());
 
@@ -796,15 +799,16 @@ function computeTargets(vrm, now, dt) {
   // ── 골반 ──
   const hipAcross = safeNormalize(_v1.copy(p(LM.R_HIP)).sub(p(LM.L_HIP)), X_AXIS);
   _q1.setFromUnitVectors(X_AXIS, hipAcross);
-  const qHipsWorld = new THREE.Quaternion().copy(IDENTITY).slerp(_q1, HIPS_AMOUNT);
-  clampRotation(qHipsWorld, 0.6);
+  const torsoUp = p(LM.L_SH).clone().add(p(LM.R_SH)).sub(p(LM.L_HIP)).sub(p(LM.R_HIP)).normalize();
+  const qHipsWorld = spatialRig ? (bodyOrientation(hipAcross, torsoUp) || _q1.clone()) : new THREE.Quaternion().copy(IDENTITY).slerp(_q1, HIPS_AMOUNT);
+  if (!spatialRig) clampRotation(qHipsWorld, 0.6);
   setTargetSafe('hips', qHipsWorld);
 
   // ── 몸통 ──
   const across = safeNormalize(_v1.copy(p(LM.R_SH)).sub(p(LM.L_SH)), X_AXIS);
   _q1.setFromUnitVectors(X_AXIS, across);
-  const qChestWorld = new THREE.Quaternion().copy(IDENTITY).slerp(_q1, TORSO_AMOUNT);
-  clampRotation(qChestWorld, 0.8);
+  const qChestWorld = spatialRig ? (bodyOrientation(across, torsoUp) || _q1.clone()) : new THREE.Quaternion().copy(IDENTITY).slerp(_q1, TORSO_AMOUNT);
+  if (!spatialRig) clampRotation(qChestWorld, 0.8);
   const relTorso = _q2.copy(qHipsWorld).invert().multiply(qChestWorld);
   const spineQ = new THREE.Quaternion().copy(IDENTITY).slerp(relTorso, 0.5);
   setTargetSafe('spine', spineQ);
@@ -843,6 +847,14 @@ function computeTargets(vrm, now, dt) {
   crouch = Math.max(crouch, kneeBend(LM.R_HIP, LM.R_KNEE, LM.R_ANK));
   const hipsH = hipsRest ? hipsRest.y : 0.8;
   hipsOffsetTarget.y = -crouch * CROUCH_DEPTH * hipsH;
+  if (spatialRig && skeleton) {
+    const legs = [[LM.L_HIP,LM.L_KNEE,LM.L_ANK],[LM.R_HIP,LM.R_KNEE,LM.R_ANK]].map(([h,k,a])=>({
+      visible:Math.min(vis(h),vis(k),vis(a))>=VIS_SOFT,
+      upper:p(k).clone().sub(p(h)),lower:p(a).clone().sub(p(k)),
+    }));
+    const drop=groundedHipDrop(legs,skeleton.upperLegLen,skeleton.lowerLegLen);
+    if(drop!==null)hipsOffsetTarget.y=drop;
+  }
   if (poseImg) {
     const hipMidX = (poseImg[LM.L_HIP].x + poseImg[LM.R_HIP].x) / 2;
     let targetX = THREE.MathUtils.clamp((0.5 - hipMidX) * SIDE_STEP_RANGE, -0.45, 0.45);
@@ -868,7 +880,13 @@ function computeTargets(vrm, now, dt) {
     const roll = clampAbs(Math.atan2(earLine.y, Math.abs(earLine.x) || 0.01), HEAD_LIMIT * 0.8);
     const headWorld = _q1.setFromEuler(new THREE.Euler(pitch, yaw, roll, 'YXZ'));
     clampRotation(headWorld, 0.9);
+    if (spatialRig) {
+      const headAcross=p(LM.R_EAR).clone().sub(p(LM.L_EAR));
+      const q=bodyOrientation(headAcross,torsoUp);
+      if(q)headWorld.copy(q);else headWorld.copy(qChestWorld);
+    }
     const rel = _q2.copy(qChestWorld).invert().multiply(headWorld);
+    if (spatialRig) clampRotation(rel,1.1);
     const neckQ = new THREE.Quaternion().copy(IDENTITY).slerp(rel, 0.4);
     applyGated('neck', neckQ, headGate);
     applyGated('head', _q3.copy(neckQ).invert().multiply(rel), headGate);
@@ -915,7 +933,8 @@ function computeTargets(vrm, now, dt) {
         }
       }
     }
-    applyGated(ua, _q3.copy(parentWorld).invert().multiply(qUpperWorld), gate);
+    const armParent = spatialRig ? parentWorld.clone().multiply(targets[sh]) : parentWorld;
+    applyGated(ua, _q3.copy(armParent).invert().multiply(qUpperWorld), gate);
 
     if (!lowerDir) {
       // 손목만 잠깐 놓친 경우: 아래팔은 마지막 자세 유지 (팔이 홱 펴지는 것 방지)
@@ -975,7 +994,7 @@ function solveLegs(vrm, qHipsWorld, now, dt) {
       foot.prevY = ankleWorld.y;
 
       // 접촉 판정: 낮고 + 느리게 움직일 때 잠금
-      if (!foot.locked && h < FOOT_CONTACT_H && Math.abs(foot.vy) < FOOT_CONTACT_VY) {
+      if (!spatialRig && !foot.locked && h < FOOT_CONTACT_H && Math.abs(foot.vy) < FOOT_CONTACT_VY) {
         foot.locked = true;
         foot.lockPos.copy(ankleWorld);
         foot.lockPos.y = Math.max(calib.floorY, 0.02);
@@ -1022,7 +1041,7 @@ function solveLegs(vrm, qHipsWorld, now, dt) {
     }
 
     // F. 무릎 역접힘 방지: 접히는 방향이 반대면 자연 방향으로 보정
-    if (lowerDir) {
+    if (lowerDir && !spatialRig) {
       const s = _v1.copy(upperDir).cross(lowerDir).dot(X_AXIS);
       if (s < -0.03) {
         const bendAngle = Math.acos(THREE.MathUtils.clamp(upperDir.dot(lowerDir), -1, 1));
@@ -1040,7 +1059,7 @@ function solveLegs(vrm, qHipsWorld, now, dt) {
       clampRotation(relLower, 2.4);
       applyGated(ll, relLower, gate);
       // 발바닥은 바닥과 수평 유지
-      applyGated(ft, _q3.copy(qLowerWorld).invert(), gate);
+      applyGated(ft, spatialRig ? _q3.copy(qLowerWorld).invert().multiply(qHipsWorld) : _q3.copy(qLowerWorld).invert(), gate);
     } else {
       applyGated(ll, IDENTITY, gate);
       applyGated(ft, IDENTITY, gate);
