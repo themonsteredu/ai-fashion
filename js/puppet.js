@@ -12,6 +12,7 @@ import * as Avatar from './avatar.js';
 import { correctJoints } from './rig-editor.js';
 import { buildMesh } from './puppet-mesh.js';
 import { DEMO, DEMO_FLAT, DEMO_FLAT_RULE_OK } from './missionvisuals.js';
+import { SAMPLE_UNDERARM_CLEANUP, sampleUnderarmMask, underarmFade } from './underarm-cleanup.js';
 
 const MAX_SIDE = 2048;     // 그림 긴 변 최대 픽셀 (큰 사진은 줄여서 사용)
 const GRID_ROWS = 120;     // 메시 세로 격자 수
@@ -349,7 +350,7 @@ function vrmHeight(vrm) {
   return THREE.MathUtils.clamp(hgt || 1.5, 1.2, 1.9);
 }
 
-function build(prep, mode, J, vrm) {
+function build(prep, mode, J, vrm, cleanSampleUnderarms = false) {
   const bonesDef = buildBoneDefs(mode, J, prep);
   const worldH = vrmHeight(vrm);
   const originX = bonesDef[0].name === 'root' && mode !== 'standee' ? bonesDef[0].head[0] : prep.w / 2;
@@ -399,7 +400,41 @@ function build(prep, mode, J, vrm) {
     blendSrcAlpha: THREE.OneFactor, blendDstAlpha: THREE.OneMinusSrcAlphaFactor,
     depthTest: false, depthWrite: false, side: THREE.DoubleSide, toneMapped: false,
   });
-  const skinned = new THREE.SkinnedMesh(geo, mat);
+  let cleanup = null, material = mat;
+  if (cleanSampleUnderarms && mode !== 'standee') {
+    const pixels = prep.canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, prep.w, prep.h).data;
+    const canvas = document.createElement('canvas'); canvas.width = prep.w; canvas.height = prep.h;
+    const ctx = canvas.getContext('2d'), mask = ctx.createImageData(prep.w, prep.h);
+    mask.data.set(sampleUnderarmMask(pixels, prep.w, prep.h, prep.toCanvas));
+    ctx.putImageData(mask, 0, 0);
+    const maskTexture = new THREE.CanvasTexture(canvas);
+    maskTexture.generateMipmaps = false;
+    maskTexture.minFilter = maskTexture.magFilter = THREE.LinearFilter;
+    const uniforms = { underarmMask: { value: maskTexture }, leftLift: { value: 0 }, rightLift: { value: 0 } };
+    const bodyMat = mat.clone();
+    bodyMat.userData.underarmCleanup = uniforms;
+    bodyMat.onBeforeCompile = (shader) => {
+      Object.assign(shader.uniforms, uniforms);
+      shader.fragmentShader = shader.fragmentShader.replace('void main() {', `
+        uniform sampler2D underarmMask;
+        uniform float leftLift;
+        uniform float rightLift;
+        void main() {`);
+      shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>', `
+        #include <map_fragment>
+        vec2 underarm = texture2D(underarmMask, vMapUv).rg;
+        float keepUnderarm = 1.0 - max(underarm.r * rightLift, underarm.g * leftLift);
+        diffuseColor *= keepUnderarm;`);
+    };
+    bodyMat.customProgramCacheKey = () => 'sample-underarm-cleanup-v1';
+    // The torso is masked independently; the moving sleeves retain the original texture.
+    const bodyCount = mesh.layerCounts[0] + mesh.layerCounts[1] + mesh.layerCounts[2];
+    geo.addGroup(0, bodyCount, 0);
+    geo.addGroup(bodyCount, mesh.layerCounts[3], 1);
+    material = [bodyMat, mat];
+    cleanup = { bodyMat, maskTexture, uniforms };
+  }
+  const skinned = new THREE.SkinnedMesh(geo, material);
   skinned.frustumCulled = false;
   skinned.renderOrder = 10;
   skinned.add(bones[0]);
@@ -416,7 +451,7 @@ function build(prep, mode, J, vrm) {
     eyes = [top.clone().setX(top.x + 0.035), top.clone().setX(top.x - 0.035)];
   }
 
-  return { mesh: skinned, bones, byName, skeleton, tex, mat, geo, mode, eyes, headBone, scale: s, worldH, armTouch: mesh.armTouch };
+  return { mesh: skinned, bones, byName, skeleton, tex, mat, geo, cleanup, mode, eyes, headBone, scale: s, worldH, armTouch: mesh.armTouch };
 }
 
 // 3D 아바타(VRM)의 뼈 월드 위치
@@ -490,7 +525,8 @@ export async function activate(source, { rig = null, onStatus = null, allowCorre
   if (allowCorrection && !(rig && rig.joints) && mode === 'standee') await requestCorrection();
 
   let finalMode = mode;
-  let built = build(prep, finalMode, found && found.joints, vrm);
+  const cleanSampleUnderarms = rig?.underarmCleanup === SAMPLE_UNDERARM_CLEANUP && rig.bytes === source.size;
+  let built = build(prep, finalMode, found && found.joints, vrm, cleanSampleUnderarms);
   // 자동 인식한 그림에서 팔이 몸에 붙어 있으면(움직일 때 찢어져 보임) 그림 전체가 함께 움직이는 방식으로
   if (!(rig && rig.joints) && finalMode !== 'standee' && built.armTouch > 2) {
     // Moving joint markers cannot reconstruct hidden sleeves. Never let manual
@@ -525,6 +561,7 @@ export function deactivate() {
   if (!active) return;
   Avatar.state.scene.remove(active.mesh);
   active.geo.dispose(); active.mat.dispose(); active.tex.dispose(); active.skeleton.dispose();
+  if (active.cleanup) { active.cleanup.bodyMat.dispose(); active.cleanup.maskTexture.dispose(); }
   active = null;
   Avatar.setEyeProvider(null);
   Avatar.setWideStart(false);
@@ -670,6 +707,11 @@ export function update(dt, live) {
       const d = bone.userData.def;
       const parentDelta = d.parent ? (deltas[d.parent] || 0) : 0;
       bone.rotation.z = (deltas[d.name] || 0) - parentDelta;
+    }
+    if (A.cleanup) {
+      const spine = deltas.spine || 0;
+      A.cleanup.uniforms.leftLift.value = underarmFade('L', wrapAngle((deltas.LupperArm || 0) - spine));
+      A.cleanup.uniforms.rightLift.value = underarmFade('R', wrapAngle((deltas.RupperArm || 0) - spine));
     }
   }
 

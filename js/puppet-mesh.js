@@ -486,7 +486,7 @@ export function buildMesh(prep, bones) {
   }
   // cuts·jointZone: 겨드랑이 선과 관절 영역 (점검·테스트용). jointZone ≤ 1 이면 한 장으로 이어지는 곳,
   // ≤ zoneFade 이면 두 뼈가 섞일 수 있는 곳.
-  return { pos, uv, skinIdx, skinW, index: [].concat(...tris), armTouch,
+  return { pos, uv, skinIdx, skinW, index: [].concat(...tris), layerCounts: tris.map(t => t.length), armTouch,
     cuts: [...cuts.values()].map(c => ({ arm: bones[c.arm].name, s: c.s, a: c.a, share: c.share, band: c.band })),
     jointZone: (a, b, x, y) => (index.has(a) && index.has(b) ? zone(index.get(a), index.get(b), x, y) : Infinity),
     zoneFade: ZONE_FADE };
