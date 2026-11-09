@@ -140,10 +140,10 @@ export function getPoseOverlay() {
 // 미션 모듈은 이 함수만 사용하고 내부 파이프라인은 건드리지 않는다.
 export function getPoseSnapshot() {
   if (!tracked || !latestPose || !latestVis) {
-    return { present: false, calibrated: !!calib };
+    return { present: false, calibrated: !!calib, frameId: frameCount };
   }
   const need = [LM.L_SH, LM.R_SH, LM.L_HIP, LM.R_HIP];
-  for (const i of need) if (!latestPose.get(i)) return { present: false, calibrated: !!calib };
+  for (const i of need) if (!latestPose.get(i)) return { present: false, calibrated: !!calib, frameId: frameCount };
 
   const lsh = latestPose.get(LM.L_SH), rsh = latestPose.get(LM.R_SH);
   const shoulderW = lsh.distanceTo(rsh) || 0.3;
@@ -157,6 +157,7 @@ export function getPoseSnapshot() {
   const fullBody = (vis.L_ANK || 0) > 0.5 && (vis.R_ANK || 0) > 0.5;
   return {
     present: true,
+    frameId: frameCount,
     calibrated: !!calib,
     shoulderW,
     pts, vis,
@@ -206,6 +207,15 @@ export function setAvatar(vrm, measures) {
 }
 export function resetForNewAvatar() { // 하위 호환
   hipsRest = null;
+  resetTracking();
+}
+
+// 학생이 교대할 때 카메라는 유지하고 새 체형으로 추적을 다시 시작한다.
+export function resetForNextStudent() {
+  tracked = false;
+  latestPose = null;
+  latestVis = null;
+  poseImg = null;
   resetTracking();
 }
 

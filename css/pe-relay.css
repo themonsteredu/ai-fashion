@@ -1,0 +1,380 @@
+/* 체육 포즈 릴레이. 웹캠과 아바타는 앱의 공용 무대를 사용한다. */
+#pe-relay-root {
+  --relay-green: #08634b;
+  --relay-ink: #112c26;
+  --relay-muted: #48625b;
+  --relay-line: #c7dad2;
+  --relay-paper: #f8fcfa;
+  --relay-soft: #e4f1eb;
+  --relay-gap: clamp(10px, 1.5vw, 24px);
+  position: fixed;
+  inset: 0;
+  z-index: 57;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: var(--relay-gap);
+  padding: max(12px, env(safe-area-inset-top)) max(var(--relay-gap), env(safe-area-inset-right))
+    max(12px, env(safe-area-inset-bottom)) max(var(--relay-gap), env(safe-area-inset-left));
+  color: var(--relay-ink);
+  font-family: "S-Core Dream", "Malgun Gothic", sans-serif;
+  pointer-events: none;
+}
+
+#pe-relay-root [hidden], #pe-relay-root[hidden] { display: none !important; }
+
+body.relay-on .motion-bar,
+body.relay-on .cambg-tabs,
+body.relay-on #guide-msg,
+body.relay-on #preview-info { display: none !important; }
+
+body.relay-on #cam-wrap {
+  position: fixed;
+  top: var(--relay-cam-top, 0px);
+  left: var(--relay-cam-left, 0px);
+  right: auto;
+  bottom: auto;
+  width: var(--relay-cam-width, 1px);
+  height: var(--relay-cam-height, 1px);
+  transform: none;
+  opacity: 0;
+  border: 1px solid rgba(255,255,255,0.8);
+  border-radius: 14px;
+  box-shadow: 0 8px 25px rgba(17,44,38,0.18);
+  pointer-events: none;
+}
+
+body.relay-on.relay-cam-on #cam-wrap { opacity: 1; }
+
+body.relay-on #cam-wrap::before {
+  content: '카메라';
+  position: absolute;
+  left: 6px;
+  top: 6px;
+  z-index: 5;
+  padding: 3px 7px;
+  color: #fff;
+  background: rgba(17,44,38,0.88);
+  border-radius: 6px;
+  font: 700 10px/1.25 "S-Core Dream", "Malgun Gothic", sans-serif;
+}
+
+.relay-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: clamp(6px, 1.1vh, 12px) 14px;
+  align-items: center;
+  padding: clamp(9px, 1.6vh, 18px) clamp(10px, 1.7vw, 26px);
+  border: 1px solid var(--relay-line);
+  border-radius: 18px;
+  background: var(--relay-paper);
+}
+
+.relay-eyebrow {
+  color: var(--relay-green);
+  font-size: clamp(10px, 1.25vw, 15px);
+  font-weight: 700;
+  line-height: 1.35;
+  letter-spacing: 0.035em;
+  word-break: keep-all;
+}
+
+.relay-brand h1 {
+  font-size: clamp(19px, 3.2vw, 44px);
+  line-height: 1.14;
+  letter-spacing: -0.055em;
+  font-weight: 900;
+  word-break: keep-all;
+}
+
+.relay-tools { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+
+#pe-relay-root button {
+  min-height: 42px;
+  padding: 7px 12px;
+  color: var(--relay-green);
+  background: #fff;
+  border: 1px solid var(--relay-line);
+  border-radius: 10px;
+  font-family: inherit;
+  font-size: clamp(11px, 1.25vw, 17px);
+  font-weight: 700;
+  line-height: 1.35;
+  text-align: center;
+  word-break: keep-all;
+  pointer-events: auto;
+}
+#pe-relay-root button:hover { background: var(--relay-soft); }
+#pe-relay-root button:disabled { opacity: 0.56; cursor: wait; }
+#pe-relay-root button.relay-primary { color: #fff; background: var(--relay-green); border-color: var(--relay-green); }
+#pe-relay-root button.relay-primary:hover { background: #064c39; }
+#pe-relay-root :is(button, input):focus-visible { outline: 3px solid #cf8a13; outline-offset: 2px; }
+
+.relay-progress {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(20, minmax(0, 1fr));
+  gap: clamp(2px, 0.55vw, 9px);
+  list-style: none;
+}
+
+.relay-progress li {
+  display: grid;
+  place-items: center;
+  min-height: clamp(18px, 3.3vh, 33px);
+  border: 1px solid var(--relay-line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--relay-muted);
+  font-size: clamp(8px, 1.1vw, 14px);
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.relay-progress li.is-complete { background: var(--relay-soft); border-color: #a7c9b9; color: var(--relay-green); }
+.relay-progress li.is-current { background: var(--relay-green); border-color: var(--relay-green); color: #fff; }
+.relay-progress li.is-complete.is-current { box-shadow: inset 0 -3px #f4be54; }
+
+.relay-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.27fr) minmax(0, 1fr);
+  gap: var(--relay-gap);
+  min-height: 0;
+}
+
+.relay-stage {
+  position: relative;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 0;
+  padding: 9px;
+  border: 1px solid rgba(8,99,75,0.24);
+  border-radius: 18px;
+}
+
+.relay-stage-fit { grid-area: 1 / 1; min-height: 0; }
+.relay-stage-label {
+  grid-area: 2 / 1;
+  justify-self: start;
+  padding: 5px 10px;
+  border: 1px solid var(--relay-line);
+  border-radius: 99px;
+  background: var(--relay-paper);
+  color: var(--relay-green);
+  font-size: clamp(10px, 1.15vw, 15px);
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.relay-cam-slot {
+  display: none;
+  grid-area: 1 / 2;
+  align-self: start;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+}
+body.relay-cam-on .relay-stage { grid-template-columns: minmax(0, 1fr) clamp(76px, 13vw, 200px); column-gap: 6px; }
+body.relay-cam-on .relay-cam-slot { display: block; }
+
+.relay-panel {
+  display: grid;
+  align-content: center;
+  gap: clamp(9px, 2vh, 22px);
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  align-content: safe center;
+  padding: clamp(12px, 2.5vw, 36px);
+  border: 1px solid var(--relay-line);
+  border-radius: 18px;
+  background: var(--relay-paper);
+  box-shadow: 0 14px 36px rgba(17,44,38,0.09);
+  pointer-events: auto;
+}
+
+.relay-panel h2 {
+  font-size: clamp(26px, 4vw, 56px);
+  font-weight: 900;
+  letter-spacing: -0.065em;
+  line-height: 1.15;
+  word-break: keep-all;
+}
+
+.relay-description, .relay-instruction, .relay-camera-note, .relay-feedback {
+  font-size: clamp(13px, 1.42vw, 20px);
+  font-weight: 500;
+  line-height: 1.5;
+  word-break: keep-all;
+}
+
+.relay-description, .relay-camera-note { color: var(--relay-muted); }
+
+.relay-concepts { display: flex; flex-wrap: wrap; gap: 6px; }
+.relay-concepts span {
+  border-radius: 99px;
+  padding: 5px 10px;
+  background: var(--relay-soft);
+  color: var(--relay-green);
+  font-size: clamp(11px, 1.3vw, 16px);
+  font-weight: 700;
+}
+
+.relay-mode {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 12px;
+  border: 1px solid var(--relay-line);
+  border-radius: 11px;
+  background: #fff;
+  font-size: clamp(13px, 1.4vw, 19px);
+  cursor: pointer;
+}
+.relay-mode span { display: grid; gap: 3px; }
+.relay-mode small { color: var(--relay-muted); line-height: 1.4; word-break: keep-all; }
+
+.relay-mode input {
+  appearance: none;
+  display: grid;
+  flex: none;
+  align-items: center;
+  width: 42px;
+  height: 25px;
+  padding: 3px;
+  border: 1px solid #7f9890;
+  border-radius: 99px;
+  background: #cbd8d4;
+  cursor: pointer;
+}
+.relay-mode input::before {
+  content: '';
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: #fff;
+}
+.relay-mode input:checked { justify-items: end; border-color: var(--relay-green); background: var(--relay-green); }
+
+.relay-setup-actions, .relay-actions { display: flex; flex-wrap: wrap; gap: 7px; }
+.relay-setup-actions .relay-primary, .relay-actions button { flex: 1 1 auto; }
+.relay-camera-note { font-size: clamp(11px, 1.1vw, 15px); }
+
+.relay-play { gap: clamp(9px, 2vh, 20px); }
+.relay-turn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.relay-current {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  white-space: nowrap;
+  color: var(--relay-muted);
+  font-size: clamp(15px, 1.9vw, 25px);
+  font-weight: 700;
+}
+.relay-current strong {
+  color: var(--relay-green);
+  font-size: clamp(36px, 6vw, 80px);
+  font-variant-numeric: tabular-nums;
+  font-weight: 900;
+  line-height: 0.95;
+  letter-spacing: -0.07em;
+}
+.relay-next {
+  flex: none;
+  padding: 5px 9px;
+  border-radius: 99px;
+  background: var(--relay-soft);
+  color: var(--relay-green);
+  font-size: clamp(11px, 1.45vw, 18px);
+  font-weight: 700;
+}
+.relay-target {
+  display: grid;
+  grid-template-columns: clamp(56px, 8.5vw, 120px) minmax(0, 1fr);
+  gap: clamp(8px, 1.1vw, 18px);
+  align-items: center;
+  padding: clamp(7px, 1.15vw, 16px);
+  border: 1px solid var(--relay-line);
+  border-radius: 14px;
+  background: #fff;
+}
+.relay-target-copy { display: grid; gap: 4px; }
+.relay-target h2 { font-size: clamp(20px, 2.7vw, 40px); }
+.relay-instruction { font-weight: 700; }
+.relay-followup {
+  color: var(--relay-muted);
+  font-size: clamp(11px, 1.15vw, 16px);
+  line-height: 1.4;
+  word-break: keep-all;
+}
+.relay-figure {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  border-radius: 12px;
+  background: var(--relay-soft);
+  color: var(--relay-green);
+}
+.relay-figure svg { width: 88%; height: auto; }
+
+.relay-feedback {
+  display: grid;
+  align-content: start;
+  gap: 5px;
+  min-height: 3em;
+  color: var(--relay-muted);
+  font-weight: 700;
+}
+.relay-feedback [data-hint="framing"] { color: #865812; }
+.relay-feedback [data-hint="posture"], .relay-feedback [data-hint="handoff"] { color: var(--relay-green); }
+.relay-feedback progress {
+  width: 100%;
+  height: 8px;
+  appearance: none;
+  overflow: hidden;
+  border: 0;
+  border-radius: 99px;
+  background: var(--relay-soft);
+  color: var(--relay-green);
+  accent-color: var(--relay-green);
+}
+.relay-feedback progress::-webkit-progress-bar { background: var(--relay-soft); }
+.relay-feedback progress::-webkit-progress-value { background: var(--relay-green); }
+.relay-feedback progress::-moz-progress-bar { background: var(--relay-green); }
+
+.relay-result { text-align: center; }
+.relay-medal svg { width: clamp(60px, 10vh, 110px); height: auto; }
+.relay-counts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.relay-counts div { padding: 9px 7px; border-radius: 10px; background: var(--relay-soft); }
+.relay-counts dt { font-size: clamp(11px, 1.3vw, 16px); color: var(--relay-muted); }
+.relay-counts dd { font-size: clamp(18px, 2.4vw, 34px); color: var(--relay-green); font-weight: 900; }
+
+@media (orientation: portrait) {
+  .relay-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+  .relay-panel { max-height: 53dvh; padding: clamp(10px, 2.1vw, 20px); }
+  .relay-stage-label { padding: 4px 8px; }
+  .relay-tools button { min-height: 38px; padding: 5px 7px; }
+  .relay-progress { grid-template-columns: repeat(10, minmax(0, 1fr)); }
+  .relay-progress li { border-radius: 4px; font-size: 11px; }
+  .relay-play { gap: 7px; }
+  .relay-figure { max-width: 68px; }
+  .relay-target { grid-template-columns: clamp(50px, 13vw, 68px) minmax(0, 1fr); }
+  .relay-feedback { min-height: 2.7em; }
+}
+
+@media (orientation: landscape) and (max-height: 580px) {
+  #pe-relay-root { --relay-gap: 8px; padding-block: 7px; }
+  .relay-header { border-radius: 12px; }
+  .relay-brand h1 { font-size: clamp(18px, 5.9vh, 31px); }
+  .relay-panel { gap: 7px; padding: 10px; }
+  .relay-panel h2 { font-size: clamp(18px, 5.4vh, 32px); }
+  .relay-target { grid-template-columns: clamp(43px, 12vh, 70px) minmax(0, 1fr); }
+  .relay-current strong { font-size: clamp(31px, 10vh, 56px); }
+  .relay-feedback { min-height: 2.5em; }
+  #pe-relay-root button { min-height: 35px; }
+}
