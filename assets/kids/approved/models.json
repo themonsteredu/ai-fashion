@@ -1,10 +1,10 @@
 {
   "boy": {
-    "model": "https://v3b.fal.media/files/b/0ab1d686/X9q8D2LzTg5SPoQJ_Q5h-_model.glb",
-    "status": "외형 확인용 · 관절 연결 중"
+    "model": "https://v3b.fal.media/files/b/0ab1d705/HCcSVtXnWSuR5FP1HWMrf_rigged_character.glb",
+    "status": "관절 생성 완료 · 변형 검증 전"
   },
   "girl": {
-    "model": null,
-    "status": "생성 중"
+    "model": "https://v3b.fal.media/files/b/0ab1d70a/GRP37nOTXOyo8E1rFFkiP_model.glb",
+    "status": "외형 확인용 · 관절 연결 전"
   }
 }

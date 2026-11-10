@@ -19,6 +19,7 @@ $('download').hidden=true;if(model){scene.remove(model);dispose(model);model=nul
 const entry=config[kind];if(!entry?.model){$('status').textContent='3D 모델 준비 중';return;}
 $('status').textContent='실제 3D 모델을 불러오고 있어요.';
 try{const gltf=await new GLTFLoader().loadAsync(entry.model);if(token!==request){dispose(gltf.scene);return;}model=gltf.scene;
+const bones=[];model.traverse(o=>{if(o.isBone)bones.push(o.name)});console.info('Avatar rig bones: '+JSON.stringify(bones));
 const box=new THREE.Box3().setFromObject(model),size=box.getSize(new THREE.Vector3()),center=box.getCenter(new THREE.Vector3()),scale=1.45/size.y;
 model.scale.multiplyScalar(scale);model.position.set(-center.x*scale,-box.min.y*scale,-center.z*scale);const wrapper=new THREE.Group();wrapper.add(model);model=wrapper;scene.add(model);
 $('status').textContent=entry.status||'외형 확인용 · 관절 연결 전';$('download').href=entry.model;$('download').hidden=false;view();
