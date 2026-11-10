@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import * as Motion from './motion.js';
 import { createKidRig } from './kid-rig.js';
-import { makeRecording, openGroupStore, combineClips, canCombine, clipSignature, fileExtension } from './group-recording.js';
+import { makeRecording, openGroupStore, combineClips, canCombine, clipSignature, fileExtension, chooseMime } from './group-recording.js';
+import { canStartRecording, prepareRecording } from './group-recording-start.js';
 
 const $=id=>document.getElementById(id), clips=Array(4).fill(null), clipUrls=Array(4).fill(null);
 let selected=0, rig=null, db=null, busy=false, source='idle', trackersReady=false;
@@ -33,7 +34,8 @@ function revision(){return crypto.randomUUID?.() || `${Date.now()}-${Math.random
 async function persist(key,value){if(!db)return false;try{await db.put(key,value);return true;}catch(e){notice('기기 저장 공간이 부족해요. 페이지를 닫기 전에 영상을 내려받아 주세요.');return false;}}
 function settings(){return {name:$('group-name').value,theme:$('theme').value,avatar:$('avatar').value,duration:$('duration').value};}
 function fullBodyVisible(){const p=Motion.getPoseOverlay();return !!p && [0,11,12,23,24,27,28].every(i=>p[i] && p[i].visibility>.5 && p[i].x>.015 && p[i].x<.985 && p[i].y>.015 && p[i].y<.985);}
-function ready(){return !!rig && (source==='demo' || (source==='camera' && Motion.getStatus()==='ok' && fullBodyVisible()));}
+function recordingState(){return {avatarReady:!!rig,source,status:Motion.getStatus(),cameraActive:!!$('camera').srcObject?.getVideoTracks().some(t=>t.readyState==='live')};}
+function ready(){return canStartRecording(recordingState());}
 function controls(){
   for(const el of document.querySelectorAll('.setup input,.setup select,#camera-start,#demo,#avatar,#view,#demo-mode,#zoom'))el.disabled=busy;
   $('calibrate').disabled=busy || source!=='camera';$('record').disabled=busy || !ready();
@@ -42,6 +44,8 @@ function controls(){
   for(const b of document.querySelectorAll('#clips button'))b.disabled=busy;
   $('student-title').textContent=`${selected+1}번 학생 차례`;
   $('record').textContent=source==='demo'?'시범 동작 녹화':clips[selected]?'이 학생 다시 녹화':'내 동작 녹화';
+  if(!busy)$('record-help').textContent=!rig?'아바타를 불러오고 있어요.':!ready()?'카메라를 켜거나 시범 동작 보기를 눌러 주세요.':source==='demo'?'3초 뒤 시범 동작을 녹화해요.':'녹화를 누른 뒤 촬영 위치로 이동해 주세요. 몸이 인식되면 시작해요. 얼굴 영상과 소리는 저장하지 않아요.';
+  $('stop').textContent=session?'녹화 끝내기':'녹화 취소';
 }
 function renderSlots(){
   $('clips').replaceChildren();
@@ -96,7 +100,7 @@ function render(now){
     $('record-help').textContent=`녹화 중 · ${seconds.toFixed(1)} / ${recordingMeta.limit}초`;
     if(seconds>=recordingMeta.limit)session.stop();
   }
-  const status=source==='demo'?'시범 동작 재생 중 · 카메라 추적 영상이 아니에요.':source==='idle'?'카메라를 켜고 머리부터 발끝까지 화면 안에 서 주세요.':Motion.getStatus()==='calibrating'?`정면을 보고 편하게 서 주세요 · 체형 맞추는 중 ${Math.round(Motion.getCalibProgress()*100)}%`:Motion.getStatus()==='noperson'?'몸을 찾고 있어요. 밝은 곳에서 카메라를 향해 서 주세요.':!fullBodyVisible()?'머리와 양쪽 발끝이 모두 보이도록 조금 뒤로 이동해 주세요.':'준비 완료 · 내 동작을 따라 해요. 가려진 손과 관절은 인식이 어려울 수 있어요.';
+  const status=source==='demo'?'시범 동작 재생 중 · 카메라 추적 영상이 아니에요.':source==='idle'?'카메라를 켜고 머리부터 발끝까지 화면 안에 서 주세요.':Motion.getStatus()==='calibrating'?`정면을 보고 편하게 서 주세요 · 체형 맞추는 중 ${Math.round(Motion.getCalibProgress()*100)}%`:Motion.getStatus()==='noperson'?'몸을 찾고 있어요. 녹화를 누른 뒤 카메라를 향해 서 주세요.':!fullBodyVisible()?'녹화할 수 있어요. 다리 동작도 담으려면 머리부터 발끝까지 보이도록 서 주세요.':'준비 완료 · 내 동작을 따라 해요. 가려진 손과 관절은 인식이 어려울 수 있어요.';
   if(status!==lastStatus){$('tracking').textContent=status;lastStatus=status;}controls();
 }
 $('camera-start').onclick=async()=>{
@@ -120,10 +124,17 @@ for(const id of ['group-name','theme','duration'])$(id).onchange=()=>persist('se
 $('record').onclick=async()=>{
   if(busy || !ready())return;busy=true;const token=++countdownToken;controls();
   try{
-    for(let n=3;n>0;n--){if(token!==countdownToken)return;$('countdown').textContent=String(n);$('countdown').hidden=false;controls();await new Promise(ok=>setTimeout(ok,1000));}
-    if(token!==countdownToken)return;
+    chooseMime();
+    if(!recordCanvas.captureStream)throw new Error('이 브라우저에서는 화면 녹화를 지원하지 않아요. Safari 또는 Chrome으로 열어 주세요.');
+    notice('녹화를 준비해요. 카메라를 향해 서 주세요.');
+    const prepared=await prepareRecording({
+      getState:recordingState,isCanceled:()=>token!==countdownToken,
+      onCountdown:n=>{$('countdown').textContent=n===null?'준비 중':String(n);$('countdown').hidden=false;$('record-help').textContent='촬영 위치로 이동해 주세요. 몸이 인식되면 녹화를 시작해요.';controls();},
+      onWaiting:status=>{$('record-help').textContent=status==='calibrating'?'정면을 보고 잠시 서 주세요. 자세를 맞추면 자동으로 녹화해요.':'몸을 찾고 있어요. 카메라를 향해 서 주세요. 인식되면 자동으로 녹화해요.';},
+    });
+    if(!prepared || token!==countdownToken)return;
     $('countdown').textContent='';$('countdown').hidden=true;
-    if(!ready())throw new Error('전신 인식이 끊겼어요. 머리와 발끝을 화면에 맞추고 다시 시작해 주세요.');
+    notice('녹화를 시작했어요. 동작을 해 주세요.');
     recordingMeta={index:selected,group:$('group-name').value||'우리 모둠',theme:$('theme').value,source,limit:Number($('duration').value)};
     recordCtx.drawImage(renderer.domElement,0,0,960,720);
     session=makeRecording(recordCanvas);recordStart=performance.now();controls();
@@ -137,7 +148,7 @@ $('record').onclick=async()=>{
   }catch(e){notice(e.message);}
   finally{session=null;$('countdown').textContent='';$('countdown').hidden=true;busy=false;$('record-help').textContent='3초 뒤 시작해요. 카메라 얼굴 영상과 소리는 저장하지 않아요.';controls();}
 };
-$('stop').onclick=()=>{countdownToken++;$('countdown').textContent='';$('countdown').hidden=true;session?.stop();};
+$('stop').onclick=()=>{countdownToken++;$('countdown').textContent='';$('countdown').hidden=true;if(session)session.stop();else notice('녹화를 취소했어요. 다시 시작할 수 있어요.');};
 $('combine').onclick=async()=>{
   if(busy || !canCombine(clips))return;busy=true;mergeController=new AbortController();controls();
   const signature=clipSignature(clips),canvas=document.createElement('canvas');canvas.width=960;canvas.height=768;
