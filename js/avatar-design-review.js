@@ -8,7 +8,7 @@ scene.add(new THREE.HemisphereLight(0xffffff,0xadc2c1,2.2));
 for(const [x,y,z,power] of [[-3,5,4,2.4],[3,2,2,.7]]){const l=new THREE.DirectionalLight(0xffffff,power);l.position.set(x,y,z);scene.add(l);}
 let model=null,request=0,kind='boy',config,rotating=false,angle=0;
 const target=new THREE.Vector3(0,.72,0);
-function view(){const zoom=+$('zoom').value,aspect=stage.clientWidth/stage.clientHeight;camera.aspect=aspect;camera.updateProjectionMatrix();const distance=Math.max(3.0,1.1/(Math.tan(16*Math.PI/180)*aspect))/zoom;const a=+$('view').value;camera.position.set(Math.sin(a)*distance,.77+(zoom-1)*.19,Math.cos(a)*distance);camera.lookAt(0,.72+(zoom-1)*.22,0);}
+function view(){const zoom=+$('zoom').value,aspect=stage.clientWidth/stage.clientHeight;camera.aspect=aspect;camera.updateProjectionMatrix();const distance=Math.max(2.9,.55/(Math.tan(16*Math.PI/180)*aspect))/zoom;const a=+$('view').value;camera.position.set(Math.sin(a)*distance,.77+(zoom-1)*.19,Math.cos(a)*distance);camera.lookAt(0,.72+(zoom-1)*.22,0);}
 new ResizeObserver(()=>{renderer.setSize(stage.clientWidth,stage.clientHeight,false);view();}).observe(stage);
 function dispose(obj){obj.traverse(o=>{if(o.isMesh){o.geometry.dispose();for(const m of [].concat(o.material)){for(const v of Object.values(m))if(v?.isTexture)v.dispose();m.dispose();}}});}
 async function select(next){
