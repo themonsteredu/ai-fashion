@@ -71,7 +71,7 @@ function showCombined(){
 async function loadAvatar(){
   busy=true;controls();notice('3D 아바타를 불러오고 있어요.');
   try{
-    const gltf=await new GLTFLoader().loadAsync(`./assets/kids/${$('avatar').value}.glb?v=2`);
+    const gltf=await new GLTFLoader().loadAsync(`./assets/kids/${$('avatar').value}.glb?v=3`);
     gltf.scene.traverse(o=>{if(o.isMesh){o.castShadow=!/eye|iris|pupil|sparkle|brow|smile|lip|patch|stitch/.test(o.name);o.receiveShadow=true;}});
     const next=createKidRig(gltf.scene);if(rig){scene.remove(rig.scene);rig.dispose();}rig=next;scene.add(rig.scene);
     Motion.setAvatar(rig,rig.measures);notice('아바타 준비 완료. 카메라를 켜거나 시범 동작을 볼 수 있어요.');

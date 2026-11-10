@@ -1,10 +1,12 @@
 {
   "boy": {
-    "model": "https://v3b.fal.media/files/b/0ab1d705/HCcSVtXnWSuR5FP1HWMrf_rigged_character.glb",
-    "status": "몸 관절 연결 · 손가락 보완 중"
+    "model": "./assets/kids/boy.glb?v=3",
+    "rigged": true,
+    "status": "전신·손가락 관절 적용"
   },
   "girl": {
-    "model": "https://v3b.fal.media/files/b/0ab1d728/2FA7bZPbZA78ILztXmCW6_rigged_character.glb",
-    "status": "몸 관절 연결 · 손가락 보완 중"
+    "model": "./assets/kids/girl.glb?v=3",
+    "rigged": true,
+    "status": "전신·손가락 관절 적용"
   }
 }

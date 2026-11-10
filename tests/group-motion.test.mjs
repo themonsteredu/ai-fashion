@@ -1,3 +1,4 @@
+import './gltf-node-images.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
@@ -34,6 +35,32 @@ test('side orientation preserves a full quarter turn and torso lean',()=>{
   assert.ok(V(1,0,0).applyQuaternion(q).distanceTo(V(0,0,-1))<1e-6);
   assert.ok(V(0,1,0).applyQuaternion(q).distanceTo(V(0,1,0))<1e-6);
   assert.equal(bodyOrientation(V(1,0,0),V(1,0,0)),null);
+});
+
+for(const sex of ['boy','girl'])test(`${sex}: skin stays on the face and fingers articulate independently`,async()=>{
+  const bytes=await readFile(new URL(`../assets/kids/${sex}.glb`,import.meta.url));
+  const gltf=await new GLTFLoader().parseAsync(bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength),'');
+  const rig=createKidRig(gltf.scene),heads=[],index=[],little=[];
+  const position=(m,i)=>m.localToWorld(m.getVertexPosition(i,new THREE.Vector3()));
+  gltf.scene.traverse(m=>{if(!m.isSkinnedMesh)return;
+    const a=m.geometry.attributes;
+    for(let i=0;i<a.position.count;i++){
+      const p=position(m,i);if(p.y>1.16 && i%4===0)heads.push({m,i,p});
+      const weight={Index:0,Little:0};
+      for(let j=0;j<4;j++){const name=m.skeleton.bones[a.skinIndex.getComponent(i,j)]?.name;
+        for(const f of ['Index','Little'])if(name===`left${f}Distal`)weight[f]+=a.skinWeight.getComponent(i,j);
+      }
+      if(weight.Index>.7)index.push({m,i,p});if(weight.Little>.7)little.push({m,i,p});
+    }
+  });
+  assert.ok(heads.length>100 && index.length>8 && little.length>8,'must include actual weighted face and finger geometry');
+  rig.demo(Math.PI/2,'arms');
+  assert.ok(Math.max(...heads.map(v=>position(v.m,v.i).distanceTo(v.p)))<.006,'raising arms must not pull the face mesh');
+  rig.reset();rig.humanoid.getNormalizedBoneNode('leftIndexIntermediate').rotation.z=-.9;rig.update();
+  const displacement=list=>list.reduce((s,v)=>s+position(v.m,v.i).distanceTo(v.p),0)/list.length;
+  assert.ok(displacement(index)>.006,'index fingertip must bend');
+  assert.ok(displacement(little)<.003,'index motion must not drag the little finger');
+  rig.dispose();
 });
 test('sitting lowers the hips, while one raised knee leaves the supporting foot grounded',()=>{
   const stand={visible:true,upper:V(0,-1,0),lower:V(0,-1,0)},sit={visible:true,upper:V(0,0,1),lower:V(0,-1,0)};
