@@ -75,9 +75,10 @@ export function createKidRig(model) {
       update();
     },
     dispose() {
-      const geometries=new Set(), materials=new Set();
+      const geometries=new Set(), materials=new Set(), textures=new Set();
       model.traverse(o=>{if(o.isMesh){geometries.add(o.geometry);for(const m of [].concat(o.material))materials.add(m);}});
-      geometries.forEach(g=>g.dispose());materials.forEach(m=>m.dispose());
+      for (const material of materials) for (const value of Object.values(material)) if (value?.isTexture) textures.add(value);
+      geometries.forEach(g=>g.dispose());materials.forEach(m=>m.dispose());textures.forEach(t=>t.dispose());
     },
   };
 }
