@@ -4,7 +4,7 @@ import {roomRequest,readSession,writeSession,GROUP_SESSION,draftKey,uploadRecord
 const $=id=>document.getElementById(id);
 const text=(id,value)=>{if($(id).textContent!==value)$(id).textContent=value;};
 let membership=null,stage=null,db=null,busy=false,session=null,countdownToken=0,pending=null,pendingUrl=null,uploading=false,loadingClips=false,stageError=false,preparing=false;
-let frameState={avatarReady:false,source:'idle'},recordMode='avatar';
+let frameState={avatarReady:false,source:'idle'},recordMode='both',saveAfterStop=false;
 const canvas=document.createElement('canvas');canvas.width=960;canvas.height=768;const ctx=canvas.getContext('2d');
 const timer=s=>`${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`;
 function notice(message){text('notice',message);}
@@ -12,14 +12,18 @@ function controls(){
   const locked=busy||!!session||uploading;
   for(const id of ['camera-start','avatar','view','demo','capture-mode','zoom'])$(id).disabled=locked||(!stage&&id!=='capture-mode');
   $('calibrate').disabled=locked||frameState.source!=='camera';
-  $('record').disabled=locked||!!pending||!stage||!canStartRecording(frameState);
+  $('record').disabled=uploading||(!session&&(busy||!!pending||!stage));
+  text('record',session?'녹화 끝내기':'녹화');
+  $('save').disabled=uploading||(!session&&!pending)||preparing;
+  text('save',uploading?'저장 중…':'저장하기');
+  $('timer').hidden=!session;
   $('pause').disabled=!session||session.state==='inactive';
-  text('pause',session?.state==='paused'?'녹화 이어하기':'일시정지');
+  text('pause',session?.state==='paused'?'이어찍기':'일시정지');
   $('stop').disabled=!preparing&&!session;text('stop',preparing?'녹화 취소':'녹화 끝내기');
   if(!busy&&!session)text('stop','녹화 끝내기');
   $('review').disabled=locked;$('leave').disabled=locked||uploading;
   $('retry-upload').disabled=uploading;$('discard-pending').disabled=uploading;
-  if(!locked)text('record-help',pending?'아직 저장하지 못한 녹화가 있어요. 내 녹화 확인하기에서 다시 저장해 주세요.':stageError?'이 브라우저에서 3D 화면을 열지 못했어요. 최신 Chrome·Safari로 다시 열어 주세요.':!stage?'아바타를 준비하고 있어요.':'녹화를 누른 뒤 촬영 위치로 이동하세요. 일시정지 후 이어 찍을 수 있어요.');
+  if(!locked)text('record-help',pending?'저장하기를 눌러 주세요.':stageError?'이 브라우저에서 3D 화면을 열지 못했어요. 최신 Chrome·Safari로 다시 열어 주세요.':!stage?'아바타를 준비하고 있어요.':'녹화를 누른 뒤 촬영 위치로 이동하세요. 일시정지 후 이어 찍을 수 있어요.');
 }
 async function persistDraft(){if(db&&membership)await db.put(draftKey(membership),pending);}
 function showPending(){
@@ -40,7 +44,7 @@ function paintFrame(src){
 function frame(state,src){
   frameState=state;
   $('camera-hint').hidden=state.source==='camera';
-  text('camera-hint',state.source==='demo'?'시범 동작 · 카메라는 꺼져 있어요.':'카메라를 켜고 움직여 보세요.');
+  text('camera-hint','카메라 사용을 허용해 주세요.');
   if(session){
     if(session.state==='recording')paintFrame(src);
     text('timer',timer(session.elapsedSeconds));
@@ -53,10 +57,10 @@ function frame(state,src){
 }
 async function enter(next){
   busy=true;membership=next;writeSession(GROUP_SESSION,next);pending=null;stageError=false;
-  $('entry').hidden=true;$('studio').hidden=false;text('room-label',`${next.room.title} · ${next.group}모둠`);text('room-code-label',`수업코드 ${next.room.code}`);text('recordings-title',`${next.group}모둠 · 내 녹화 확인하기`);
+  document.body.classList.add('studio-mode');$('entry').hidden=true;$('studio').hidden=false;text('room-label',`${next.room.title} · ${next.group}모둠`);text('room-code-label',`수업코드 ${next.room.code}`);text('recordings-title',`${next.group}모둠 · 내 녹화 확인하기`);
   try{db??=await openGroupStore();pending=await db.get(draftKey(next))||null;showPending();}catch{notice('기기 자동 보관을 사용할 수 없어요. 녹화 후 저장 상태를 확인해 주세요.');}
   controls();
-  try{const {createStage}=await import('./group-stage.js');stage=await createStage({mount:$('avatar-stage'),video:$('camera'),onStatus:notice,onFrame:frame});notice('카메라를 켜고 아바타와 함께 움직여 보세요.');}
+  try{const {createStage}=await import('./group-stage.js');stage=await createStage({mount:$('avatar-stage'),video:$('camera'),onStatus:notice,onFrame:frame});try{await stage.camera();notice('');}catch{notice('카메라 사용을 허용한 뒤 녹화를 눌러 주세요.');}}
   catch{stageError=true;$('avatar-stage').textContent='이 브라우저에서 3D 화면을 열 수 없어요.';notice('3D 화면을 열지 못했어요. 최신 Chrome·Safari에서 열어 주세요. 저장한 녹화는 확인할 수 있어요.');}
   busy=false;controls();
 }
@@ -66,7 +70,7 @@ $('join-form').onsubmit=async e=>{
   catch(error){text('join-status',error.message);}finally{$('join-submit').disabled=false;}
 };
 $('room-code').oninput=()=>{$('room-code').value=$('room-code').value.replace(/\D/g,'').slice(0,6);};
-$('leave').onclick=()=>{if(busy||session||uploading)return;stage?.dispose();stage=null;membership=null;pending=null;frameState={avatarReady:false,source:'idle'};writeSession(GROUP_SESSION,null);$('clips').replaceChildren();showPending();$('studio').hidden=true;$('entry').hidden=false;notice('');text('timer','0:00');};
+$('leave').onclick=()=>{if(busy||session||uploading)return;stage?.dispose();stage=null;membership=null;pending=null;frameState={avatarReady:false,source:'idle'};writeSession(GROUP_SESSION,null);$('clips').replaceChildren();showPending();document.body.classList.remove('studio-mode');$('studio').hidden=true;$('entry').hidden=false;notice('');text('timer','0:00');};
 async function stageAction(action){if(busy||session||!stage)return;busy=true;controls();try{await action();}catch(e){notice(e.name==='NotAllowedError'?'카메라 사용을 허용해 주세요.':e.message||'카메라를 다시 켜 주세요.');}finally{busy=false;controls();}}
 $('camera-start').onclick=()=>stageAction(async()=>{const zoom=await stage.camera();$('zoom-label').hidden=!zoom;if(zoom)Object.assign($('zoom'),{min:zoom.min,max:zoom.max,step:zoom.step||.1,value:zoom.value});notice('카메라가 켜졌어요. 녹화를 누르고 촬영 위치로 이동하세요.');});
 $('demo').onclick=()=>stageAction(()=>{stage.demo();$('capture-mode').value='avatar';$('zoom-label').hidden=true;});
@@ -80,12 +84,15 @@ async function savePending(){
   try{
     await uploadRecording(draft,membership.token,async()=>{try{await persistDraft();}catch{/* upload can succeed without local storage */}});
     pending=null;try{await persistDraft();}catch{/* remote copy is already durable */}
-    showPending();notice('우리 모둠에 저장했어요. 내 녹화 확인하기에서 볼 수 있어요.');await loadClips();
-  }catch(e){try{await persistDraft();}catch{/* keep in memory */}text('clips-status',e.message);notice('서버에 저장하지 못했어요. 내 녹화 확인하기에서 다시 저장하거나 내려받아 주세요.');showPending();}
+    showPending();notice('저장했어요.');await loadClips();
+  }catch(e){try{await persistDraft();}catch{/* keep in memory */}text('clips-status',e.message);notice('저장하지 못했어요. 저장하기를 다시 눌러 주세요.');showPending();}
   finally{uploading=false;controls();}
 }
 $('record').onclick=async()=>{
-  if(busy||session||uploading||pending||!canStartRecording(frameState))return;
+  if(session){session.stop();return;}
+  if(busy||uploading||pending||!stage)return;
+  if(!frameState.cameraActive){await stageAction(()=>stage.camera());if(!stage.state().cameraActive)return;}
+  saveAfterStop=false;
   busy=true;preparing=true;const token=++countdownToken;controls();
   try{
     chooseMime();recordMode=$('capture-mode').value;
@@ -98,10 +105,11 @@ $('record').onclick=async()=>{
     if(duration<.5)throw new Error('녹화가 너무 짧아요. 다시 찍어 주세요.');
     pending={blob,duration:Math.min(duration,61),title:`${membership.group}모둠 동작 · ${new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})}`,createdAt:Date.now()};
     try{await persistDraft();}catch{notice('기기 자동 보관에 실패했어요. 페이지를 닫기 전에 저장해 주세요.');}
-    showPending();session=null;busy=false;controls();await savePending();
+    showPending();session=null;busy=false;controls();notice('');if(saveAfterStop)await savePending();
   }catch(e){notice(e.message);}
   finally{session=null;busy=false;preparing=false;$('countdown').hidden=true;text('countdown','');controls();}
 };
+$('save').onclick=()=>{if(session){saveAfterStop=true;session.stop();}else void savePending();};
 $('pause').onclick=()=>{if(session?.state==='paused')session.resume();else session?.pause();controls();};
 $('stop').onclick=()=>{if(session)session.stop();else{countdownToken++;notice('녹화를 취소했어요.');}};
 async function loadClips(){
