@@ -537,6 +537,10 @@ function bindUI() {
     saveResult: (file, settings) => AvatarLibrary.saveAvatar(file, { source: 'generated', ...settings }),
   });
   $('#btn-admin-settings').addEventListener('click', () => MissionUI.openOperator());
+  if (new URLSearchParams(location.search).get('operator') === '1') {
+    history.replaceState(null, '', location.pathname);
+    queueMicrotask(() => MissionUI.openOperator());
+  }
   $('#btn-done').addEventListener('click', () => goMotion('free'));
   $('#btn-preview').addEventListener('click', goPreview);
   $('#btn-preview-from-motion').addEventListener('click', goPreview);

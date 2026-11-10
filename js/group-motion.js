@@ -1,180 +1,132 @@
-import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import * as Motion from './motion.js';
-import { createKidRig } from './kid-rig.js';
-import { makeRecording, openGroupStore, combineClips, canCombine, clipSignature, fileExtension, chooseMime } from './group-recording.js';
-import { canStartRecording, prepareRecording } from './group-recording-start.js';
-
-const $=id=>document.getElementById(id), clips=Array(4).fill(null), clipUrls=Array(4).fill(null);
-let selected=0, rig=null, db=null, busy=false, source='idle', trackersReady=false;
-let session=null, recordStart=0, countdownToken=0, mergeController=null, combined=null, combinedUrl=null;
-let frame=0, previousTime=0, lastStatus='', recordingMeta=null;
-const scene=new THREE.Scene();scene.background=new THREE.Color('#f5f3ed');
-const camera=new THREE.PerspectiveCamera(34,4/3,.05,30);
-const target=new THREE.Vector3(0,.85,0);
-const renderer=new THREE.WebGLRenderer({antialias:true,alpha:false,preserveDrawingBuffer:true});
-renderer.setSize(960,720,false);renderer.setPixelRatio(1);renderer.outputColorSpace=THREE.SRGBColorSpace;
-renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.12;
-renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
-renderer.domElement.setAttribute('aria-label','움직임을 따라 하는 전신 3D 아바타');
-$('avatar-stage').append(renderer.domElement);
-scene.add(new THREE.HemisphereLight(0xfffaf2,0xcbd3db,2.0));
-const key=new THREE.DirectionalLight(0xfff3e6,2.4);key.position.set(-3,5,4);key.castShadow=true;
-key.shadow.mapSize.set(1024,1024);Object.assign(key.shadow.camera,{left:-2,right:2,top:3,bottom:-2,near:.5,far:12});
-key.shadow.bias=-.00015;key.shadow.normalBias=.008;scene.add(key);
-const fill=new THREE.DirectionalLight(0xe8efff,.8);fill.position.set(3,2,1);scene.add(fill);
-const floor=new THREE.Mesh(new THREE.PlaneGeometry(10,10),new THREE.ShadowMaterial({opacity:.16,color:0x4e5555}));
-floor.rotation.x=-Math.PI/2;floor.position.y=.022;floor.receiveShadow=true;scene.add(floor);
-const recordCanvas=document.createElement('canvas');recordCanvas.width=960;recordCanvas.height=768;
-const recordCtx=recordCanvas.getContext('2d');
-function notice(text){$('notice').textContent=text;}
-function view(){const a=Number($('view').value);camera.position.set(Math.sin(a)*3.25,1.0,Math.cos(a)*3.25);camera.lookAt(target);}
-function safeName(s){return (s||'우리모둠').replace(/[^\p{L}\p{N}_-]/gu,'_').slice(0,40);}
-function revision(){return crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`;}
-async function persist(key,value){if(!db)return false;try{await db.put(key,value);return true;}catch(e){notice('기기 저장 공간이 부족해요. 페이지를 닫기 전에 영상을 내려받아 주세요.');return false;}}
-function settings(){return {name:$('group-name').value,theme:$('theme').value,avatar:$('avatar').value,duration:$('duration').value};}
-function fullBodyVisible(){const p=Motion.getPoseOverlay();return !!p && [0,11,12,23,24,27,28].every(i=>p[i] && p[i].visibility>.5 && p[i].x>.015 && p[i].x<.985 && p[i].y>.015 && p[i].y<.985);}
-function recordingState(){return {avatarReady:!!rig,source,status:Motion.getStatus(),cameraActive:!!$('camera').srcObject?.getVideoTracks().some(t=>t.readyState==='live')};}
-function ready(){return canStartRecording(recordingState());}
+import {makeRecording,openGroupStore,fileExtension,chooseMime} from './group-recording.js';
+import {canStartRecording,prepareRecording} from './group-recording-start.js';
+import {roomRequest,readSession,writeSession,GROUP_SESSION,draftKey,uploadRecording} from './group-room-api.js';
+const $=id=>document.getElementById(id);
+const text=(id,value)=>{if($(id).textContent!==value)$(id).textContent=value;};
+let membership=null,stage=null,db=null,busy=false,session=null,countdownToken=0,pending=null,pendingUrl=null,uploading=false,loadingClips=false,stageError=false,preparing=false;
+let frameState={avatarReady:false,source:'idle'},recordMode='avatar';
+const canvas=document.createElement('canvas');canvas.width=960;canvas.height=768;const ctx=canvas.getContext('2d');
+const timer=s=>`${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`;
+function notice(message){text('notice',message);}
 function controls(){
-  for(const el of document.querySelectorAll('.setup input,.setup select,#camera-start,#demo,#avatar,#view,#demo-mode,#zoom'))el.disabled=busy;
-  $('calibrate').disabled=busy || source!=='camera';$('record').disabled=busy || !ready();
-  $('combine').disabled=busy || !canCombine(clips);$('stop').hidden=!session && !$('countdown').textContent;
-  $('cancel-combine').hidden=!mergeController;
-  for(const b of document.querySelectorAll('#clips button'))b.disabled=busy;
-  $('student-title').textContent=`${selected+1}번 학생 차례`;
-  $('record').textContent=source==='demo'?'시범 동작 녹화':clips[selected]?'이 학생 다시 녹화':'내 동작 녹화';
-  if(!busy)$('record-help').textContent=!rig?'아바타를 불러오고 있어요.':!ready()?'카메라를 켜거나 시범 동작 보기를 눌러 주세요.':source==='demo'?'3초 뒤 시범 동작을 녹화해요.':'녹화를 누른 뒤 촬영 위치로 이동해 주세요. 몸이 인식되면 시작해요. 얼굴 영상과 소리는 저장하지 않아요.';
-  $('stop').textContent=session?'녹화 끝내기':'녹화 취소';
+  const locked=busy||!!session||uploading;
+  for(const id of ['camera-start','avatar','view','demo','capture-mode','zoom'])$(id).disabled=locked||(!stage&&id!=='capture-mode');
+  $('calibrate').disabled=locked||frameState.source!=='camera';
+  $('record').disabled=locked||!!pending||!stage||!canStartRecording(frameState);
+  $('pause').disabled=!session||session.state==='inactive';
+  text('pause',session?.state==='paused'?'녹화 이어하기':'일시정지');
+  $('stop').disabled=!preparing&&!session;text('stop',preparing?'녹화 취소':'녹화 끝내기');
+  if(!busy&&!session)text('stop','녹화 끝내기');
+  $('review').disabled=locked;$('leave').disabled=locked||uploading;
+  $('retry-upload').disabled=uploading;$('discard-pending').disabled=uploading;
+  if(!locked)text('record-help',pending?'아직 저장하지 못한 녹화가 있어요. 내 녹화 확인하기에서 다시 저장해 주세요.':stageError?'이 브라우저에서 3D 화면을 열지 못했어요. 최신 Chrome·Safari로 다시 열어 주세요.':!stage?'아바타를 준비하고 있어요.':'녹화를 누른 뒤 촬영 위치로 이동하세요. 일시정지 후 이어 찍을 수 있어요.');
 }
-function renderSlots(){
-  $('clips').replaceChildren();
-  clips.forEach((clip,i)=>{
-    if(clipUrls[i])URL.revokeObjectURL(clipUrls[i]);clipUrls[i]=null;
-    const article=document.createElement('article');article.className='clip'+(selected===i?' selected':'');
-    const choose=document.createElement('button');choose.className='slot-select';choose.textContent=`${i+1}번 학생${clip?' · 완료':''}`;choose.setAttribute('aria-pressed',String(selected===i));
-    choose.onclick=()=>{if(busy)return;selected=i;rig?.reset();if(source==='camera')Motion.resetForNextStudent();renderSlots();};article.append(choose);
-    if(clip){
-      const v=document.createElement('video');v.controls=true;v.playsInline=true;v.preload='metadata';v.src=clipUrls[i]=URL.createObjectURL(clip.blob);article.append(v);
-      const p=document.createElement('p');p.textContent=`${clip.theme} · ${clip.duration.toFixed(1)}초${clip.source==='demo'?' · 시범 동작':''}`;article.append(p);
-      const save=document.createElement('button');save.textContent='영상 저장';save.onclick=()=>saveVideo(clip.blob,`${safeName(clip.group)}_${i+1}번`);article.append(save);
-    }else{const p=document.createElement('p');p.className='empty';p.textContent='녹화하면 여기에 보여요';article.append(p);}
-    $('clips').append(article);
-  });controls();
+async function persistDraft(){if(db&&membership)await db.put(draftKey(membership),pending);}
+function showPending(){
+  if(pendingUrl)URL.revokeObjectURL(pendingUrl);pendingUrl=null;
+  $('pending-video').pause();$('pending-video').removeAttribute('src');$('pending').hidden=!pending;
+  if(pending)$('pending-video').src=pendingUrl=URL.createObjectURL(pending.blob);
+  controls();
 }
-async function saveVideo(blob,name){
-  const file=new File([blob],`${name}.${fileExtension(blob.type)}`,{type:blob.type});
-  if(navigator.canShare?.({files:[file]})){try{await navigator.share({files:[file],title:name});return;}catch(e){if(e.name==='AbortError')return;}}
-  const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=file.name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
+function paintFrame(src){
+  ctx.fillStyle='#f5f3ed';ctx.fillRect(0,0,canvas.width,canvas.height);
+  const width=recordMode==='both'?canvas.width/2:canvas.width;
+  // Fit both views without cropping the avatar or student's feet.
+  const fit=(image,iw,ih,x,w,mirror=false)=>{if(!iw||!ih)return;const scale=Math.min(w/iw,720/ih),dw=iw*scale,dh=ih*scale;ctx.save();if(mirror){ctx.translate(x+w,0);ctx.scale(-1,1);x=0;}ctx.drawImage(image,x+(w-dw)/2,(720-dh)/2,dw,dh);ctx.restore();};
+  fit(src,src.width,src.height,0,width);
+  if(recordMode==='both'){const v=$('camera');fit(v,v.videoWidth,v.videoHeight,width,width,true);}
+  ctx.fillStyle='#163e33';ctx.font='bold 24px sans-serif';ctx.fillText(`${membership.group}모둠 · ${membership.room.title}${frameState.source==='demo'?' · 시범 동작':''}`,24,751,canvas.width-48);
 }
-function showCombined(){
-  if(combinedUrl)URL.revokeObjectURL(combinedUrl);combinedUrl=null;$('result').hidden=!combined;
-  $('combined-video').removeAttribute('src');
-  if(combined)$('combined-video').src=combinedUrl=URL.createObjectURL(combined.blob);
-}
-async function loadAvatar(){
-  busy=true;controls();notice('3D 아바타를 불러오고 있어요.');
-  try{
-    const gltf=await new GLTFLoader().loadAsync(`./assets/kids/${$('avatar').value}.glb?v=3`);
-    gltf.scene.traverse(o=>{if(o.isMesh){o.castShadow=!/eye|iris|pupil|sparkle|brow|smile|lip|patch|stitch/.test(o.name);o.receiveShadow=true;}});
-    const next=createKidRig(gltf.scene);if(rig){scene.remove(rig.scene);rig.dispose();}rig=next;scene.add(rig.scene);
-    Motion.setAvatar(rig,rig.measures);notice('아바타 준비 완료. 카메라를 켜거나 시범 동작을 볼 수 있어요.');
-  }catch(e){notice(`아바타를 불러오지 못했어요. 새로고침해 주세요. ${e.message}`);}
-  finally{busy=false;controls();}
-}
-function render(now){
-  frame=requestAnimationFrame(render);const dt=Math.min((now-previousTime)/1000||1/60,.1);previousTime=now;
-  if(rig){
-    if(source==='demo')rig.demo(now/1000,$('demo-mode').value);
-    else if(source==='camera'){
-      try{Motion.detect(now);Motion.applyToVRM(rig,dt);rig.update();}
-      catch(e){Motion.stopCamera();source='idle';notice(`동작 인식이 중단됐어요. 카메라를 다시 켜 주세요. ${e.message}`);session?.stop();}
-    }
-  }
-  renderer.render(scene,camera);
+function frame(state,src){
+  frameState=state;
+  $('camera-hint').hidden=state.source==='camera';
+  text('camera-hint',state.source==='demo'?'시범 동작 · 카메라는 꺼져 있어요.':'카메라를 켜고 움직여 보세요.');
   if(session){
-    recordCtx.fillStyle='#f5f3ed';recordCtx.fillRect(0,0,960,768);recordCtx.drawImage(renderer.domElement,0,0,960,720);
-    recordCtx.fillStyle='#163e33';recordCtx.font='bold 24px sans-serif';
-    recordCtx.fillText(`${recordingMeta.group} · ${recordingMeta.index+1}번 · ${recordingMeta.theme}${recordingMeta.source==='demo'?' · 시범 동작':''}`,24,751,912);
-    const seconds=(now-recordStart)/1000;
-    $('record-help').textContent=`녹화 중 · ${seconds.toFixed(1)} / ${recordingMeta.limit}초`;
-    if(seconds>=recordingMeta.limit)session.stop();
+    if(session.state==='recording')paintFrame(src);
+    text('timer',timer(session.elapsedSeconds));
+    text('record-help',session.state==='paused'?'일시정지 중 · 녹화 이어하기를 누르면 같은 영상에 이어서 담아요.':'녹화 중 · 끝내기를 누르면 우리 모둠에 저장해요.');
+    if(session.elapsedSeconds>=60)session.stop();
+    if(state.source==='idle'||(recordMode==='both'&&!state.cameraActive))session.stop();
   }
-  const status=source==='demo'?'시범 동작 재생 중 · 카메라 추적 영상이 아니에요.':source==='idle'?'카메라를 켜고 머리부터 발끝까지 화면 안에 서 주세요.':Motion.getStatus()==='calibrating'?`정면을 보고 편하게 서 주세요 · 체형 맞추는 중 ${Math.round(Motion.getCalibProgress()*100)}%`:Motion.getStatus()==='noperson'?'몸을 찾고 있어요. 녹화를 누른 뒤 카메라를 향해 서 주세요.':!fullBodyVisible()?'녹화할 수 있어요. 다리 동작도 담으려면 머리부터 발끝까지 보이도록 서 주세요.':'준비 완료 · 내 동작을 따라 해요. 가려진 손과 관절은 인식이 어려울 수 있어요.';
-  if(status!==lastStatus){$('tracking').textContent=status;lastStatus=status;}controls();
+  text('tracking',state.source==='demo'?'시범 동작을 확인하고 있어요.':state.source==='idle'?'카메라를 켜고 움직여 보세요.':state.status==='calibrating'?'정면을 보고 잠시 서 주세요. 자세를 맞추고 있어요.':state.status==='noperson'?'카메라를 향해 서 주세요. 머리부터 발끝까지 보이면 좋아요.':'내 움직임을 따라 하고 있어요.');
+  controls();
 }
-$('camera-start').onclick=async()=>{
-  if(busy)return;busy=true;controls();
-  try{
-    Motion.stopCamera();source='idle';rig?.reset();
-    if(!trackersReady){await Motion.initTrackers(notice,{face:false});trackersReady=true;}
-    await Motion.startCamera($('camera'));source='camera';$('camera-hint').hidden=true;$('camera-start').textContent='카메라 다시 켜기';
-    const z=Motion.getCameraZoom();$('zoom-label').hidden=!z;
-    if(z){Object.assign($('zoom'),{min:z.min,max:z.max,step:z.step||.1,value:z.value});}
-    notice('전신이 보이는 거리에서 정면을 보고 서 주세요.');
-  }catch(e){Motion.stopCamera();source='idle';$('camera-hint').hidden=false;notice(e.name==='NotAllowedError'?'카메라 사용을 허용해 주세요. 브라우저 주소 옆 카메라 설정에서 바꿀 수 있어요.':`카메라를 켜지 못했어요. ${e.message}`);}
-  finally{busy=false;controls();}
+async function enter(next){
+  busy=true;membership=next;writeSession(GROUP_SESSION,next);pending=null;stageError=false;
+  $('entry').hidden=true;$('studio').hidden=false;text('room-label',`${next.room.title} · ${next.group}모둠`);text('room-code-label',`수업코드 ${next.room.code}`);text('recordings-title',`${next.group}모둠 · 내 녹화 확인하기`);
+  try{db??=await openGroupStore();pending=await db.get(draftKey(next))||null;showPending();}catch{notice('기기 자동 보관을 사용할 수 없어요. 녹화 후 저장 상태를 확인해 주세요.');}
+  controls();
+  try{const {createStage}=await import('./group-stage.js');stage=await createStage({mount:$('avatar-stage'),video:$('camera'),onStatus:notice,onFrame:frame});notice('카메라를 켜고 아바타와 함께 움직여 보세요.');}
+  catch{stageError=true;$('avatar-stage').textContent='이 브라우저에서 3D 화면을 열 수 없어요.';notice('3D 화면을 열지 못했어요. 최신 Chrome·Safari에서 열어 주세요. 저장한 녹화는 확인할 수 있어요.');}
+  busy=false;controls();
+}
+$('join-form').onsubmit=async e=>{
+  e.preventDefault();$('join-submit').disabled=true;text('join-status','수업방에 입장하고 있어요.');
+  try{const data=new FormData(e.currentTarget);const next=await roomRequest('join',{code:$('room-code').value.trim(),group:Number(data.get('group'))});text('join-status','');await enter(next);}
+  catch(error){text('join-status',error.message);}finally{$('join-submit').disabled=false;}
 };
-$('demo').onclick=()=>{if(busy)return;Motion.stopCamera();source=source==='demo'?'idle':'demo';rig?.reset();$('camera-hint').hidden=false;$('camera-hint').textContent=source==='demo'?'시범 동작 · 실제 카메라는 꺼져 있어요.':'머리부터 발끝까지 보이도록 서 주세요.';$('zoom-label').hidden=true;controls();};
-$('calibrate').onclick=()=>{rig?.reset();Motion.resetForNextStudent();};
-$('zoom').onchange=async()=>{try{await Motion.setCameraZoom(Number($('zoom').value));}catch{notice('이 카메라에서는 줌을 바꿀 수 없어요.');}};
-$('view').onchange=view;
-$('avatar').onchange=async()=>{await loadAvatar();await persist('settings',settings());};
-for(const id of ['group-name','theme','duration'])$(id).onchange=()=>persist('settings',settings());
+$('room-code').oninput=()=>{$('room-code').value=$('room-code').value.replace(/\D/g,'').slice(0,6);};
+$('leave').onclick=()=>{if(busy||session||uploading)return;stage?.dispose();stage=null;membership=null;pending=null;frameState={avatarReady:false,source:'idle'};writeSession(GROUP_SESSION,null);$('clips').replaceChildren();showPending();$('studio').hidden=true;$('entry').hidden=false;notice('');text('timer','0:00');};
+async function stageAction(action){if(busy||session||!stage)return;busy=true;controls();try{await action();}catch(e){notice(e.name==='NotAllowedError'?'카메라 사용을 허용해 주세요.':e.message||'카메라를 다시 켜 주세요.');}finally{busy=false;controls();}}
+$('camera-start').onclick=()=>stageAction(async()=>{const zoom=await stage.camera();$('zoom-label').hidden=!zoom;if(zoom)Object.assign($('zoom'),{min:zoom.min,max:zoom.max,step:zoom.step||.1,value:zoom.value});notice('카메라가 켜졌어요. 녹화를 누르고 촬영 위치로 이동하세요.');});
+$('demo').onclick=()=>stageAction(()=>{stage.demo();$('capture-mode').value='avatar';$('zoom-label').hidden=true;});
+$('avatar').onchange=()=>stageAction(()=>stage.avatar($('avatar').value));
+$('view').onchange=()=>stage?.view(Number($('view').value));
+$('calibrate').onclick=()=>stage?.reset();
+$('zoom').onchange=()=>stageAction(()=>stage.zoom(Number($('zoom').value)));
+async function savePending(){
+  if(!pending||!membership||uploading)return;
+  const draft=pending;uploading=true;controls();text('clips-status','우리 모둠에 저장하고 있어요.');notice('우리 모둠에 저장하고 있어요.');
+  try{
+    await uploadRecording(draft,membership.token,async()=>{try{await persistDraft();}catch{/* upload can succeed without local storage */}});
+    pending=null;try{await persistDraft();}catch{/* remote copy is already durable */}
+    showPending();notice('우리 모둠에 저장했어요. 내 녹화 확인하기에서 볼 수 있어요.');await loadClips();
+  }catch(e){try{await persistDraft();}catch{/* keep in memory */}text('clips-status',e.message);notice('서버에 저장하지 못했어요. 내 녹화 확인하기에서 다시 저장하거나 내려받아 주세요.');showPending();}
+  finally{uploading=false;controls();}
+}
 $('record').onclick=async()=>{
-  if(busy || !ready())return;busy=true;const token=++countdownToken;controls();
+  if(busy||session||uploading||pending||!canStartRecording(frameState))return;
+  busy=true;preparing=true;const token=++countdownToken;controls();
   try{
-    chooseMime();
-    if(!recordCanvas.captureStream)throw new Error('이 브라우저에서는 화면 녹화를 지원하지 않아요. Safari 또는 Chrome으로 열어 주세요.');
-    notice('녹화를 준비해요. 카메라를 향해 서 주세요.');
-    const prepared=await prepareRecording({
-      getState:recordingState,isCanceled:()=>token!==countdownToken,
-      onCountdown:n=>{$('countdown').textContent=n===null?'준비 중':String(n);$('countdown').hidden=false;$('record-help').textContent='촬영 위치로 이동해 주세요. 몸이 인식되면 녹화를 시작해요.';controls();},
-      onWaiting:status=>{$('record-help').textContent=status==='calibrating'?'정면을 보고 잠시 서 주세요. 자세를 맞추면 자동으로 녹화해요.':'몸을 찾고 있어요. 카메라를 향해 서 주세요. 인식되면 자동으로 녹화해요.';},
-    });
-    if(!prepared || token!==countdownToken)return;
-    $('countdown').textContent='';$('countdown').hidden=true;
-    notice('녹화를 시작했어요. 동작을 해 주세요.');
-    recordingMeta={index:selected,group:$('group-name').value||'우리 모둠',theme:$('theme').value,source,limit:Number($('duration').value)};
-    recordCtx.drawImage(renderer.domElement,0,0,960,720);
-    session=makeRecording(recordCanvas);recordStart=performance.now();controls();
-    const blob=await session.done,duration=(performance.now()-recordStart)/1000;
-    if(duration<.5)throw new Error('너무 짧은 영상이에요. 다시 녹화해 주세요.');
-    const clip={...recordingMeta,blob,duration,revision:revision()},i=recordingMeta.index;
-    clips[i]=clip;combined=null;showCombined();const saved=await persist(`clip-${i}`,clip);
-    await persist('combined',null);if(selected<3)selected++;
-    if(source==='camera'){rig.reset();Motion.resetForNextStudent();}
-    notice(`${i+1}번 영상 완료.${saved?' 이 기기에 보관했어요.':' 페이지를 닫기 전에 영상 저장을 눌러 주세요.'}`);renderSlots();
+    chooseMime();recordMode=$('capture-mode').value;
+    if(recordMode==='both'&&!frameState.cameraActive)throw new Error('내 모습도 담으려면 카메라를 켜 주세요.');
+    const prepared=await prepareRecording({getState:()=>stage.state(),isCanceled:()=>token!==countdownToken,onCountdown:n=>{$('countdown').hidden=false;text('countdown',n===null?'준비 중':String(n));text('record-help','촬영 위치로 이동해 주세요.');},onWaiting:()=>text('record-help','카메라를 향해 서 주세요. 몸이 인식되면 시작해요.')});
+    if(!prepared||token!==countdownToken)return;
+    $('countdown').hidden=true;canvas.width=recordMode==='both'?1920:960;paintFrame(stage.canvas);
+    const capture=makeRecording(canvas);session=capture;preparing=false;controls();notice('녹화를 시작했어요.');
+    const blob=await capture.done,duration=capture.elapsedSeconds;
+    if(duration<.5)throw new Error('녹화가 너무 짧아요. 다시 찍어 주세요.');
+    pending={blob,duration:Math.min(duration,61),title:`${membership.group}모둠 동작 · ${new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})}`,createdAt:Date.now()};
+    try{await persistDraft();}catch{notice('기기 자동 보관에 실패했어요. 페이지를 닫기 전에 저장해 주세요.');}
+    showPending();session=null;busy=false;controls();await savePending();
   }catch(e){notice(e.message);}
-  finally{session=null;$('countdown').textContent='';$('countdown').hidden=true;busy=false;$('record-help').textContent='3초 뒤 시작해요. 카메라 얼굴 영상과 소리는 저장하지 않아요.';controls();}
+  finally{session=null;busy=false;preparing=false;$('countdown').hidden=true;text('countdown','');controls();}
 };
-$('stop').onclick=()=>{countdownToken++;$('countdown').textContent='';$('countdown').hidden=true;if(session)session.stop();else notice('녹화를 취소했어요. 다시 시작할 수 있어요.');};
-$('combine').onclick=async()=>{
-  if(busy || !canCombine(clips))return;busy=true;mergeController=new AbortController();controls();
-  const signature=clipSignature(clips),canvas=document.createElement('canvas');canvas.width=960;canvas.height=768;
+$('pause').onclick=()=>{if(session?.state==='paused')session.resume();else session?.pause();controls();};
+$('stop').onclick=()=>{if(session)session.stop();else{countdownToken++;notice('녹화를 취소했어요.');}};
+async function loadClips(){
+  if(!membership||loadingClips)return;loadingClips=true;$('refresh-clips').disabled=true;
+  const current=membership;const list=$('clips');text('clips-status','녹화를 불러오고 있어요.');
   try{
-    const blob=await combineClips(clips,canvas,{signal:mergeController.signal,onProgress:i=>notice(`${i}번 영상 이어 붙이는 중… 화면을 켜 둬 주세요.`)});
-    combined={blob,signature,group:$('group-name').value||'우리 모둠'};const saved=await persist('combined',combined);showCombined();
-    notice(`네 학생의 영상이 순서대로 완성됐어요.${saved?'':' 페이지를 닫기 전에 전체 영상 저장을 눌러 주세요.'}`);
-  }catch(e){notice(e.name==='AbortError'?'이어 붙이기를 중단했어요. 학생별 영상은 그대로 있어요.':`이어 붙이기를 완료하지 못했어요. ${e.message}`);}
-  finally{busy=false;mergeController=null;controls();}
-};
-$('cancel-combine').onclick=()=>mergeController?.abort();
-$('save-combined').onclick=()=>combined && saveVideo(combined.blob,`${safeName(combined.group)}_전체`);
-document.addEventListener('visibilitychange',()=>{if(document.hidden){countdownToken++;session?.stop();mergeController?.abort();}});
-window.addEventListener('beforeunload',e=>{if(busy){e.preventDefault();e.returnValue='';}});
-document.querySelector('header a').addEventListener('click',e=>{if(busy){e.preventDefault();notice('녹화나 이어 붙이기를 마친 뒤 이동해 주세요.');}});
-window.addEventListener('pagehide',()=>{Motion.stopCamera();session?.stop();mergeController?.abort();});
-async function boot(){
-  busy=true;view();renderSlots();frame=requestAnimationFrame(render);
-  try{
-    db=await openGroupStore();const s=await db.get('settings');
-    if(s){$('group-name').value=s.name||'우리 모둠';for(const id of ['theme','avatar','duration'])if([...$(id).options].some(o=>o.value===s[id]))$(id).value=s[id];}
-    const stored=await Promise.all(clips.map((_,i)=>db.get(`clip-${i}`)));
-    stored.forEach((c,i)=>{if(c?.blob?.size)clips[i]=c;});
-    const merged=await db.get('combined');if(merged?.blob?.size && merged.signature===clipSignature(clips))combined=merged;
-    const next=clips.findIndex(c=>!c);selected=next<0?0:next;showCombined();renderSlots();
-  }catch{notice('자동 보관을 사용할 수 없어요. 녹화 후 영상 저장을 눌러 주세요.');}
-  await loadAvatar();
+    const result=await roomRequest('clips',{},current.token);if(membership!==current)return;
+    list.replaceChildren();for(const clip of result.clips){
+      const article=document.createElement('article');article.className='clip';const h=document.createElement('h3');h.textContent=clip.title;
+      const v=document.createElement('video');v.controls=true;v.playsInline=true;v.preload='metadata';v.src=clip.url;
+      const p=document.createElement('p');p.textContent=`${Number(clip.duration).toFixed(1)}초 · ${new Date(clip.created_at).toLocaleString('ko-KR')}`;
+      const save=document.createElement('button');save.textContent='영상 저장';save.onclick=async()=>{save.disabled=true;try{const r=await fetch(clip.url);if(!r.ok)throw Error();await download(await r.blob(),clip.title);}catch{text('clips-status','새로고침 후 다시 저장해 주세요.');}finally{save.disabled=false;}};
+      article.append(h,v,p,save);list.append(article);
+    }text('clips-status',result.clips.length?`${current.group}모둠의 녹화 ${result.clips.length}개`:'아직 저장한 녹화가 없어요.');
+  }catch(e){text('clips-status',e.message);}finally{loadingClips=false;$('refresh-clips').disabled=false;}
 }
-boot();
+async function download(blob,name){const file=new File([blob],`${name.replace(/[^\p{L}\p{N}_-]/gu,'_')}.${fileExtension(blob.type)}`,{type:blob.type});if(navigator.canShare?.({files:[file]})){try{await navigator.share({files:[file]});return;}catch(e){if(e.name==='AbortError')return;}}const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=file.name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);}
+$('review').onclick=()=>{showPending();$('recordings').showModal();void loadClips();};
+$('recordings-close').onclick=()=>$('recordings').close();
+$('recordings').onclose=()=>{for(const v of $('recordings').querySelectorAll('video'))v.pause();};
+$('refresh-clips').onclick=loadClips;$('retry-upload').onclick=savePending;
+$('download-pending').onclick=()=>pending&&download(pending.blob,pending.title);
+$('discard-pending').onclick=async()=>{if(uploading||!pending||!confirm('서버에 저장되지 않은 이 녹화를 지울까요?'))return;pending=null;try{await persistDraft();}catch{}showPending();text('clips-status','녹화를 지웠어요.');};
+window.addEventListener('beforeunload',e=>{if(busy||session||uploading||pending){e.preventDefault();e.returnValue='';}});
+window.addEventListener('pagehide',()=>{stage?.stop();session?.stop();});
+document.addEventListener('visibilitychange',()=>{if(document.hidden){countdownToken++;if(session?.state==='recording')session.pause();}});
+const saved=readSession(GROUP_SESSION);
+if(saved?.token){try{await roomRequest('clips',{},saved.token);await enter(saved);}catch{writeSession(GROUP_SESSION,null);text('join-status','수업코드와 모둠을 선택해 다시 입장해 주세요.');}}

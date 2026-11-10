@@ -8,23 +8,32 @@ export function chooseMime(Recorder = globalThis.MediaRecorder) {
 export function fileExtension(mime) { return mime.startsWith('video/mp4') ? 'mp4' : 'webm'; }
 export function clipSignature(clips) { return clips.map(c => c?.revision || '').join('|'); }
 export function canCombine(clips) { return clips.length === 4 && clips.every(c => c?.blob?.size > 0); }
-export function makeRecording(canvas, Recorder = globalThis.MediaRecorder) {
+export function makeRecording(canvas, Recorder = globalThis.MediaRecorder, clock = () => performance.now()) {
   if (!canvas.captureStream) throw new Error('이 브라우저에서는 화면 녹화를 지원하지 않아요.');
   const mime = chooseMime(Recorder), stream = canvas.captureStream(24), chunks=[];
-  let recorder;
+  let recorder, startedAt, pausedAt=null, pausedMs=0, finishedAt=null;
+  const elapsed = () => Math.max(0,((finishedAt ?? pausedAt ?? clock())-startedAt-pausedMs)/1000);
   try { recorder = new Recorder(stream, { mimeType:mime, videoBitsPerSecond:3500000 }); }
   catch(e) { stream.getTracks().forEach(t=>t.stop()); throw e; }
   const done = new Promise((resolve,reject)=>{
     recorder.ondataavailable=e=>{if(e.data?.size)chunks.push(e.data);};
     recorder.onerror=e=>{stream.getTracks().forEach(t=>t.stop());reject(e.error || new Error('녹화 오류'));};
     recorder.onstop=()=>{
+      finishedAt ??= pausedAt ?? clock();
       stream.getTracks().forEach(t=>t.stop());
       const blob=new Blob(chunks,{type:recorder.mimeType || mime});
       if(blob.size)resolve(blob);else reject(new Error('영상이 비어 있어요. 다시 녹화해 주세요.'));
     };
   });
-  try { recorder.start(200); } catch(e) { stream.getTracks().forEach(t=>t.stop()); throw e; }
-  return {done, stop(){if(recorder.state!=='inactive')recorder.stop();}};
+  try { recorder.start(200); startedAt=clock(); } catch(e) { stream.getTracks().forEach(t=>t.stop()); throw e; }
+  return {
+    done,
+    get state(){return recorder.state;},
+    get elapsedSeconds(){return elapsed();},
+    pause(){if(recorder.state==='recording'){recorder.pause();pausedAt=clock();}},
+    resume(){if(recorder.state==='paused'){recorder.resume();pausedMs+=clock()-pausedAt;pausedAt=null;}},
+    stop(){if(recorder.state!=='inactive'){finishedAt=pausedAt ?? clock();recorder.stop();}},
+  };
 }
 
 export function openGroupStore(indexedDB = globalThis.indexedDB) {
