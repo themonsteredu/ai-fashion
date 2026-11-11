@@ -26,3 +26,15 @@ body.studio-mode{overflow:hidden;background:#f4f3ee}
 .studio-mode .record-options label{gap:12px}
 .studio-mode .record-options select{min-height:40px;padding:6px 12px;font-size:14px}
 .studio-mode #notice{bottom:126px}
+
+/* Warm studio framing, without extra tools or visual clutter. */
+body.studio-mode{background:linear-gradient(145deg,#eef2eb,#f8f4ec 58%,#e9e4d9)}
+.studio-mode .view{padding:10px;background:#ffffffa8;border:1px solid #ffffffd9;border-radius:20px;box-shadow:0 8px 26px #244a3510}
+.studio-mode .view h2{padding:0 4px;color:#365b49;letter-spacing:.02em}
+.studio-mode #avatar-stage{background:linear-gradient(#e6eee8,#eee5d7)}
+.studio-mode .camera-stage{background:radial-gradient(ellipse at 50% 40%,#eef1e9,#d6dfd5)}
+.studio-mode #avatar-stage,.studio-mode .camera-stage{border-radius:12px}
+.studio-mode .record-panel button{border-radius:12px;box-shadow:0 2px 6px #254c3210}
+.studio-mode .record-panel .primary{background:#285c46;border-color:#285c46}
+.studio-mode .record-options select{background:#ffffffbd;border-color:#c7d2c5;border-radius:20px}
+@media(max-width:520px){.studio-mode .view{padding:6px;border-radius:14px}.studio-mode .view h2{font-size:14px;padding:0 2px}.studio-mode #avatar-stage,.studio-mode .camera-stage{border-radius:9px}}

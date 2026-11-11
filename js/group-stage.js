@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import * as Motion from './motion.js';
+import {createScenery} from './group-scenery.js';
 import {createKidRig} from './kid-rig.js';
 export async function createStage({mount,video,onStatus,onFrame}){
   const scene=new THREE.Scene();scene.background=new THREE.Color('#f5f3ed');
@@ -14,7 +15,7 @@ export async function createStage({mount,video,onStatus,onFrame}){
   const key=new THREE.DirectionalLight(0xfff3e6,2.4);key.position.set(-3,5,4);key.castShadow=true;
   key.shadow.mapSize.set(1024,1024);Object.assign(key.shadow.camera,{left:-2,right:2,top:3,bottom:-2,near:.5,far:12});key.shadow.bias=-.00015;key.shadow.normalBias=.008;scene.add(key);
   const fill=new THREE.DirectionalLight(0xe8efff,.8);fill.position.set(3,2,1);scene.add(fill);
-  const floor=new THREE.Mesh(new THREE.PlaneGeometry(10,10),new THREE.ShadowMaterial({opacity:.16,color:0x4e5555}));floor.rotation.x=-Math.PI/2;floor.position.y=.022;floor.receiveShadow=true;scene.add(floor);
+  const disposeScenery=createScenery(scene);
   let rig=null,source='idle',trackersReady=false,previous=0,frame,disposed=false;
   function view(angle=0){camera.position.set(Math.sin(angle)*3.25,1,Math.cos(angle)*3.25);camera.lookAt(target);}
   function state(){return {avatarReady:!!rig,source,status:Motion.getStatus(),cameraActive:!!video.srcObject?.getVideoTracks().some(t=>t.readyState==='live')};}
@@ -32,7 +33,7 @@ export async function createStage({mount,video,onStatus,onFrame}){
     renderer.render(scene,camera);onFrame(state(),renderer.domElement);
   }
   view();frame=requestAnimationFrame(tick);
-  try{await avatar('boy');}catch(e){cancelAnimationFrame(frame);renderer.dispose();mount.replaceChildren();throw e;}
+  try{await avatar('boy');}catch(e){cancelAnimationFrame(frame);disposeScenery();renderer.dispose();mount.replaceChildren();throw e;}
   return {
     state,view,avatar,canvas:renderer.domElement,
     async camera(){Motion.stopCamera();source='idle';rig.reset();if(!trackersReady){await Motion.initTrackers(onStatus,{face:false});trackersReady=true;}try{await Motion.startCamera(video);source='camera';return Motion.getCameraZoom();}catch(e){Motion.stopCamera();throw e;}},
@@ -40,6 +41,6 @@ export async function createStage({mount,video,onStatus,onFrame}){
     reset(){rig?.reset();Motion.resetForNextStudent();},
     zoom:value=>Motion.setCameraZoom(value),
     stop(){Motion.stopCamera();source='idle';},
-    dispose(){disposed=true;cancelAnimationFrame(frame);Motion.stopCamera();rig?.dispose();renderer.dispose();floor.geometry.dispose();floor.material.dispose();mount.replaceChildren();},
+    dispose(){disposed=true;cancelAnimationFrame(frame);Motion.stopCamera();rig?.dispose();renderer.dispose();disposeScenery();mount.replaceChildren();},
   };
 }
