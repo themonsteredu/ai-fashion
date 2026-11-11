@@ -4,12 +4,13 @@ import {roomRequest,readSession,writeSession,GROUP_SESSION,draftKey,uploadRecord
 const $=id=>document.getElementById(id);
 const text=(id,value)=>{if($(id).textContent!==value)$(id).textContent=value;};
 let membership=null,stage=null,db=null,busy=false,session=null,countdownToken=0,pending=null,pendingUrl=null,uploading=false,loadingClips=false,stageError=false,preparing=false;
-let frameState={avatarReady:false,source:'idle'},recordMode='both',saveAfterStop=false;
+let frameState={avatarReady:false,source:'idle'},recordMode='both',saveAfterStop=false,recordTopic='';
 const canvas=document.createElement('canvas');canvas.width=960;canvas.height=768;const ctx=canvas.getContext('2d');
 const timer=s=>`${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`;
 function notice(message){text('notice',message);}
 function controls(){
   const locked=busy||!!session||uploading;
+  $('group-topic').disabled=locked||!!pending;
   for(const id of ['camera-start','avatar','view','demo','capture-mode','format-avatar','format-both','zoom'])$(id).disabled=locked||(!stage&&id!=='capture-mode');
   $('calibrate').disabled=locked||frameState.source!=='camera';
   $('record').disabled=uploading||(!session&&(busy||!!pending||!stage));
@@ -36,9 +37,14 @@ function paintFrame(src){
   const wash=ctx.createLinearGradient(0,0,0,canvas.height);wash.addColorStop(0,'#2397df');wash.addColorStop(1,'#f8e8d6');ctx.fillStyle=wash;ctx.fillRect(0,0,canvas.width,canvas.height);
   const width=recordMode==='both'?canvas.width/2:canvas.width;
   // Fit both views without cropping the avatar or student's feet.
-  const fit=(image,iw,ih,x,w,mirror=false)=>{if(!iw||!ih)return;const scale=Math.min(w/iw,720/ih),dw=iw*scale,dh=ih*scale;ctx.save();if(mirror){ctx.translate(x+w,0);ctx.scale(-1,1);x=0;}ctx.drawImage(image,x+(w-dw)/2,(720-dh)/2,dw,dh);ctx.restore();};
+  const fit=(image,iw,ih,x,w,mirror=false)=>{if(!iw||!ih)return;const scale=Math.min(w/iw,632/ih),dw=iw*scale,dh=ih*scale;ctx.save();if(mirror){ctx.translate(x+w,0);ctx.scale(-1,1);x=0;}ctx.drawImage(image,x+(w-dw)/2,88+(632-dh)/2,dw,dh);ctx.restore();};
   fit(src,src.width,src.height,0,width);
   if(recordMode==='both'){const v=$('camera');fit(v,v.videoWidth,v.videoHeight,width,width,true);}
+  ctx.fillStyle='#ffffff';ctx.fillRect(0,0,canvas.width,88);
+  ctx.fillStyle='#10244c';ctx.textAlign='center';ctx.textBaseline='middle';
+  let topicSize=42;ctx.font=`600 ${topicSize}px SCore, sans-serif`;
+  while(ctx.measureText(recordTopic).width>canvas.width-64&&topicSize>24){topicSize--;ctx.font=`600 ${topicSize}px SCore, sans-serif`;}
+  ctx.fillText(recordTopic,canvas.width/2,44,canvas.width-64);ctx.textAlign='left';ctx.textBaseline='alphabetic';
   ctx.fillStyle='#faf8f2';ctx.fillRect(0,720,canvas.width,48);
   ctx.fillStyle='#527362';ctx.fillRect(24,735,4,18);
   ctx.fillStyle='#234638';ctx.font='bold 22px sans-serif';ctx.fillText(`${membership.group}모둠 · ${membership.room.title}`,40,751,canvas.width-180);
@@ -62,6 +68,9 @@ async function enter(next){
   busy=true;membership=next;writeSession(GROUP_SESSION,next);pending=null;stageError=false;
   document.body.classList.add('studio-mode');$('entry').hidden=true;$('studio').hidden=false;text('room-label',`${next.room.title} · ${next.group}모둠`);text('room-code-label',`수업코드 ${next.room.code}`);text('recordings-title',`${next.group}모둠 · 내 녹화 확인하기`);
   try{db??=await openGroupStore();pending=await db.get(draftKey(next))||null;showPending();}catch{notice('기기 자동 보관을 사용할 수 없어요. 녹화 후 저장 상태를 확인해 주세요.');}
+  text('group-topic-label',`${next.group}모둠 주제`);
+  try{$('group-topic').value=localStorage.getItem(`fashion-topic:${next.room.id}:${next.group}`)||'';}catch{$('group-topic').value='';}
+  if(pending?.topic)$('group-topic').value=pending.topic;
   controls();
   try{const {createStage}=await import('./group-stage.js?v=blue5');stage=await createStage({mount:$('avatar-stage'),video:$('camera'),onStatus:notice,onFrame:frame});try{await stage.camera();notice('');}catch{notice('카메라 사용을 허용한 뒤 녹화를 눌러 주세요.');}}
   catch{stageError=true;$('avatar-stage').textContent='이 브라우저에서 3D 화면을 열 수 없어요.';notice('3D 화면을 열지 못했어요. 최신 Chrome·Safari에서 열어 주세요. 저장한 녹화는 확인할 수 있어요.');}
@@ -72,6 +81,7 @@ $('join-form').onsubmit=async e=>{
   try{const data=new FormData(e.currentTarget);const next=await roomRequest('join',{code:$('room-code').value.trim(),group:Number(data.get('group'))});text('join-status','');await enter(next);}
   catch(error){text('join-status',error.message);}finally{$('join-submit').disabled=false;}
 };
+$('group-topic').oninput=()=>{if(!membership)return;try{localStorage.setItem(`fashion-topic:${membership.room.id}:${membership.group}`,$('group-topic').value);}catch{}};
 $('room-code').oninput=()=>{$('room-code').value=$('room-code').value.replace(/\D/g,'').slice(0,6);};
 $('leave').onclick=()=>{if(busy||session||uploading)return;stage?.dispose();stage=null;membership=null;pending=null;frameState={avatarReady:false,source:'idle'};writeSession(GROUP_SESSION,null);$('clips').replaceChildren();showPending();document.body.classList.remove('studio-mode');$('studio').hidden=true;$('entry').hidden=false;notice('');text('timer','0:00');};
 async function stageAction(action){if(busy||session||!stage)return;busy=true;controls();try{await action();}catch(e){notice(e.name==='NotAllowedError'?'카메라 사용을 허용해 주세요.':e.message||'카메라를 다시 켜 주세요.');}finally{busy=false;controls();}}
@@ -95,6 +105,9 @@ async function savePending(){
 $('record').onclick=async()=>{
   if(session){session.stop();return;}
   if(busy||uploading||pending||!stage)return;
+  recordTopic=$('group-topic').value.trim().replace(/\s+/g,' ').slice(0,30);
+  if(!recordTopic){notice('우리 모둠 주제를 먼저 적어 주세요.');$('group-topic').focus();return;}
+  $('group-topic').value=recordTopic;
   if(!frameState.cameraActive){await stageAction(()=>stage.camera());if(!stage.state().cameraActive)return;}
   saveAfterStop=false;
   busy=true;preparing=true;const token=++countdownToken;controls();
@@ -107,7 +120,7 @@ $('record').onclick=async()=>{
     const capture=makeRecording(canvas);session=capture;preparing=false;controls();notice('녹화를 시작했어요.');
     const blob=await capture.done,duration=capture.elapsedSeconds;
     if(duration<.5)throw new Error('녹화가 너무 짧아요. 다시 찍어 주세요.');
-    pending={blob,duration:Math.min(duration,61),title:`${membership.group}모둠 동작 · ${new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})}`,createdAt:Date.now()};
+    pending={blob,duration:Math.min(duration,61),title:recordTopic,topic:recordTopic,createdAt:Date.now()};
     try{await persistDraft();}catch{notice('기기 자동 보관에 실패했어요. 페이지를 닫기 전에 저장해 주세요.');}
     showPending();session=null;busy=false;controls();notice('');if(saveAfterStop)await savePending();
   }catch(e){notice(e.message);}
