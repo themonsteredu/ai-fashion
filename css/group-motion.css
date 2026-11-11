@@ -20,3 +20,9 @@ body.studio-mode{overflow:hidden;background:#f4f3ee}
 .studio-mode #notice{position:absolute;left:12px;right:12px;bottom:76px;text-align:center;margin:0;min-height:0;font-size:14px;background:#fffffff0;border-radius:8px;z-index:4}
 .studio-mode #notice:empty{display:none}
 @media(max-width:520px){.studio-mode main{padding:10px 8px max(10px,env(safe-area-inset-bottom))}.studio-mode #studio{gap:10px}.studio-mode .workspace{gap:8px}.studio-mode .record-panel{gap:6px}.studio-mode .record-panel button{font-size:14px;min-height:50px}.studio-mode #notice{bottom:65px}}
+
+.studio-mode #studio{grid-template-rows:minmax(0,1fr) auto auto;gap:10px}
+.studio-mode .record-options{justify-content:center;margin:0;font-size:14px}
+.studio-mode .record-options label{gap:12px}
+.studio-mode .record-options select{min-height:40px;padding:6px 12px;font-size:14px}
+.studio-mode #notice{bottom:126px}
