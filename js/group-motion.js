@@ -52,6 +52,7 @@ function paintFrame(src){
 }
 function frame(state,src){
   frameState=state;
+  if(state.people===2)text('pair-status',state.status==='ok'?'2명 인식 완료':state.detectedCount===2?'두 사람 자세 맞추는 중':`2명 중 ${state.detectedCount||0}명 인식 · 나란히 서 주세요`);
   $('camera-hint').hidden=state.source==='camera';
   text('camera-hint','카메라 사용을 허용해 주세요.');
   if(session){
@@ -69,16 +70,17 @@ async function enter(next){
   document.body.classList.add('studio-mode');$('entry').hidden=true;$('studio').hidden=false;text('room-label',`${next.room.title} · ${next.group}모둠`);text('room-code-label',`수업코드 ${next.room.code}`);text('recordings-title',`${next.group}모둠 · 내 녹화 확인하기`);
   try{db??=await openGroupStore();pending=await db.get(draftKey(next))||null;showPending();}catch{notice('기기 자동 보관을 사용할 수 없어요. 녹화 후 저장 상태를 확인해 주세요.');}
   text('group-topic-label',`${next.group}모둠 주제`);
+  const paired=next.people===2;text('avatar-heading',paired?'우리 아바타':'내 아바타');text('camera-heading',paired?'우리 모습':'내 모습');$('pair-status').hidden=!paired;
   try{$('group-topic').value=localStorage.getItem(`fashion-topic:${next.room.id}:${next.group}`)||'';}catch{$('group-topic').value='';}
   if(pending?.topic)$('group-topic').value=pending.topic;
   controls();
-  try{const {createStage}=await import('./group-stage.js?v=blue5');stage=await createStage({mount:$('avatar-stage'),video:$('camera'),onStatus:notice,onFrame:frame});try{await stage.camera();notice('');}catch{notice('카메라 사용을 허용한 뒤 녹화를 눌러 주세요.');}}
+  try{const {createStage}=await import('./group-stage.js?v=pair8');stage=await createStage({mount:$('avatar-stage'),video:$('camera'),onStatus:notice,onFrame:frame,people:next.people===2?2:1});try{await stage.camera();notice('');}catch{notice('카메라 사용을 허용한 뒤 녹화를 눌러 주세요.');}}
   catch{stageError=true;$('avatar-stage').textContent='이 브라우저에서 3D 화면을 열 수 없어요.';notice('3D 화면을 열지 못했어요. 최신 Chrome·Safari에서 열어 주세요. 저장한 녹화는 확인할 수 있어요.');}
   busy=false;controls();
 }
 $('join-form').onsubmit=async e=>{
   e.preventDefault();$('join-submit').disabled=true;text('join-status','수업방에 입장하고 있어요.');
-  try{const data=new FormData(e.currentTarget);const next=await roomRequest('join',{code:$('room-code').value.trim(),group:Number(data.get('group'))});text('join-status','');await enter(next);}
+  try{const data=new FormData(e.currentTarget);const next=await roomRequest('join',{code:$('room-code').value.trim(),group:Number(data.get('group'))});next.people=Number($('people-count').value)===2?2:1;text('join-status','');await enter(next);}
   catch(error){text('join-status',error.message);}finally{$('join-submit').disabled=false;}
 };
 $('group-topic').oninput=()=>{if(!membership)return;try{localStorage.setItem(`fashion-topic:${membership.room.id}:${membership.group}`,$('group-topic').value);}catch{}};

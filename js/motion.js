@@ -18,8 +18,9 @@ import { HAND_PRESETS, blendHandPose, GestureDetector, HAND_GESTURE_DEFS, HeartD
 import { applyTrackZoom, canRequestTrackZoom, getTrackZoom, requestTrackZoomStream } from './pe-relay-camera.js';
 import { bodyOrientation, groundedHipDrop } from './spatial-pose.js';
 
+export function createMotionSession(){
 // ── 필터 파라미터 (부위별 One Euro) ──
-export const FILTER_PARAMS = {
+const FILTER_PARAMS = {
   torso:     { minCutoff: 1.0, beta: 0.5 },   // 어깨·골반·머리: 안정 우선
   limb:      { minCutoff: 1.6, beta: 0.9 },   // 팔꿈치·무릎
   extremity: { minCutoff: 2.2, beta: 1.4 },   // 손목·발목: 반응 우선
@@ -64,7 +65,7 @@ for (const i of [LM.L_EL, LM.R_EL, LM.L_KNEE, LM.R_KNEE]) LM_GROUP[i] = 'limb';
 for (const i of [LM.L_WR, LM.R_WR, LM.L_ANK, LM.R_ANK]) LM_GROUP[i] = 'extremity';
 
 let poseLandmarker = null, faceLandmarker = null, handLandmarker = null;
-let video = null, stream = null;
+let video = null, stream = null, externalActive=false;
 let lastVideoTime = -1, lastTs = 0, frameCount = 0;
 
 let rawPose = null;      // 필터 전 좌표 (디버그용)
@@ -125,11 +126,11 @@ const feet = {
   right: { locked: false, lockPos: new THREE.Vector3(), prevY: null, vy: 0 },
 };
 
-export function isTracking() { return tracked; }
+function isTracking() { return tracked; }
 
 // 미션 화면의 웹캠 HUD에서만 사용하는 2D 포즈 랜드마크.
 // 판정·아바타 구동 좌표와 분리해 원본 인식 파이프라인에는 영향을 주지 않는다.
-export function getPoseOverlay() {
+function getPoseOverlay() {
   if (!tracked || !poseImg) return null;
   return poseImg.map((p) => ({
     x: p.x,
@@ -141,7 +142,7 @@ export function getPoseOverlay() {
 // ── 랜덤 포즈 미션용 스냅샷 ──
 // 정규화된 관절 좌표(어깨너비 기준) + 신뢰도 + 손 제스처 상태를 한 번에 제공.
 // 미션 모듈은 이 함수만 사용하고 내부 파이프라인은 건드리지 않는다.
-export function getPoseSnapshot() {
+function getPoseSnapshot() {
   if (!tracked || !latestPose || !latestVis) {
     return { present: false, calibrated: !!calib, frameId: frameCount };
   }
@@ -175,13 +176,13 @@ export function getPoseSnapshot() {
 }
 
 // 상태: 'idle' | 'noperson' | 'calibrating' | 'ok'
-export function getStatus() {
-  if (!stream) return 'idle';
+function getStatus() {
+  if (!stream && !externalActive) return 'idle';
   if (!tracked) return 'noperson';
   if (!calib) return 'calibrating';
   return 'ok';
 }
-export function getCalibProgress() {
+function getCalibProgress() {
   if (calib) return 1;
   if (!calibStartMs) return 0;
   // 시간과 표본 수 중 덜 채워진 쪽 기준으로 표시 (100%인데 안 끝나는 현상 방지)
@@ -190,7 +191,7 @@ export function getCalibProgress() {
   return Math.min(1, Math.min(byTime, byFrames));
 }
 
-export function getHeadHint() {
+function getHeadHint() {
   if (!tracked || !poseImg || !video) return null;
   const aspect = (video.videoWidth || 640) / (video.videoHeight || 480);
   const dx = (poseImg[LM.L_EYE].x - poseImg[LM.R_EYE].x) * aspect;
@@ -202,20 +203,20 @@ export function getHeadHint() {
 }
 
 // 새 아바타 등록: 골격 치수 측정 + 상태 초기화
-export function setAvatar(vrm, measures) {
+function setAvatar(vrm, measures) {
   skeleton = measures || null;
   spatialRig = vrm?.meta?.spatialRig === true;
   vrmVersion = (vrm && vrm.meta && (vrm.meta.metaVersion || vrm.meta.specVersion)) || '?';
   hipsRest = null;
   resetTracking();
 }
-export function resetForNewAvatar() { // 하위 호환
+function resetForNewAvatar() { // 하위 호환
   hipsRest = null;
   resetTracking();
 }
 
 // 학생이 교대할 때 카메라는 유지하고 새 체형으로 추적을 다시 시작한다.
-export function resetForNextStudent() {
+function resetForNextStudent() {
   tracked = false;
   latestPose = null;
   latestVis = null;
@@ -239,7 +240,7 @@ function resetTracking() {
   heartBlendCur = 0;
 }
 
-export async function initTrackers(onStatus, { face: enableFace = true } = {}) {
+async function initTrackers(onStatus, { face: enableFace = true } = {}) {
   onStatus && onStatus('모션 인식 준비 중…');
   const fileset = await FilesetResolver.forVisionTasks('./lib/mediapipe/wasm');
 
@@ -287,7 +288,7 @@ export async function initTrackers(onStatus, { face: enableFace = true } = {}) {
 }
 let delegateMode = '-';
 
-export async function startCamera(videoEl) {
+async function startCamera(videoEl) {
   video = videoEl;
   // 세로 화각을 넓게(4:3) 요청 → 16:9보다 위·아래가 더 잡혀 전신이 잘 들어옴.
   // 4:3을 지원 안 하는 웹캠이면 기본값으로 폴백.
@@ -303,15 +304,15 @@ export async function startCamera(videoEl) {
   resetTracking();
 }
 
-export function getCameraZoom() {
+function getCameraZoom() {
   return getTrackZoom(stream?.getVideoTracks()[0]);
 }
 
-export function canRequestCameraZoom() {
+function canRequestCameraZoom() {
   return canRequestTrackZoom(stream?.getVideoTracks()[0]);
 }
 
-export async function enableCameraZoom() {
+async function enableCameraZoom() {
   const previous = stream;
   const camera = video;
   const existingZoom = getCameraZoom();
@@ -346,7 +347,7 @@ export async function enableCameraZoom() {
   }
 }
 
-export async function setCameraZoom(value) {
+async function setCameraZoom(value) {
   const activeStream = stream;
   const track = activeStream?.getVideoTracks()[0];
   const before = getTrackZoom(track)?.value;
@@ -356,7 +357,8 @@ export async function setCameraZoom(value) {
   return zoom;
 }
 
-export function stopCamera() {
+function stopCamera() {
+  externalActive=false;
   if (stream) {
     for (const t of stream.getTracks()) t.stop();
     stream = null;
@@ -374,7 +376,7 @@ let lastDetectMs = 0;
 let lastTrackedMs = 0;
 
 // ── 1~4단계: 수신 → 게이팅 → 필터 → 스케일 ──
-export function detect(now) {
+function detect(now) {
   if (!video || !poseLandmarker || video.readyState < 2) return;
   if (video.currentTime === lastVideoTime) return;
   lastVideoTime = video.currentTime;
@@ -695,7 +697,7 @@ const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vect
 const _m1 = new THREE.Matrix4();
 
 // ── 5~8단계: 목표 계산 → 제한 → Foot IK → 본 적용 ──
-export function applyToVRM(vrm, dt) {
+function applyToVRM(vrm, dt) {
   if (!vrm) return;
   const now = performance.now();
   dtCur = dt;
@@ -1265,7 +1267,7 @@ function basisQuat(a1, a2, b1, b2) {
 }
 
 // ── H. 디버그 정보 ──
-export function getDebugInfo() {
+function getDebugInfo() {
   return {
     fps: detectFps,
     inferMs,
@@ -1295,3 +1297,29 @@ export function getDebugInfo() {
     LM,
   };
 }
+
+// Feed a single already-assigned person's observations into this isolated rig state.
+function feedPose(observation, now, dimensions={width:1280,height:720}) {
+  externalActive=true;
+  video={videoWidth:dimensions.width,videoHeight:dimensions.height};frameCount++;
+  const dt=lastDetectMs?Math.max(.001,Math.min((now-lastDetectMs)/1000,.1)):1/30;lastDetectMs=now;
+  const {world,image,hands} = observation || {};
+  poseImg=image||null;
+  if(world?.length>=33&&image?.length>=33&&shoulderVisible(world)){
+    tracked=true;lastTrackedMs=now;ingestPose(world,dt,now);
+  }else{
+    tracked=false;
+    if(!calib&&calibStartMs&&now-lastTrackedMs>3000){calibStartMs=0;calibAccum=null;}
+  }
+  const confs=tracked&&hands?assignHands(hands):{left:0,right:0};
+  if(!tracked||!hands)latestHands.left=latestHands.right=null;
+  processHand('left',latestHands.left,confs.left,now,dt);
+  processHand('right',latestHands.right,confs.right,now,dt);
+}
+
+return {FILTER_PARAMS,isTracking,getPoseOverlay,getPoseSnapshot,getStatus,getCalibProgress,getHeadHint,setAvatar,resetForNewAvatar,resetForNextStudent,initTrackers,startCamera,getCameraZoom,canRequestCameraZoom,enableCameraZoom,setCameraZoom,stopCamera,detect,applyToVRM,getDebugInfo,feedPose};
+}
+
+// Existing one-person screens keep their original singleton API.
+const defaultSession=createMotionSession();
+export const {FILTER_PARAMS,isTracking,getPoseOverlay,getPoseSnapshot,getStatus,getCalibProgress,getHeadHint,setAvatar,resetForNewAvatar,resetForNextStudent,initTrackers,startCamera,getCameraZoom,canRequestCameraZoom,enableCameraZoom,setCameraZoom,stopCamera,detect,applyToVRM,getDebugInfo}=defaultSession;
