@@ -153,5 +153,7 @@ $('discard-pending').onclick=async()=>{if(uploading||!pending||!confirm('서버�
 window.addEventListener('beforeunload',e=>{if(busy||session||uploading||pending){e.preventDefault();e.returnValue='';}});
 window.addEventListener('pagehide',()=>{stage?.stop();session?.stop();});
 document.addEventListener('visibilitychange',()=>{if(document.hidden){countdownToken++;if(session?.state==='recording')session.pause();}});
+// Always begin at student entry, even on a device previously used by a teacher.
+// A remembered class code is only a convenience; selecting a group and joining is explicit.
 const saved=readSession(GROUP_SESSION);
-if(saved?.token){try{await roomRequest('clips',{},saved.token);await enter(saved);}catch{writeSession(GROUP_SESSION,null);text('join-status','수업코드와 모둠을 선택해 다시 입장해 주세요.');}}
+if(saved?.room?.code)$('room-code').value=String(saved.room.code).replace(/\D/g,'').slice(0,6);
