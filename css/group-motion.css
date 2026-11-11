@@ -38,3 +38,28 @@ body.studio-mode{background:linear-gradient(145deg,#eef2eb,#f8f4ec 58%,#e9e4d9)}
 .studio-mode .record-panel .primary{background:#285c46;border-color:#285c46}
 .studio-mode .record-options select{background:#ffffffbd;border-color:#c7d2c5;border-radius:20px}
 @media(max-width:520px){.studio-mode .view{padding:6px;border-radius:14px}.studio-mode .view h2{font-size:14px;padding:0 2px}.studio-mode #avatar-stage,.studio-mode .camera-stage{border-radius:9px}}
+
+/* Approved blue studio preview. */
+body.studio-mode{background:#fff;color:#10244c}
+.studio-mode #studio{grid-template-rows:minmax(0,1fr) auto;gap:16px}
+.studio-mode .workspace{gap:10px}
+.studio-mode .view{padding:0;border:0;border-radius:20px;box-shadow:none;overflow:hidden;background:#fff}
+.studio-mode .view h2{position:absolute;z-index:2;top:14px;left:14px;margin:0;background:#fffefb;padding:7px 16px;border-radius:20px;color:#10244c;font-size:20px;font-weight:600}
+.studio-mode #avatar-stage,.studio-mode .camera-stage{border-radius:20px}
+.studio-mode #avatar-stage{background:#2397df}
+.studio-mode .camera-stage{background:#f5eee5}
+.studio-mode .studio-toolbar{display:flex;align-items:center;gap:20px;padding:0 0 4px}
+.studio-mode .record-options{flex:none;gap:12px;font-size:14px}
+.studio-mode .record-options>span{font-size:14px;color:#10244c}
+.format-choice{display:flex;padding:4px;border:1px solid #aab7cc;border-radius:16px;gap:4px}
+.format-choice button{padding:8px 12px;min-height:42px;border:0;background:transparent;border-radius:12px;color:#10244c}
+.format-choice button[aria-pressed=true]{background:#0861f6;color:white}
+.studio-mode .record-panel{max-width:none;flex:1;gap:12px}
+.studio-mode .record-panel button{min-height:64px;border:1px solid #10244c;border-radius:16px;background:#fff;color:#10244c;font-size:19px;box-shadow:none}
+.studio-mode .record-panel .primary{background:#0752f5;border-color:#0752f5;color:white}
+.studio-mode #timer{top:68px}
+.studio-mode #notice{bottom:90px}
+@media(max-width:1050px){.studio-mode .studio-toolbar{flex-direction:column;gap:10px}.studio-mode .record-panel{width:100%}.studio-mode #notice{bottom:145px}}
+@media(max-width:520px){.studio-mode #studio{gap:10px}.studio-mode .view h2{top:8px;left:8px;padding:5px 10px;font-size:14px}.studio-mode .record-panel{gap:6px}.studio-mode .record-panel button{min-height:50px;font-size:14px;border-radius:12px}.studio-mode #avatar-stage,.studio-mode .camera-stage{border-radius:14px}.studio-mode .record-options{gap:8px}.format-choice button{font-size:13px;min-height:36px;padding:6px 10px}.studio-mode #notice{bottom:120px}}
+.teacher-gallery-nav{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}
+.teacher-gallery-nav button[aria-pressed=true]{background:#09634b;color:white}

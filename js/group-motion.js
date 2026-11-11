@@ -10,7 +10,7 @@ const timer=s=>`${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`
 function notice(message){text('notice',message);}
 function controls(){
   const locked=busy||!!session||uploading;
-  for(const id of ['camera-start','avatar','view','demo','capture-mode','zoom'])$(id).disabled=locked||(!stage&&id!=='capture-mode');
+  for(const id of ['camera-start','avatar','view','demo','capture-mode','format-avatar','format-both','zoom'])$(id).disabled=locked||(!stage&&id!=='capture-mode');
   $('calibrate').disabled=locked||frameState.source!=='camera';
   $('record').disabled=uploading||(!session&&(busy||!!pending||!stage));
   text('record',session?'녹화 끝내기':'녹화');
@@ -33,7 +33,7 @@ function showPending(){
   controls();
 }
 function paintFrame(src){
-  const wash=ctx.createLinearGradient(0,0,0,canvas.height);wash.addColorStop(0,'#e6eee8');wash.addColorStop(1,'#eee5d7');ctx.fillStyle=wash;ctx.fillRect(0,0,canvas.width,canvas.height);
+  const wash=ctx.createLinearGradient(0,0,0,canvas.height);wash.addColorStop(0,'#2397df');wash.addColorStop(1,'#f8e8d6');ctx.fillStyle=wash;ctx.fillRect(0,0,canvas.width,canvas.height);
   const width=recordMode==='both'?canvas.width/2:canvas.width;
   // Fit both views without cropping the avatar or student's feet.
   const fit=(image,iw,ih,x,w,mirror=false)=>{if(!iw||!ih)return;const scale=Math.min(w/iw,720/ih),dw=iw*scale,dh=ih*scale;ctx.save();if(mirror){ctx.translate(x+w,0);ctx.scale(-1,1);x=0;}ctx.drawImage(image,x+(w-dw)/2,(720-dh)/2,dw,dh);ctx.restore();};
@@ -63,7 +63,7 @@ async function enter(next){
   document.body.classList.add('studio-mode');$('entry').hidden=true;$('studio').hidden=false;text('room-label',`${next.room.title} · ${next.group}모둠`);text('room-code-label',`수업코드 ${next.room.code}`);text('recordings-title',`${next.group}모둠 · 내 녹화 확인하기`);
   try{db??=await openGroupStore();pending=await db.get(draftKey(next))||null;showPending();}catch{notice('기기 자동 보관을 사용할 수 없어요. 녹화 후 저장 상태를 확인해 주세요.');}
   controls();
-  try{const {createStage}=await import('./group-stage.js?v=studio4');stage=await createStage({mount:$('avatar-stage'),video:$('camera'),onStatus:notice,onFrame:frame});try{await stage.camera();notice('');}catch{notice('카메라 사용을 허용한 뒤 녹화를 눌러 주세요.');}}
+  try{const {createStage}=await import('./group-stage.js?v=blue5');stage=await createStage({mount:$('avatar-stage'),video:$('camera'),onStatus:notice,onFrame:frame});try{await stage.camera();notice('');}catch{notice('카메라 사용을 허용한 뒤 녹화를 눌러 주세요.');}}
   catch{stageError=true;$('avatar-stage').textContent='이 브라우저에서 3D 화면을 열 수 없어요.';notice('3D 화면을 열지 못했어요. 최신 Chrome·Safari에서 열어 주세요. 저장한 녹화는 확인할 수 있어요.');}
   busy=false;controls();
 }
@@ -78,6 +78,7 @@ async function stageAction(action){if(busy||session||!stage)return;busy=true;con
 $('camera-start').onclick=()=>stageAction(async()=>{const zoom=await stage.camera();$('zoom-label').hidden=!zoom;if(zoom)Object.assign($('zoom'),{min:zoom.min,max:zoom.max,step:zoom.step||.1,value:zoom.value});notice('카메라가 켜졌어요. 녹화를 누르고 촬영 위치로 이동하세요.');});
 $('demo').onclick=()=>stageAction(()=>{stage.demo();$('capture-mode').value='avatar';$('zoom-label').hidden=true;});
 $('avatar').onchange=()=>stageAction(()=>stage.avatar($('avatar').value));
+for(const mode of ['avatar','both'])$('format-'+mode).onclick=()=>{$('capture-mode').value=mode;for(const option of ['avatar','both'])$('format-'+option).setAttribute('aria-pressed',String(option===mode));};
 $('view').onchange=()=>stage?.view(Number($('view').value));
 $('calibrate').onclick=()=>stage?.reset();
 $('zoom').onchange=()=>stageAction(()=>stage.zoom(Number($('zoom').value)));
