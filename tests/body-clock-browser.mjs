@@ -62,6 +62,9 @@ try {
     window.clockInputHour = 9;
     window.clockFramesRecorded = 0;
     window.savedClockVideo = 0;
+    // Use Chromium's native VP8 encoder consistently across CI runners.
+    const supportedMime = MediaRecorder.isTypeSupported.bind(MediaRecorder);
+    MediaRecorder.isTypeSupported = type => type.startsWith('video/webm') && supportedMime(type);
     const drawImage = CanvasRenderingContext2D.prototype.drawImage;
     CanvasRenderingContext2D.prototype.drawImage = function (source, ...args) {
       if (source.id === 'group-clock-dial') window.clockFramesRecorded++;
@@ -117,29 +120,6 @@ try {
   await page.locator('#clock-camera-toggle').click();
   assert.equal(await page.locator('#clock-video').evaluate(video => video.srcObject), null);
 
-  await page.setViewportSize({ width: 1100, height: 768 });
-  await page.getByRole('link', { name: '모둠 영상 찍기' }).click();
-  await page.getByRole('heading', { name: '시계 모둠 영상 찍기' }).waitFor();
-  assert.equal(await page.locator('#people-choice').isVisible(), false);
-  await page.locator('#room-code').fill('123456');
-  await page.locator('.group-picker label').first().click();
-  await page.locator('#join-submit').click();
-  await page.waitForFunction(() => document.querySelector('#group-clock-time').textContent === '9시');
-  assert.equal(await page.locator('#group-topic').inputValue(), '몸으로 시계 나타내기');
-  await page.locator('#format-avatar').click();
-  await page.locator('#record').click();
-  await page.waitForFunction(() => window.clockFramesRecorded > 0 && document.querySelector('#timer').textContent !== '0:00');
-  await page.locator('#record').click();
-  await page.locator('#review').click();
-  await page.waitForFunction(() => document.querySelector('#pending-video').videoWidth > 0);
-  const dimensions = await page.locator('#pending-video').evaluate(async video => {
-    await video.play();
-    return [video.videoWidth, video.videoHeight];
-  });
-  assert.deepEqual(dimensions, [960, 768]);
-  await page.locator('#retry-upload').click();
-  await page.waitForFunction(() => window.savedClockVideo > 0 && document.querySelector('#pending').hidden);
-
   await page.goto(origin);
   assert.equal(await page.getByRole('link', { name: '다양한 움직임' }).isVisible(), false);
   await page.locator('#start-explore').click();
@@ -158,6 +138,36 @@ try {
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth));
   await page.locator('#move-camera').click();
   assert.equal(await page.locator('#move-video').evaluate(video => video.srcObject), null);
+  console.log('Movement lesson camera and progress verified.');
+  await page.goto(origin + '/body-clock.html');
+  await page.setViewportSize({ width: 1100, height: 768 });
+  await page.getByRole('link', { name: '모둠 영상 찍기' }).click();
+  await page.getByRole('heading', { name: '시계 모둠 영상 찍기' }).waitFor();
+  assert.equal(await page.locator('#people-choice').isVisible(), false);
+  await page.locator('#room-code').fill('123456');
+  await page.locator('.group-picker label').first().click();
+  await page.locator('#join-submit').click();
+  await page.waitForFunction(() => document.querySelector('#group-clock-time').textContent === '9시');
+  assert.equal(await page.locator('#group-topic').inputValue(), '몸으로 시계 나타내기');
+  await page.locator('#format-avatar').click();
+  await page.locator('#record').click();
+  await page.waitForFunction(() => window.clockFramesRecorded >= 8 && document.querySelector('#timer').textContent !== '0:00');
+  await page.locator('#record').click();
+  await page.locator('#review').click();
+  await page.locator('#pending-video').waitFor();
+  await page.locator('#pending-video').evaluate(video => video.load());
+  await page.waitForFunction(() => {
+    const video = document.querySelector('#pending-video');
+    return video.videoWidth > 0 || video.error;
+  });
+  const dimensions = await page.locator('#pending-video').evaluate(async video => {
+    await video.play();
+    return [video.videoWidth, video.videoHeight];
+  });
+  assert.deepEqual(dimensions, [960, 768]);
+  await page.locator('#retry-upload').click();
+  await page.waitForFunction(() => window.savedClockVideo > 0 && document.querySelector('#pending').hidden);
+
 
   assert.deepEqual(pageErrors, []);
   console.log('Body clock and movement lesson browser checks passed, including group recording and submission.');
