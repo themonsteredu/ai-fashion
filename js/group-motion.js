@@ -9,12 +9,12 @@ const clockTracker = clockActivity ? new BodyClockTracker() : null;
 const clockCanvas = $('group-clock-dial');
 const clockTitle = '몸으로 시계 나타내기';
 let clockReading = null;
+$('people-choice').hidden = clockActivity;
 if (clockActivity) {
   document.title = `${clockTitle} · 모둠 영상 · MOAKIT`;
   text('group-page-title', '시계 모둠 영상 찍기');
   $('group-home').href = './body-clock.html';
   text('group-home', '시계 연습으로');
-  $('people-choice').hidden = true;
   $('group-clock').hidden = false;
   paintClock(clockCanvas, null);
 }

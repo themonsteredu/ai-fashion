@@ -114,6 +114,7 @@ try {
 
   await page.setViewportSize({ width: 1100, height: 768 });
   await page.getByRole('link', { name: '모둠 영상 찍기' }).click();
+  await page.getByRole('heading', { name: '시계 모둠 영상 찍기' }).waitFor();
   assert.equal(await page.locator('#people-choice').isVisible(), false);
   await page.locator('#room-code').fill('123456');
   await page.locator('.group-picker label').first().click();
