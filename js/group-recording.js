@@ -10,7 +10,7 @@ export function clipSignature(clips) { return clips.map(c => c?.revision || '').
 export function canCombine(clips) { return clips.length === 4 && clips.every(c => c?.blob?.size > 0); }
 export function makeRecording(canvas, Recorder = globalThis.MediaRecorder, clock = () => performance.now()) {
   if (!canvas.captureStream) throw new Error('이 브라우저에서는 화면 녹화를 지원하지 않아요.');
-  const mime = chooseMime(Recorder), stream = canvas.captureStream(24), chunks=[];
+  const mime = chooseMime(Recorder), stream = canvas.captureStream(30), chunks=[];
   let recorder, startedAt, pausedAt=null, pausedMs=0, finishedAt=null;
   const elapsed = () => Math.max(0,((finishedAt ?? pausedAt ?? clock())-startedAt-pausedMs)/1000);
   try { recorder = new Recorder(stream, { mimeType:mime, videoBitsPerSecond:3500000 }); }
