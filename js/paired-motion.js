@@ -1,7 +1,9 @@
 import {FilesetResolver,PoseLandmarker,HandLandmarker} from '../lib/mediapipe/vision_bundle.mjs';
-import {createMotionSession} from './motion.js?v=pair8';
+import {createMotionSession} from './motion.js?v=sports1';
 import {PairAssociator,distributeHands} from './paired-tracking.js';
 export function createPairedMotion(rigs,onStatus){
+  // Allow the incoming 30 fps video cadence despite small rAF timing jitter.
+  const frameInterval = 1000 / 30 - 2;
   const drivers=rigs.map(rig=>{const driver=createMotionSession();driver.setAvatar(rig,rig.measures);return driver;});
   const identities=new PairAssociator(),generations=[0,0];
   let pose=null,hands=null,stream=null,video=null,lastVideo=-1,lastTime=-Infinity,lastTs=0,disposed=false,latest=[null,null];
@@ -24,11 +26,11 @@ export function createPairedMotion(rigs,onStatus){
   return {
     state,reset,stop,
     async start(element){stop();await init();video=element;let candidate=null;
-      try{candidate=await navigator.mediaDevices.getUserMedia({video:{width:{ideal:1280},height:{ideal:720},facingMode:'user'},audio:false});if(disposed)throw Error('화면을 닫았어요.');stream=candidate;video.srcObject=stream;await video.play();reset();}
+      try{candidate=await navigator.mediaDevices.getUserMedia({video:{width:{ideal:1280},height:{ideal:720},frameRate:{ideal:30},facingMode:'user'},audio:false});if(disposed)throw Error('화면을 닫았어요.');stream=candidate;video.srcObject=stream;await video.play();reset();}
       catch(e){candidate?.getTracks().forEach(t=>t.stop());stop();throw e;}
     },
     update(now,dt){
-      if(stream&&video.readyState>=2&&video.currentTime!==lastVideo&&now-lastTime>=1000/24){
+      if(stream&&video.readyState>=2&&video.currentTime!==lastVideo&&now-lastTime>=frameInterval){
         lastVideo=video.currentTime;lastTime=now;lastTs=Math.max(lastTs+1,Math.round(now));
         latest=identities.update(pose.detectForVideo(video,lastTs),now);
         const handResult=latest.some(Boolean)?hands.detectForVideo(video,lastTs):null;

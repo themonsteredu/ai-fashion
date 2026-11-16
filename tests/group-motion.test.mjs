@@ -75,8 +75,12 @@ test('four nonempty clips and their revision order define a valid combined resul
   const sig=clipSignature(clips);assert.notEqual(sig,clipSignature([...clips].reverse()));
   clips[0].revision='new';assert.notEqual(sig,clipSignature(clips));
 });
-test('recorder chooses an actual supported container and releases capture tracks',async()=>{
-  let stopped=0;const canvas={captureStream:()=>({getTracks:()=>[{stop(){stopped++;}}]})};
+test('recorder captures up to 30 fps in a supported container and releases capture tracks',async()=>{
+  let stopped=0;
+  const canvas={captureStream:fps=>{
+    assert.equal(fps,30);
+    return {getTracks:()=>[{stop(){stopped++;}}]};
+  }};
   class Recorder{
     static isTypeSupported(t){return t==='video/webm;codecs=vp8';}
     constructor(stream,o){this.mimeType=o.mimeType;this.state='inactive';}

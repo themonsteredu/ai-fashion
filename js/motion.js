@@ -16,7 +16,7 @@ import { FilesetResolver, PoseLandmarker, FaceLandmarker, HandLandmarker } from 
 import { OneEuroVec3, safeNormalize, isFiniteVec } from './filters.js';
 import { HAND_PRESETS, blendHandPose, GestureDetector, HAND_GESTURE_DEFS, HeartDetector, HEART_ARM_PRESET, HEART_ARM_MIX } from './gestures.js';
 import { applyTrackZoom, canRequestTrackZoom, getTrackZoom, requestTrackZoomStream } from './pe-relay-camera.js';
-import { bodyOrientation, groundedHipDrop } from './spatial-pose.js';
+import { bodyOrientation, groundedHipDrop, JumpHeightTracker, projectJumpFrame } from './spatial-pose.js?v=sports1';
 
 export function createMotionSession(){
 // ── 필터 파라미터 (부위별 One Euro) ──
@@ -29,6 +29,9 @@ const FILTER_PARAMS = {
 // ── 조정 가능한 상수 ──
 const SMOOTH_BONE = 14;        // 본 회전 감쇠 속도 (dt 기반)
 const SMOOTH_LEG = 9;
+const SMOOTH_FAST_LEG = 34;
+const SMOOTH_JUMP = 32;
+const HOLD_ANKLE_MS = 140;
 const SMOOTH_FACE = 0.5;
 const HEAD_PITCH_GAIN = 1.1;
 const HEAD_LIMIT = 0.55;
@@ -63,6 +66,19 @@ const LM_GROUP = {};
 for (const i of [LM.NOSE, LM.L_EYE, LM.R_EYE, LM.L_EAR, LM.R_EAR, LM.L_SH, LM.R_SH, LM.L_HIP, LM.R_HIP]) LM_GROUP[i] = 'torso';
 for (const i of [LM.L_EL, LM.R_EL, LM.L_KNEE, LM.R_KNEE]) LM_GROUP[i] = 'limb';
 for (const i of [LM.L_WR, LM.R_WR, LM.L_ANK, LM.R_ANK]) LM_GROUP[i] = 'extremity';
+
+const LEG_LANDMARKS = {
+  right: { hip: LM.L_HIP, knee: LM.L_KNEE, ankle: LM.L_ANK, heel: 29, toe: 31 },
+  left: { hip: LM.R_HIP, knee: LM.R_KNEE, ankle: LM.R_ANK, heel: 30, toe: 32 },
+};
+const SPATIAL_LEG_FILTERS = {};
+const POSE_INDICES = Object.values(LM);
+const SPATIAL_INDICES = [...POSE_INDICES];
+for (const { knee, ankle, heel, toe } of Object.values(LEG_LANDMARKS)) {
+  SPATIAL_LEG_FILTERS[knee] = { minCutoff: 1.6, beta: 2.8 };
+  for (const idx of [ankle, heel, toe]) SPATIAL_LEG_FILTERS[idx] = { minCutoff: 2.2, beta: 3.3 };
+  SPATIAL_INDICES.push(heel, toe);
+}
 
 let poseLandmarker = null, faceLandmarker = null, handLandmarker = null;
 let video = null, stream = null, externalActive=false;
@@ -119,11 +135,14 @@ let calibAccum = null;
 let skeleton = null;           // 아바타 골격 치수 (setAvatar에서 계산)
 let vrmVersion = '?';
 let spatialRig = false;
+const jumpTracker = new JumpHeightTracker();
+let jumpHeight = 0;
+let jumpHeightTarget = 0;
 
 // 발 잠금 상태
 const feet = {
-  left:  { locked: false, lockPos: new THREE.Vector3(), prevY: null, vy: 0 },
-  right: { locked: false, lockPos: new THREE.Vector3(), prevY: null, vy: 0 },
+  left:  { locked: false, lockPos: new THREE.Vector3(), prevY: null, vy: 0, lastAnkleSeen: -Infinity },
+  right: { locked: false, lockPos: new THREE.Vector3(), prevY: null, vy: 0, lastAnkleSeen: -Infinity },
 };
 
 function isTracking() { return tracked; }
@@ -231,8 +250,11 @@ function resetTracking() {
   for (const f of lmFilters.values()) f.reset();
   hipsOffset.set(0, 0, 0);
   hipsOffsetTarget.set(0, 0, 0);
+  jumpTracker.reset();
+  jumpHeight = jumpHeightTarget = 0;
   feet.left.locked = feet.right.locked = false;
   feet.left.prevY = feet.right.prevY = null;
+  feet.left.lastAnkleSeen = feet.right.lastAnkleSeen = -Infinity;
   for (const c of Object.values(chains)) c.lastFull = 0;
   Object.assign(handTrack.left, newHandTrack());
   Object.assign(handTrack.right, newHandTrack());
@@ -292,7 +314,10 @@ async function startCamera(videoEl) {
   video = videoEl;
   // 세로 화각을 넓게(4:3) 요청 → 16:9보다 위·아래가 더 잡혀 전신이 잘 들어옴.
   // 4:3을 지원 안 하는 웹캠이면 기본값으로 폴백.
-  const get = (c) => navigator.mediaDevices.getUserMedia({ video: c, audio: false });
+  const get = (constraints) => navigator.mediaDevices.getUserMedia({
+    video: spatialRig ? { ...constraints, frameRate: { ideal: 30 } } : constraints,
+    audio: false,
+  });
   try {
     stream = await get({ width: { ideal: 1280 }, height: { ideal: 960 }, aspectRatio: { ideal: 4 / 3 }, facingMode: 'user' });
   } catch (e) {
@@ -409,6 +434,7 @@ function detect(now) {
       calibAccum = null;
     }
   }
+  updateJumpHeight(now);
 
   // 손: 매 프레임 (배정 → 상태머신 → 손 전용 필터)
   if (handLandmarker && tracked) {
@@ -448,28 +474,35 @@ function ingestPose(world, dt, now) {
   const raw = new Map();
   const pts = new Map();
   const vis = new Map();
-  for (const idx of Object.values(LM)) {
-    const hybrid = {
-      x: (poseImg[idx].x * aspect - originX) * scale,
-      y: (poseImg[idx].y - originY) * scale,
-      z: world[idx].z,
-    };
-    const p = conv(spatialRig ? world[idx] : hybrid);
+  for (const idx of spatialRig ? SPATIAL_INDICES : POSE_INDICES) {
+    const point = world[idx], image = poseImg[idx];
+    if (!point || (!spatialRig && !image)) continue;
+    const p = conv(spatialRig ? point : {
+      x: (image.x * aspect - originX) * scale,
+      y: (image.y - originY) * scale,
+      z: point.z,
+    });
     if (!isFiniteVec(p)) continue;
     raw.set(idx, p.clone());
 
+    const legFilter = spatialRig && SPATIAL_LEG_FILTERS[idx];
+    const v = legFilter ? Math.min(point.visibility ?? 1, image?.visibility ?? 1) : point.visibility ?? 1;
+    vis.set(idx, v);
+    if (legFilter && v < VIS_SOFT) {
+      // Do not feed an occluded joint's estimated position into the fast filter.
+      pts.set(idx, latestPose?.get(idx) || p);
+      continue;
+    }
     let f = lmFilters.get(idx);
     if (!f) {
-      const g = FILTER_PARAMS[LM_GROUP[idx] || 'limb'];
+      const g = legFilter || FILTER_PARAMS[LM_GROUP[idx] || 'limb'];
       f = new OneEuroVec3(g.minCutoff, g.beta);
       lmFilters.set(idx, f);
     }
-    const v = world[idx].visibility != null ? world[idx].visibility : 1;
     // 신뢰도가 애매하면(0.5~0.75) 필터를 더 무겁게: dt를 줄여 컷오프 효과 강화
     const fdt = v >= VIS_FULL ? dt : dt * 0.45;
     const sp = f.filter(p, fdt);
     pts.set(idx, sp.clone());
-    vis.set(idx, v);
   }
   rawPose = raw;
   latestPose = pts;
@@ -478,10 +511,32 @@ function ingestPose(world, dt, now) {
   updateCalibration(now);
 }
 
+function updateJumpHeight(now) {
+  if (!spatialRig) return;
+  const visiblePoint = idx => {
+    const point = poseImg[idx];
+    if (!point || Math.min(latestVis.get(idx) ?? 0, point.visibility ?? 1) < 0.6) return null;
+    return point.x >= 0 && point.x <= 1 && point.y >= 0 && point.y <= 1 ? point : null;
+  };
+  let pose = null;
+  if (tracked && calib) {
+    pose = projectJumpFrame(
+      [visiblePoint(LM.L_HIP), visiblePoint(LM.R_HIP)],
+      [visiblePoint(LM.L_SH), visiblePoint(LM.R_SH)],
+      Object.values(LEG_LANDMARKS).map(({ ankle, heel, toe }) => ({
+        ankle: visiblePoint(ankle), heel: visiblePoint(heel), toe: visiblePoint(toe),
+      })),
+      (video.videoWidth || 640) / (video.videoHeight || 480),
+    );
+  }
+  const liftInTorsoLengths = jumpTracker.update(pose, now);
+  jumpHeightTarget = calib ? liftInTorsoLengths * calib.user.torso * calib.scale : 0;
+}
+
 // ── B. 캘리브레이션: 1.5초간 편하게 선 자세 측정 ──
 function updateCalibration(now) {
   if (calib || !latestPose) return;
-  for (const idx of Object.values(LM)) {
+  for (const idx of POSE_INDICES) {
     if (!latestPose.get(idx)) return; // 누락 프레임 건너뜀
   }
   if (!calibStartMs) {
@@ -679,7 +734,10 @@ for (const side of ['left', 'right']) {
 const prevTargets = {};
 for (const k of Object.keys(targets)) prevTargets[k] = targets[k].clone();
 
-const LEG_BONES = ['leftUpperLeg', 'leftLowerLeg', 'leftFoot', 'rightUpperLeg', 'rightLowerLeg', 'rightFoot'];
+const LEG_BONE_SIDES = {
+  leftUpperLeg: 'left', leftLowerLeg: 'left', leftFoot: 'left',
+  rightUpperLeg: 'right', rightLowerLeg: 'right', rightFoot: 'right',
+};
 
 // 체인별 신뢰도 게이팅 상태
 const chains = {
@@ -703,7 +761,7 @@ function applyToVRM(vrm, dt) {
   dtCur = dt;
 
   if (tracked && latestPose && calib) {
-    computeTargets(vrm, now, dt);
+    computeTargets(now, dt);
   } else {
     // 미검출/캘리브레이션 중: 기본 자세로 서서히 복귀
     for (const name of Object.keys(targets)) setTargetSafe(name, IDENTITY);
@@ -715,16 +773,31 @@ function applyToVRM(vrm, dt) {
 
   const k = 1 - Math.exp(-dt * SMOOTH_BONE);
   const kLeg = 1 - Math.exp(-dt * SMOOTH_LEG);
+  const kFastLeg = 1 - Math.exp(-dt * SMOOTH_FAST_LEG);
+  const responsiveLegs = spatialRig && tracked && calib && Object.fromEntries(
+    Object.entries(LEG_LANDMARKS).map(([side, { hip, knee, ankle }]) => [
+      side, Math.min(...[hip, knee, ankle].map(idx => latestVis.get(idx) ?? 0)) >= VIS_FULL,
+    ]),
+  );
   for (const name of Object.keys(targets)) {
     const bone = vrm.humanoid.getNormalizedBoneNode(name);
-    if (bone) bone.quaternion.slerp(targets[name], LEG_BONES.includes(name) ? kLeg : k);
+    if (!bone) continue;
+    const side = LEG_BONE_SIDES[name];
+    let blend = side ? kLeg : k;
+    if (responsiveLegs?.[side]) {
+      const angle = bone.quaternion.angleTo(targets[name]);
+      blend = THREE.MathUtils.lerp(kLeg, kFastLeg, THREE.MathUtils.smoothstep(angle, 0.12, 0.65));
+    }
+    bone.quaternion.slerp(targets[name], blend);
   }
 
   const hipsNode = vrm.humanoid.getNormalizedBoneNode('hips');
   if (hipsNode) {
     if (!hipsRest) hipsRest = hipsNode.position.clone();
     hipsOffset.lerp(hipsOffsetTarget, kLeg);
-    hipsNode.position.set(hipsRest.x + hipsOffset.x, hipsRest.y + hipsOffset.y, hipsRest.z);
+    const lift = tracked && calib ? jumpHeightTarget : 0;
+    jumpHeight = THREE.MathUtils.lerp(jumpHeight, lift, 1 - Math.exp(-dt * SMOOTH_JUMP));
+    hipsNode.position.set(hipsRest.x + hipsOffset.x, hipsRest.y + hipsOffset.y + jumpHeight, hipsRest.z);
   }
 
   const em = vrm.expressionManager;
@@ -786,12 +859,12 @@ function applyGated(name, computed, gate) {
   // 'hold': 마지막 정상값 유지 (아무것도 안 함)
 }
 
-function computeTargets(vrm, now, dt) {
+function computeTargets(now, dt) {
   const p = (i) => latestPose.get(i);
   const vis = (i) => latestVis.get(i) || 0;
 
   // 랜드마크가 하나라도 누락된 프레임은 건너뜀 (undefined 접근으로 루프가 죽는 것 방지)
-  for (const idx of Object.values(LM)) {
+  for (const idx of POSE_INDICES) {
     if (!latestPose.get(idx)) return;
   }
 
@@ -841,7 +914,7 @@ function computeTargets(vrm, now, dt) {
   solveHand('left', armL);
 
   // ── 다리 + Foot Lock/IK ──
-  solveLegs(vrm, qHipsWorld, now, dt);
+  solveLegs(qHipsWorld, now, dt);
 
   // ── 앉기/좌우 이동 ──
   let crouch = 0;
@@ -850,9 +923,9 @@ function computeTargets(vrm, now, dt) {
   const hipsH = hipsRest ? hipsRest.y : 0.8;
   hipsOffsetTarget.y = -crouch * CROUCH_DEPTH * hipsH;
   if (spatialRig && skeleton) {
-    const legs = [[LM.L_HIP,LM.L_KNEE,LM.L_ANK],[LM.R_HIP,LM.R_KNEE,LM.R_ANK]].map(([h,k,a])=>({
-      visible:Math.min(vis(h),vis(k),vis(a))>=VIS_SOFT,
-      upper:p(k).clone().sub(p(h)),lower:p(a).clone().sub(p(k)),
+    const legs = Object.values(LEG_LANDMARKS).map(({ hip, knee, ankle }) => ({
+      visible: Math.min(vis(hip), vis(knee), vis(ankle)) >= VIS_SOFT,
+      upper: p(knee).clone().sub(p(hip)), lower: p(ankle).clone().sub(p(knee)),
     }));
     const drop=groundedHipDrop(legs,skeleton.upperLegLen,skeleton.lowerLegLen);
     if(drop!==null)hipsOffsetTarget.y=drop;
@@ -959,17 +1032,17 @@ function computeTargets(vrm, now, dt) {
 }
 
 // ── G. 다리: Foot Lock + two-bone IK ──
-function solveLegs(vrm, qHipsWorld, now, dt) {
+function solveLegs(qHipsWorld, now, dt) {
   const p = (i) => latestPose.get(i);
   const vis = (i) => latestVis.get(i) || 0;
   const scale = calib.scale;
   const hipsWorldY = (hipsRest ? hipsRest.y : 0.8) + hipsOffset.y;
   const hipsWorldX = (hipsRest ? hipsRest.x : 0) + hipsOffset.x;
 
-  solveLeg('right', LM.L_HIP, LM.L_KNEE, LM.L_ANK, feet.right, chains.legRight);
-  solveLeg('left', LM.R_HIP, LM.R_KNEE, LM.R_ANK, feet.left, chains.legLeft);
+  solveLeg('right', LEG_LANDMARKS.right, feet.right, chains.legRight);
+  solveLeg('left', LEG_LANDMARKS.left, feet.left, chains.legLeft);
 
-  function solveLeg(side, iHip, iKnee, iAnk, foot, chain) {
+  function solveLeg(side, { hip: iHip, knee: iKnee, ankle: iAnk, heel, toe }, foot, chain) {
     const ul = side + 'UpperLeg', ll = side + 'LowerLeg', ft = side + 'Foot';
     const gate = chainGate(chain, Math.min(vis(iHip), vis(iKnee)), now);
     if (gate === 'hold') return;
@@ -982,10 +1055,11 @@ function solveLegs(vrm, qHipsWorld, now, dt) {
     }
 
     const ankVisible = vis(iAnk) >= VIS_SOFT;
+    if (ankVisible) foot.lastAnkleSeen = lastTrackedMs;
 
     // 발목의 아바타 공간 위치 + 수직 속도 (접촉 판정용)
     let ankleWorld = null;
-    if (ankVisible) {
+    if (ankVisible && !spatialRig) {
       ankleWorld = new THREE.Vector3(
         hipsWorldX + p(iAnk).x * scale,
         hipsWorldY + p(iAnk).y * scale,
@@ -996,7 +1070,7 @@ function solveLegs(vrm, qHipsWorld, now, dt) {
       foot.prevY = ankleWorld.y;
 
       // 접촉 판정: 낮고 + 느리게 움직일 때 잠금
-      if (!spatialRig && !foot.locked && h < FOOT_CONTACT_H && Math.abs(foot.vy) < FOOT_CONTACT_VY) {
+      if (!foot.locked && h < FOOT_CONTACT_H && Math.abs(foot.vy) < FOOT_CONTACT_VY) {
         foot.locked = true;
         foot.lockPos.copy(ankleWorld);
         foot.lockPos.y = Math.max(calib.floorY, 0.02);
@@ -1060,9 +1134,20 @@ function solveLegs(vrm, qHipsWorld, now, dt) {
       const relLower = new THREE.Quaternion().copy(qUpperWorld).invert().multiply(qLowerWorld);
       clampRotation(relLower, 2.4);
       applyGated(ll, relLower, gate);
-      // 발바닥은 바닥과 수평 유지
-      applyGated(ft, spatialRig ? _q3.copy(qLowerWorld).invert().multiply(qHipsWorld) : _q3.copy(qLowerWorld).invert(), gate);
-    } else {
+      const footWorld = spatialRig ? qHipsWorld.clone() : IDENTITY;
+      if (spatialRig && Math.min(vis(heel), vis(toe)) >= VIS_SOFT) {
+        const direction = p(toe).clone().sub(p(heel));
+        const length = direction.length();
+        if (length >= 0.05 && length <= 0.4) {
+          const forward = FORWARD.clone().applyQuaternion(qHipsWorld);
+          const rotation = new THREE.Quaternion().setFromUnitVectors(forward, direction.divideScalar(length));
+          clampRotation(rotation, 1.3);
+          const confidence = THREE.MathUtils.smoothstep(Math.min(vis(heel), vis(toe)), VIS_SOFT, VIS_FULL);
+          footWorld.premultiply(rotation.slerp(IDENTITY, 1 - confidence));
+        }
+      }
+      applyGated(ft, _q3.copy(qLowerWorld).invert().multiply(footWorld), gate);
+    } else if (!spatialRig || lastTrackedMs - foot.lastAnkleSeen > HOLD_ANKLE_MS) {
       applyGated(ll, IDENTITY, gate);
       applyGated(ft, IDENTITY, gate);
     }
@@ -1311,6 +1396,7 @@ function feedPose(observation, now, dimensions={width:1280,height:720}) {
     tracked=false;
     if(!calib&&calibStartMs&&now-lastTrackedMs>3000){calibStartMs=0;calibAccum=null;}
   }
+  updateJumpHeight(now);
   const confs=tracked&&hands?assignHands(hands):{left:0,right:0};
   if(!tracked||!hands)latestHands.left=latestHands.right=null;
   processHand('left',latestHands.left,confs.left,now,dt);

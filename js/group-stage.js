@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
-import * as Motion from './motion.js?v=pair8';
-import {createPairedMotion} from './paired-motion.js';
+import * as Motion from './motion.js?v=sports1';
+import {createPairedMotion} from './paired-motion.js?v=sports1';
 import {createScenery} from './group-scenery.js?v=blue5';
 import {createKidRig} from './kid-rig.js';
 export async function createStage({mount,video,onStatus,onFrame,people=1}){

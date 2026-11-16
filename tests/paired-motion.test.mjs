@@ -29,9 +29,9 @@ test('two authored girl rigs calibrate and move independently without copying po
   for(const [s,sh,el,wr,h,k,a] of [[1,11,13,15,23,25,27],[-1,12,14,16,24,26,28]]){
     set(sh,s*.20,-.48);set(el,s*.25,-.23);set(wr,s*.25,0);set(h,s*.09,0);set(k,s*.09,.31);set(a,s*.09,.63);
   }
-  const observation=world=>({world,image:world.map(p=>({...p,x:.5+p.x*.4,y:.5+p.y*.4}))});
+  const observation=(world,rise)=>({world,image:world.map(p=>({...p,x:.5+p.x*.4,y:.5+p.y*.4-rise}))});
   let now=performance.now();
-  const run=(a,b,count=80)=>{for(let i=0;i<count;i++){now+=1000/30;[a,b].forEach((pose,n)=>{drivers[n].feedPose(pose?observation(pose):null,now);drivers[n].applyToVRM(rigs[n],1/30);rigs[n].update();});}};
+  const run=(a,b,count=80,rises=[0,0])=>{for(let i=0;i<count;i++){now+=1000/30;[a,b].forEach((pose,n)=>{drivers[n].feedPose(pose?observation(pose,rises[n]):null,now);drivers[n].applyToVRM(rigs[n],1/30);rigs[n].update();});}};
   try{
     run(front,front);assert.deepEqual(drivers.map(d=>d.getStatus()),['ok','ok']);
     const raised=front.map(p=>({...p}));raised[13].y=-.75;raised[15].y=-1;
@@ -39,6 +39,13 @@ test('two authored girl rigs calibrate and move independently without copying po
     const rightBefore=arm(rigs[1]);run(raised,front);
     assert.ok(arm(rigs[0]).angleTo(arm(rigs[1]))>.7,'one person raises an arm, other does not');
     assert.ok(rightBefore.angleTo(arm(rigs[1]))<.05,'second person remains stable');
+    const hipY = rig => rig.humanoid.getRawBoneNode('hips').getWorldPosition(new THREE.Vector3()).y;
+    const standingHeights = rigs.map(hipY);
+    run(front,front,4,[0,.065]);
+    assert.ok(Math.abs(hipY(rigs[0])-standingHeights[0])<.005,'only the second person jumped');
+    assert.ok(hipY(rigs[1])-standingHeights[1]>.08,'the second avatar must leave the floor');
+    run(front,front,10);
+    assert.ok(Math.abs(hipY(rigs[1])-standingHeights[1])<.005,'the second avatar must land');
     run(null,raised);assert.deepEqual(drivers.map(d=>d.isTracking()),[false,true]);
     assert.ok(arm(rigs[0]).angleTo(arm(rigs[1]))>.7,'missing first person must not borrow second person');
     drivers[0].resetForNextStudent();assert.equal(drivers[1].getStatus(),'ok','calibration is per person');
