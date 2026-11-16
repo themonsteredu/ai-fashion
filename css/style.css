@@ -58,95 +58,153 @@ button { font-family: inherit; cursor: pointer; border: none; }
 
 /* ───────── 화면 1: 시작 ───────── */
 #screen-start {
-  --start-blue: #315cff;
-  display: block; overflow: hidden; isolation: isolate;
-  font-family: "S-Core Dream", "Malgun Gothic", sans-serif;
-  background: linear-gradient(90deg, rgba(248,246,240,0.96) 0%, rgba(248,246,240,0.9) 47%, rgba(248,246,240,0.34) 68%, rgba(49,92,255,0.12) 100%);
-  text-align: left;
+  --start-accent: #214f9b;
+  --start-margin: clamp(18px, 5vw, 80px);
+  --start-line: #c7d0d9;
+  display: block;
+  overflow: auto;
+  isolation: isolate;
+  font-family: "S-Core Dream", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  background: linear-gradient(90deg, #f8f7f3 0%, rgba(248,247,243,.96) 42%, rgba(248,247,243,.28) 65%, rgba(42,81,150,.20) 100%);
+  color: #172a3b;
+  word-break: keep-all;
 }
-#screen-start::before {
-  content: ""; position: absolute; z-index: 0; top: 0; right: 0; bottom: 0; width: 35vw;
-  background: linear-gradient(160deg, rgba(49,92,255,0.08), rgba(49,92,255,0.3));
-  border-left: 1px solid rgba(49,92,255,0.42);
+.start-header {
+  min-height: 68px;
+  margin-inline: var(--start-margin);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid rgba(39,61,84,.22);
 }
-#screen-start::after {
-  content: "AVATAR"; position: absolute; z-index: 1; right: -0.05em; bottom: -0.14em;
-  color: transparent; -webkit-text-stroke: 1px rgba(255,255,255,0.42);
-  font-size: clamp(88px, 14vw, 220px); font-weight: 900; letter-spacing: -0.08em;
-  line-height: 1; pointer-events: none;
+.start-brand { font-size: 17px; font-weight: 900; letter-spacing: .085em; }
+.start-header a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding-inline: 13px;
+  border: 1px solid var(--start-line);
+  border-radius: 5px;
+  color: inherit;
+  background: rgba(255,255,255,.84);
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
 }
-.start-grid {
-  position: absolute; z-index: 1; top: 0; right: 0; width: 35vw; height: 100%; pointer-events: none;
-  background-image:
-    linear-gradient(rgba(255,255,255,0.15) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,0.15) 1px, transparent 1px);
-  background-size: 72px 72px;
-  mask-image: linear-gradient(to bottom, #000 0%, rgba(0,0,0,0.42) 62%, transparent 100%);
-}
-.start-grid::before,
-.start-grid::after {
-  content: ""; position: absolute; border: 1px solid rgba(255,255,255,0.5); border-radius: 50%;
-}
-.start-grid::before { width: 42vw; height: 42vw; left: -15vw; top: 13vh; }
-.start-grid::after { width: 10px; height: 10px; left: 4vw; top: 14vh; background: #fff; }
-.start-edition {
-  position: absolute; z-index: 3; left: 5vw; right: 4vw; top: 4vh;
-  display: flex; align-items: center; justify-content: space-between;
-  color: #111318; font-size: 10px; font-weight: 700; letter-spacing: 0.18em;
-}
-.start-edition span:last-child { color: #fff; text-shadow: 0 1px 8px rgba(0,0,0,0.18); }
 .start-inner {
-  position: absolute; z-index: 3; left: 5vw; top: 51%; transform: translateY(-50%);
-  width: min(590px, 48vw);
+  width: min(535px, calc(55vw - var(--start-margin)));
+  min-height: calc(100dvh - 68px);
+  margin-inline-start: var(--start-margin);
+  padding-block: clamp(20px, 4vh, 42px);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
-.brand {
-  display: flex; align-items: center; gap: 12px; margin-bottom: 3.2vh;
-  color: #111318; font-size: 11px; font-weight: 700; letter-spacing: 0.24em;
-}
-.brand span { display: inline-flex; align-items: center; height: 25px; padding: 0 9px; color: #fff; background: var(--start-blue); letter-spacing: 0.14em; }
-#screen-start h1 {
-  max-width: 680px; font-size: clamp(46px, 5.35vw, 82px);
-  line-height: 1.04; font-weight: 900; letter-spacing: -0.072em; color: #111318;
-}
-#screen-start h1 span { color: var(--start-blue); }
-#screen-start .sub {
-  max-width: 510px; margin-top: 2.4vh; padding-left: 16px; border-left: 2px solid var(--start-blue);
-  font-size: clamp(14px, 1.25vw, 18px); line-height: 1.65; font-weight: 300; color: #565b66;
-}
-#btn-start { margin-top: 6vh; }
+#screen-start h1 { font-size: clamp(35px, 4.45vw, 63px); line-height: 1.18; letter-spacing: -.065em; font-weight: 900; }
+#screen-start .sub { margin-top: 10px; font-size: clamp(15px, 1.4vw, 19px); color: #475d70; line-height: 1.6; }
 
-.start-buttons {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
-  width: min(570px, 47vw); margin-top: 4.2vh;
+.start-activities { display: grid; gap: 10px; margin-top: clamp(16px, 3.25vh, 28px); }
+.start-activity {
+  position: relative;
+  display: grid;
+  gap: 4px;
+  padding: 12px 38px 12px 18px;
+  color: #183044;
+  background: rgba(255,255,255,.93);
+  border: 1px solid var(--start-line);
+  border-radius: 8px;
+  text-decoration: none;
+  touch-action: manipulation;
 }
-.start-buttons .btn {
-  min-width: 0; height: 70px; padding: 0 21px; border-radius: 0;
-  display: flex; align-items: center; justify-content: flex-start; gap: 16px;
-  font-size: clamp(16px, 1.3vw, 20px); font-weight: 700; letter-spacing: -0.03em;
-  box-shadow: none; position: relative; overflow: hidden;
+.start-activity-primary { color: #fff; background: #204781; border-color: #204781; }
+.start-activity strong { font-size: clamp(18px, 1.85vw, 23px); line-height: 1.32; }
+.start-activity span { font-size: 14px; line-height: 1.5; color: #4d6170; }
+.start-activity-primary span { color: #eef3fc; }
+.start-activity::after {
+  content: "";
+  position: absolute;
+  inset-inline-end: 17px;
+  top: calc(50% - 5px);
+  width: 9px;
+  height: 9px;
+  border-top: 2px solid currentColor;
+  border-right: 2px solid currentColor;
+  transform: rotate(45deg);
 }
-.start-buttons .btn::after { content: ""; position: absolute; right: 18px; width: 25px; height: 1px; background: currentColor; }
-.start-buttons .btn-primary { background: #111318; color: #fff; border: 1px solid #111318; }
-.start-buttons .btn-primary:hover { background: var(--start-blue); border-color: var(--start-blue); }
-.start-buttons .btn-ghost { background: rgba(255,255,255,0.52); color: #111318; border: 1px solid rgba(17,19,24,0.34); backdrop-filter: blur(10px); }
-.start-buttons .btn-ghost:hover { border-color: var(--start-blue); color: var(--start-blue); }
-.start-buttons .btn-quiz { background: var(--start-blue); border-color: var(--start-blue); }
-.start-buttons .btn-quiz:hover { background: #2447ce; border-color: #2447ce; }
-.start-buttons .btn-free { grid-column: 1 / -1; height: 56px; }
-.start-btn-no { font-size: 9px; font-weight: 500; letter-spacing: 0.14em; opacity: 0.58; }
-.upload-row { width: min(570px, 47vw); margin-top: 14px; }
-.start-upload {
-  width: 100%; padding: 13px 0; border-radius: 0; border-top: 1px solid rgba(17,19,24,0.18);
-  display: flex; align-items: center; justify-content: space-between;
-  background: transparent; color: #111318; font-size: 13px; font-weight: 500; letter-spacing: -0.01em;
+
+.start-menus { margin-top: 13px; border-block: 1px solid var(--start-line); }
+.start-menus details + details { border-top: 1px solid var(--start-line); }
+.start-menus summary {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 2px;
+  font-size: 16px;
+  font-weight: 700;
+  list-style: none;
+  cursor: pointer;
+  touch-action: manipulation;
 }
-.start-upload small { color: var(--start-blue); font-size: 8px; font-weight: 700; letter-spacing: 0.18em; }
-.upload-hint {
-  margin-top: 7px; font-size: 10px; line-height: 1.45; font-weight: 300; color: #777b84;
+.start-menus summary::-webkit-details-marker { display: none; }
+.start-menus summary::after {
+  content: "";
+  width: 8px;
+  height: 8px;
+  margin-inline-end: 7px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg) translateY(-2px);
 }
-.start-side-copy {
-  position: absolute; z-index: 3; right: 1.25vw; top: 50%; transform: translateY(-50%) rotate(90deg);
-  color: rgba(255,255,255,0.82); font-size: 9px; font-weight: 700; letter-spacing: 0.28em; white-space: nowrap;
+.start-menus details[open] summary::after { transform: rotate(225deg); }
+.start-menu-grid {
+  min-width: 0;
+  margin: 0;
+  padding: 0 0 10px;
+  border: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+.start-menu-grid button {
+  padding: 8px 10px;
+  min-height: 44px;
+  color: #223b51;
+  border: 1px solid var(--start-line);
+  border-radius: 5px;
+  background: #fff;
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  word-break: keep-all;
+  touch-action: manipulation;
+}
+.start-menu-grid button:disabled { opacity: .5; cursor: default; }
+.start-menu-grid button.avatar-ready { color: var(--start-accent); border-color: var(--start-accent); }
+.start-menu-grid p, .start-load-status { grid-column: 1 / -1; margin: 4px 0 6px; color: #465a69; font-size: 13px; line-height: 1.55; }
+#screen-start :is(a, button, summary):focus-visible { outline: 3px solid var(--start-accent); outline-offset: 3px; }
+@media (hover: hover) {
+  .start-activity:hover, .start-menu-grid button:hover:not(:disabled), .start-header a:hover { border-color: var(--start-accent); }
+  .start-activity-primary:hover { background: #183668; }
+  .start-menus summary:hover { color: var(--start-accent); }
+}
+@media (max-width: 700px) and (orientation: portrait) {
+  #screen-start { background: linear-gradient(180deg, rgba(235,242,248,.10) 0%, rgba(248,247,243,.30) 22%, #f8f7f3 49%); }
+  .start-header { min-height: 56px; }
+  .start-inner {
+    min-height: 0;
+    width: auto;
+    margin-inline: var(--start-margin);
+    padding-top: clamp(122px, 22dvh, 210px);
+    padding-bottom: max(22px, env(safe-area-inset-bottom));
+  }
+  .start-activity { padding-block: 10px; }
+}
+@media (max-height: 470px) and (orientation: landscape) {
+  .start-header { min-height: 52px; }
+  .start-inner { padding-block: 14px; min-height: 0; }
+  #screen-start h1 { font-size: clamp(27px, 4.2vw, 38px); }
 }
 
 /* 버튼 공통 — 터치 키오스크용 큰 버튼 */
@@ -607,30 +665,6 @@ body.mission-on #guide-msg { display: none !important; }
 
 /* ═══════════════ 모바일 세로 화면 대응 ═══════════════ */
 @media (max-width: 700px) {
-  /* 시작 화면 */
-  #screen-start {
-    background: linear-gradient(180deg, rgba(248,246,240,0.12) 0%, rgba(248,246,240,0.48) 45%, rgba(248,246,240,0.97) 69%, rgba(248,246,240,1) 100%);
-  }
-  #screen-start::before { width: 44vw; height: 56vh; bottom: auto; background: linear-gradient(160deg, rgba(49,92,255,0.12), rgba(49,92,255,0.34)); }
-  #screen-start::after { right: -0.02em; bottom: 41vh; font-size: 22vw; }
-  .start-grid { width: 44vw; height: 56vh; background-size: 42px 42px; }
-  .start-grid::before { width: 82vw; height: 82vw; left: -47vw; top: 10vh; }
-  .start-grid::after { left: 8vw; top: 10vh; }
-  .start-edition { left: 18px; right: 16px; top: 18px; font-size: 7px; letter-spacing: 0.13em; }
-  .start-inner { left: 18px; right: 18px; top: auto; bottom: calc(18px + env(safe-area-inset-bottom)); transform: none; width: auto; }
-  .brand { gap: 8px; margin-bottom: 12px; font-size: 8px; letter-spacing: 0.16em; }
-  .brand span { height: 21px; padding: 0 7px; }
-  #screen-start h1 { max-width: 100%; font-size: clamp(34px, 9.4vw, 44px); line-height: 1.02; }
-  #screen-start .sub { margin-top: 12px; padding-left: 10px; font-size: 12px; line-height: 1.5; }
-  .start-buttons { width: 100%; margin-top: 16px; gap: 6px; grid-template-columns: 1fr 1fr; }
-  .start-buttons .btn-free { height: 46px; }
-  .start-buttons .btn { height: 58px; padding: 0 13px; gap: 9px; font-size: 14px; }
-  .start-buttons .btn::after { display: none; }
-  .start-btn-no { font-size: 7px; }
-  .upload-row { width: 100%; margin-top: 8px; }
-  .start-upload { padding: 10px 0; font-size: 11px; }
-  .upload-hint { margin-top: 4px; padding: 0; font-size: 8px; }
-  .start-side-copy { display: none; }
   .btn-xl { padding: 20px 56px; font-size: 24px; }
   .btn-lg { padding: 16px 28px; font-size: 19px; }
 
@@ -726,13 +760,6 @@ body.mission-on #guide-msg { display: none !important; }
   }
   body.mission-on .cam-preview::before { left: 9px; top: 8px; font-size: 7px; }
   body.mission-on .cam-preview::after { inset: 7px; background-size: 22px 22px; }
-}
-
-/* 가로 모바일(낮은 높이): 시작 문구 축소 */
-@media (max-height: 480px) and (orientation: landscape) {
-  #screen-start h1 { font-size: clamp(24px, 6vw, 40px); }
-  #btn-start { margin-top: 3vh; }
-  .upload-row { margin-top: 2vh; }
 }
 
 /* 미션 준비 카운트다운 */

@@ -1,13 +1,40 @@
 import {makeRecording,openGroupStore,fileExtension,chooseMime} from './group-recording.js?v=sports1';
 import {canStartRecording,prepareRecording} from './group-recording-start.js';
 import {roomRequest,readSession,writeSession,GROUP_SESSION,draftKey,uploadRecording} from './group-room-api.js';
+import {BodyClockTracker,paintClock} from './body-clock.js?v=1';
 const $=id=>document.getElementById(id);
 const text=(id,value)=>{if($(id).textContent!==value)$(id).textContent=value;};
+const clockActivity = new URLSearchParams(location.search).get('activity') === 'clock';
+const clockTracker = clockActivity ? new BodyClockTracker() : null;
+const clockCanvas = $('group-clock-dial');
+const clockTitle = '몸으로 시계 나타내기';
+let clockReading = null;
+$('people-choice').hidden = clockActivity;
+if (clockActivity) {
+  document.title = `${clockTitle} · 모둠 영상 · MOAKIT`;
+  text('group-page-title', '시계 모둠 영상 찍기');
+  $('group-home').href = './body-clock.html';
+  text('group-home', '시계 연습으로');
+  $('group-clock').hidden = false;
+  paintClock(clockCanvas, null);
+}
 let membership=null,stage=null,db=null,busy=false,session=null,countdownToken=0,pending=null,pendingUrl=null,uploading=false,loadingClips=false,stageError=false,preparing=false;
 let frameState={avatarReady:false,source:'idle'},recordMode='both',saveAfterStop=false,recordTopic='';
 const canvas=document.createElement('canvas');canvas.width=960;canvas.height=768;const ctx=canvas.getContext('2d');
 const timer=s=>`${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`;
 function notice(message){text('notice',message);}
+function topicKey({room,group}) {
+  return `fashion-topic:${room.id}:${group}${clockActivity ? ':clock' : ''}`;
+}
+function showClockReading(reading) {
+  clockReading = reading;
+  paintClock(clockCanvas, reading);
+  const label = reading?.minuteAtTwelve ? '자세를 유지해요' : '한 팔을 위로';
+  text('group-clock-time', !reading ? '두 팔을 화면 안에' : reading.hour ? `${reading.hour}시` : label);
+}
+function updateClock(points, aspect, now) {
+  showClockReading(clockTracker.update(points, aspect, now));
+}
 function controls(){
   const locked=busy||!!session||uploading;
   $('group-topic').disabled=locked||!!pending;
@@ -40,6 +67,17 @@ function paintFrame(src){
   const fit=(image,iw,ih,x,w,mirror=false)=>{if(!iw||!ih)return;const scale=Math.min(w/iw,632/ih),dw=iw*scale,dh=ih*scale;ctx.save();if(mirror){ctx.translate(x+w,0);ctx.scale(-1,1);x=0;}ctx.drawImage(image,x+(w-dw)/2,88+(632-dh)/2,dw,dh);ctx.restore();};
   fit(src,src.width,src.height,0,width);
   if(recordMode==='both'){const v=$('camera');fit(v,v.videoWidth,v.videoHeight,width,width,true);}
+  if (clockActivity) {
+    const size = 188, x = width - size - 24, y = 720 - size - 24;
+    ctx.drawImage(clockCanvas, x, y, size, size);
+    if (clockReading?.hour) {
+      ctx.fillStyle = '#173548';
+      ctx.font = '700 21px SCore, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(`${clockReading.hour}시`, x + size / 2, 717);
+    }
+  }
   ctx.fillStyle='#ffffff';ctx.fillRect(0,0,canvas.width,88);
   ctx.fillStyle='#10244c';ctx.textAlign='center';ctx.textBaseline='middle';
   let topicSize=42;ctx.font=`600 ${topicSize}px SCore, sans-serif`;
@@ -52,6 +90,10 @@ function paintFrame(src){
 }
 function frame(state,src){
   frameState=state;
+  if (clockReading && state.source !== 'camera') {
+    clockTracker.reset();
+    showClockReading(null);
+  }
   if(state.people===2)text('pair-status',state.status==='ok'?'2명 인식 완료':state.detectedCount===2?'두 사람 자세 맞추는 중':`2명 중 ${state.detectedCount||0}명 인식 · 나란히 서 주세요`);
   $('camera-hint').hidden=state.source==='camera';
   text('camera-hint','카메라 사용을 허용해 주세요.');
@@ -67,23 +109,28 @@ function frame(state,src){
 }
 async function enter(next){
   busy=true;membership=next;writeSession(GROUP_SESSION,next);pending=null;stageError=false;
+  if (clockTracker) {
+    clockTracker.reset();
+    showClockReading(null);
+  }
   document.body.classList.add('studio-mode');$('entry').hidden=true;$('studio').hidden=false;text('room-label',`${next.room.title} · ${next.group}모둠`);text('room-code-label',`수업코드 ${next.room.code}`);text('recordings-title',`${next.group}모둠 · 내 녹화 확인하기`);
   try{db??=await openGroupStore();pending=await db.get(draftKey(next))||null;showPending();}catch{notice('기기 자동 보관을 사용할 수 없어요. 녹화 후 저장 상태를 확인해 주세요.');}
   text('group-topic-label',`${next.group}모둠 주제`);
   const paired=next.people===2;text('avatar-heading',paired?'우리 아바타':'내 아바타');text('camera-heading',paired?'우리 모습':'내 모습');$('pair-status').hidden=!paired;
-  try{$('group-topic').value=localStorage.getItem(`fashion-topic:${next.room.id}:${next.group}`)||'';}catch{$('group-topic').value='';}
+  const defaultTopic = clockActivity ? clockTitle : '';
+  try{$('group-topic').value=localStorage.getItem(topicKey(next))||defaultTopic;}catch{$('group-topic').value=defaultTopic;}
   if(pending?.topic)$('group-topic').value=pending.topic;
   controls();
-  try{const {createStage}=await import('./group-stage.js?v=sports1');stage=await createStage({mount:$('avatar-stage'),video:$('camera'),onStatus:notice,onFrame:frame,people:next.people===2?2:1});try{await stage.camera();notice('');}catch{notice('카메라 사용을 허용한 뒤 녹화를 눌러 주세요.');}}
+  try{const {createStage}=await import('./group-stage.js?v=clock1');stage=await createStage({mount:$('avatar-stage'),video:$('camera'),onStatus:notice,onFrame:frame,onPose:clockActivity?updateClock:undefined,people:next.people===2?2:1});try{await stage.camera();notice('');}catch{notice('카메라 사용을 허용한 뒤 녹화를 눌러 주세요.');}}
   catch{stageError=true;$('avatar-stage').textContent='이 브라우저에서 3D 화면을 열 수 없어요.';notice('3D 화면을 열지 못했어요. 최신 Chrome·Safari에서 열어 주세요. 저장한 녹화는 확인할 수 있어요.');}
   busy=false;controls();
 }
 $('join-form').onsubmit=async e=>{
   e.preventDefault();$('join-submit').disabled=true;text('join-status','수업방에 입장하고 있어요.');
-  try{const data=new FormData(e.currentTarget);const next=await roomRequest('join',{code:$('room-code').value.trim(),group:Number(data.get('group'))});next.people=Number($('people-count').value)===2?2:1;text('join-status','');await enter(next);}
+  try{const data=new FormData(e.currentTarget);const next=await roomRequest('join',{code:$('room-code').value.trim(),group:Number(data.get('group'))});next.people=!clockActivity&&Number($('people-count').value)===2?2:1;text('join-status','');await enter(next);}
   catch(error){text('join-status',error.message);}finally{$('join-submit').disabled=false;}
 };
-$('group-topic').oninput=()=>{if(!membership)return;try{localStorage.setItem(`fashion-topic:${membership.room.id}:${membership.group}`,$('group-topic').value);}catch{}};
+$('group-topic').oninput=()=>{if(!membership)return;try{localStorage.setItem(topicKey(membership),$('group-topic').value);}catch{}};
 $('room-code').oninput=()=>{$('room-code').value=$('room-code').value.replace(/\D/g,'').slice(0,6);};
 $('leave').onclick=()=>{if(busy||session||uploading)return;stage?.dispose();stage=null;membership=null;pending=null;frameState={avatarReady:false,source:'idle'};writeSession(GROUP_SESSION,null);$('clips').replaceChildren();showPending();document.body.classList.remove('studio-mode');$('studio').hidden=true;$('entry').hidden=false;notice('');text('timer','0:00');};
 async function stageAction(action){if(busy||session||!stage)return;busy=true;controls();try{await action();}catch(e){notice(e.name==='NotAllowedError'?'카메라 사용을 허용해 주세요.':e.message||'카메라를 다시 켜 주세요.');}finally{busy=false;controls();}}

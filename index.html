@@ -2,13 +2,13 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-<title>패션 아바타 체험</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>모션 AI 스튜디오 · MOAKIT</title>
 <link rel="icon" href="data:,">
 <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
-<link rel="stylesheet" href="css/style.css">
-<link rel="stylesheet" href="css/realify.css">
-<link rel="stylesheet" href="css/pe.css">
+<link rel="stylesheet" href="css/style.css?v=clock1">
+<link rel="stylesheet" href="css/realify.css?v=clock1">
+<link rel="stylesheet" href="css/pe.css?v=clock1">
 <link rel="stylesheet" href="css/pe-relay.css">
 <script type="importmap">
 {
@@ -27,37 +27,56 @@
 
 <!-- ───────── 화면 1 : 시작 ───────── -->
 <section id="screen-start" class="screen active">
-  <div class="start-grid" aria-hidden="true"></div>
-  <div class="start-edition" aria-hidden="true">
-    <span>INTERACTIVE FASHION LAB</span>
-    <span>SEOUL / 2026</span>
-  </div>
+  <header class="start-header">
+    <span class="start-brand">MOAKIT</span>
+    <a href="./teacher-settings.html">교사용 설정</a>
+  </header>
   <div class="start-inner">
-    <div class="brand"><span>FASHION</span> AVATAR STUDIO</div>
-    <h1>나만의 아바타로<br><span>런웨이를 시작해요</span></h1>
-    <p class="sub">카메라 앞에서 움직이면 아바타가 실시간으로 따라 해요.</p>
-    <div class="start-buttons">
-      <button id="btn-mission" class="btn btn-primary btn-xl"><span class="start-btn-no">01</span><span>포즈 미션 시작</span></button>
-      <button id="btn-quiz" class="btn btn-primary btn-xl btn-quiz"><span class="start-btn-no">02</span><span>수학 퀴즈</span></button>
-      <button id="btn-pe" class="btn btn-primary btn-xl btn-pe"><span class="start-btn-no">03</span><span>체육 동작 배우기</span></button>
-      <button id="btn-done" class="btn btn-ghost btn-xl btn-free"><span class="start-btn-no">04</span><span>카메라로 따라 하기</span></button>
-      <button id="btn-preview" class="btn btn-ghost btn-xl btn-preview"><span class="start-btn-no">05</span><span>자동 동작 미리보기</span></button>
-      <a href="./group-motion.html?entry=student" class="btn btn-primary btn-xl" style="text-decoration:none"><span class="start-btn-no">06</span><span>모둠 3D 동작 만들기</span></a>
+    <h1>모션 AI 스튜디오</h1>
+    <p class="sub">카메라 앞에서 움직이면 아바타가 따라 해요.</p>
+    <nav class="start-activities" aria-label="주요 수업 활동">
+      <a class="start-activity start-activity-primary" href="./group-motion.html?entry=student">
+        <strong>모둠 영상 만들기</strong>
+        <span>수업코드로 입장하고 우리 모둠 영상 찍기</span>
+      </a>
+      <a class="start-activity" href="./body-clock.html">
+        <strong>몸으로 시계 나타내기</strong>
+        <span>두 팔로 시곗바늘 움직이기</span>
+      </a>
+    </nav>
+    <div class="start-menus">
+      <details name="start-menu">
+        <summary id="start-explore">다른 체험</summary>
+        <p class="start-load-status" role="status">아바타를 준비하고 있어요.</p>
+        <fieldset class="start-menu-grid" data-avatar-actions disabled>
+          <button type="button" id="btn-mission">포즈 미션</button>
+          <button type="button" id="btn-quiz">수학 퀴즈</button>
+          <button type="button" id="btn-pe">체육 동작 배우기</button>
+          <button type="button" id="btn-done">카메라로 따라 하기</button>
+          <button type="button" id="btn-preview">자동 동작 미리보기</button>
+        </fieldset>
+      </details>
+      <details name="start-menu">
+        <summary id="start-avatars">아바타 관리</summary>
+        <p class="start-load-status" role="status">아바타를 준비하고 있어요.</p>
+        <fieldset class="start-menu-grid" data-avatar-actions disabled>
+          <button type="button" id="btn-upload" aria-describedby="avatar-upload-hint">그림을 반실사 아바타로</button>
+          <button type="button" id="btn-upload-direct">기존 이미지 바로 불러오기</button>
+          <button type="button" id="btn-saved-avatars">저장한 아바타 <span id="saved-avatar-count"></span></button>
+          <p id="avatar-upload-hint">AI 변환에는 API 사용료가 발생해요. VRM 파일은 바로 불러와요.</p>
+        </fieldset>
+      </details>
     </div>
-    <div class="upload-row">
-      <button id="btn-upload" class="btn start-upload"><span>그림을 반실사 아바타로</span><small>PNG · JPG · WEBP · VRM</small></button>
-      <input type="file" id="vrm-file" accept=".vrm,.png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" hidden>
-      <p class="upload-hint">내가 그린 전신 그림을 올리면 얼굴과 의상을 살린 애니메이션 반실사로 바꾸고, 움직이기 쉽도록 팔을 몸에서 살짝 벌린 자세로 만들어요. 그림은 OpenAI로 전송되며 API 사용료가 발생해요. VRM은 그대로 불러와요.</p>
-      <div class="avatar-library-row"><button type="button" id="btn-saved-avatars" class="realify-secondary">저장한 아바타 <span id="saved-avatar-count"></span></button><button type="button" id="btn-upload-direct" class="realify-link">기존 이미지 바로 불러오기</button></div>
-      <div class="realify-settings-row"><a href="./teacher-settings.html" class="realify-link">교사용 설정</a><button type="button" id="btn-ai-settings" class="realify-link" hidden>AI 설정</button><button type="button" id="btn-admin-settings" class="realify-link" hidden>운영자 설정</button><span id="ai-settings-summary">초안 · 애니메이션 반실사</span></div>
-    </div>
+    <input type="file" id="vrm-file" accept=".vrm,.png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" hidden>
+    <button type="button" id="btn-ai-settings" hidden>AI 설정</button>
+    <button type="button" id="btn-admin-settings" hidden>운영자 설정</button>
+    <span id="ai-settings-summary" hidden></span>
   </div>
-  <div class="start-side-copy" aria-hidden="true">MOVE / STYLE / CREATE</div>
   <div class="toast" id="toast"></div>
 </section>
 
 <!-- ───────── 화면 3 : 모션 체험 ───────── -->
-<section id="screen-motion" class="screen">
+<section id="screen-motion" class="screen" inert>
   <div id="guide-msg" class="guide-msg"><p id="guide-text" role="status" aria-live="polite">카메라 앞에 서 주세요</p><button id="btn-preview-from-motion" type="button" class="guide-preview-btn hidden">카메라 없이 자동 동작 보기</button></div>
   <div id="preview-info" class="preview-info hidden">
     <p class="preview-label">AUTO MOTION</p>
@@ -108,7 +127,7 @@
 </div>
 
 <!-- 로딩 -->
-<div id="loading" class="loading">
+<div id="loading" class="loading hidden">
   <div class="spinner"></div>
   <p id="loading-text">아바타를 불러오는 중…</p>
 </div>
@@ -192,7 +211,7 @@
   </form>
 </dialog>
 
-<script type="module" src="js/main.js"></script>
+<script type="module" src="js/main.js?v=clock1"></script>
 </body>
 </html>
 

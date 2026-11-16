@@ -10,7 +10,7 @@ const info = p => p.evaluate(() => ({ t: document.querySelector('#mm-title')?.te
 if (which === 'mission') await session(async p => {
   await p.evaluate(() => window.__vc.start());
   await advance(p, 0.5);
-  await vrecord(p, 'start', 4.2, [[2.6, () => p.click('#btn-mission')]]);
+  await vrecord(p, 'start', 4.2, [[1.9, () => p.click('#start-explore')], [2.6, () => p.click('#btn-mission')]]);
   // 카메라/인식 준비 대기 (녹화 안 함)
   for (let i = 0; i < 20; i++) { await advance(p, 0.2); const x = await info(p); console.log('wait', JSON.stringify(x)); if (x.t) break; }
   // 미션 3개 + 결과까지 이어서 녹화 (구간별 파일)
@@ -26,6 +26,7 @@ if (which === 'mission') await session(async p => {
 
 if (which === 'free') await session(async p => {
   await p.evaluate(() => window.__vc.start());
+  await p.click('#start-explore');
   await p.click('#btn-done');
   await p.evaluate(() => { window.__standin.mode = 'script'; window.__standin.script = [[0, null]]; });
   for (let i = 0; i < 40; i++) { await advance(p, 0.2); const g = await p.evaluate(() => document.querySelector('#guide-msg').classList.contains('hidden') ? 'ok' : document.querySelector('#guide-msg').textContent); console.log('wait', g); if (g === 'ok') break; }
@@ -48,6 +49,7 @@ if (which === 'upload') await session(async p => {
 
 if (which === 'photo') await session(async p => {
   await p.evaluate(() => window.__vc.start());
+  await p.click('#start-explore');
   await p.click('#btn-done');
   await p.evaluate(() => { window.__standin.mode = 'script'; window.__standin.script = [[0, null]]; });
   for (let i = 0; i < 60; i++) { await advance(p, 0.2); const g = await p.evaluate(() => document.querySelector('#guide-msg').classList.contains('hidden') ? 'ok' : document.querySelector('#guide-msg').textContent); console.log('wait', g); if (g === 'ok') break; }

@@ -30,7 +30,7 @@ try{
   if(action==='generate'){assert.match(route.request().postData(),/name=\"purpose\"[\s\S]*?prepare/);generateRequests++;return route.fulfill({json:{data:[{b64_json:fixtureBytes.toString('base64')}]}});}
   return route.fulfill({status:400,json:{error:{code:'invalid'}}});
  });
- await page.route('**/js/main.js',async route=>{
+ await page.route(/\/js\/main\.js(?:\?|$)/,async route=>{
   let source=await readFile(resolve(root,'js/main.js'),'utf8');
   source=source.replace("import * as Motion from './motion.js';",`import * as RealMotion from './motion.js';
   const Motion={...RealMotion,initTrackers:async()=>{},startCamera:async()=>{},detect:()=>{}};`);
@@ -44,6 +44,7 @@ try{
  });
  await page.goto(`http://127.0.0.1:${server.address().port}/`);
  await page.waitForFunction(()=>document.querySelector('#loading').classList.contains('hidden'),{timeout:60000});
+ await page.click('#start-avatars');
  const [chooser]=await Promise.all([page.waitForEvent('filechooser'),page.click('#btn-upload-direct')]);
  await chooser.setFiles(inputFixture);
  // If the detector genuinely cannot place arms, no silent fabricated joints.
@@ -66,6 +67,7 @@ try{
  assert.equal(generateRequests,0,'direct upload must not make a paid request');
  await page.screenshot({path:resolve(out,'avatar-upload-preview.png')});
  await page.click('#btn-home-3');
+ await page.click('#start-avatars');
  await page.click('#btn-saved-avatars');
  const button=page.locator('.saved-avatar-actions button').filter({hasText:'AI 자세 보완'}).first();
  await button.waitFor({state:'visible'});
