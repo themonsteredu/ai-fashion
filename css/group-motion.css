@@ -74,3 +74,25 @@ body.studio-mode{background:#fff;color:#10244c}
 .people-option{margin-top:22px}.people-option select{width:100%}
 #pair-status{position:absolute;bottom:12px;left:10px;right:10px;text-align:center;background:#fffffff0;border-radius:10px;padding:6px 10px;font-size:14px;color:#10244c;z-index:2}
 @media(max-width:520px){#pair-status{font-size:11px;padding:5px;bottom:8px;left:5px;right:5px}}
+
+#group-clock {
+  position: absolute;
+  inset: auto 12px 10px auto;
+  z-index: 2;
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+  width: clamp(84px, 28%, 160px);
+  pointer-events: none;
+}
+#group-clock-dial { display: block; width: 100%; height: auto; }
+#group-clock-time {
+  color: #173548;
+  background: #fff;
+  border-radius: 6px;
+  font-size: clamp(12px, 1.25vw, 17px);
+  line-height: 1.25;
+  padding: 4px 7px;
+  text-align: center;
+}
+@media(max-width:520px){#group-clock{inset:auto 6px 6px auto;width:clamp(69px,40%,95px)}}

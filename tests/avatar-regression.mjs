@@ -18,7 +18,7 @@ try{
 for(const [width,height] of [[1920,1080],[1366,768],[1024,768],[768,1024],[390,844],[360,740]]){
  const page=await browser.newPage({viewport:{width,height}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
  if(process.env.FONT_DIR) await page.route('https://cdn.jsdelivr.net/**',async route=>{const name=new URL(route.request().url()).pathname.split('/').pop();await route.fulfill({body:await readFile(resolve(process.env.FONT_DIR,name)),contentType:'font/woff'});});
- await page.route('**/js/main.js',async route=>{
+ await page.route(/\/js\/main\.js(?:\?|$)/,async route=>{
  let source=await readFile(resolve(root,'js/main.js'),'utf8');
  assert(source.includes("import * as Motion from './motion.js';"),'Tracker import changed; update test injection');
  source=source.replace("import * as Motion from './motion.js';",`import * as RealMotion from './motion.js';
@@ -38,6 +38,7 @@ for(const [width,height] of [[1920,1080],[1366,768],[1024,768],[768,1024],[390,8
  await page.evaluate(()=>{localStorage.setItem('fas_mission_enabled_v1',JSON.stringify({both_up:true,left_up:false,right_up:false}));localStorage.setItem('fas_mission_settings_v1',JSON.stringify({totalMissions:1,passCount:1}));});
  // Deterministic pool (all other definitions explicitly disabled).
  await page.evaluate(async()=>{const {POSE_DEFS}=await import('/js/poses.js');localStorage.setItem('fas_mission_enabled_v1',JSON.stringify(Object.fromEntries(POSE_DEFS.map(p=>[p.id,p.id==='both_up']))));});
+ await page.click('#start-explore');
  await page.click('#btn-mission');
  await page.waitForFunction(()=>document.querySelector('#mm-title')?.textContent.includes('양팔'));
  await page.evaluate(async()=>{await Promise.all([300,500,700,900].map(w=>document.fonts.load(`${w} 16px "S-Core Dream"`)));await document.fonts.ready;});

@@ -1,0 +1,160 @@
+@font-face {
+  font-family: "S-Core Dream";
+  src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_six@1.2/S-CoreDream-5Medium.woff") format("woff");
+  font-weight: 400 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: "S-Core Dream";
+  src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_six@1.2/S-CoreDream-7ExtraBold.woff") format("woff");
+  font-weight: 700 900;
+  font-display: swap;
+}
+
+:root {
+  --clock-ink: #173548;
+  --clock-muted: #486171;
+  --clock-line: #d0dce3;
+  --clock-blue: #2255ba;
+  --clock-orange: #bd571e;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  margin: 0;
+  background: #f6f8f9;
+  color: var(--clock-ink);
+  font: 500 16px/1.55 "S-Core Dream", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  word-break: keep-all;
+}
+h1, h2, p { margin: 0; }
+button, a { touch-action: manipulation; }
+button { font: inherit; cursor: pointer; }
+:focus-visible { outline: 3px solid var(--clock-blue); outline-offset: 4px; }
+.clock-header, .clock-page { width: min(1200px, calc(100% - 2 * clamp(16px, 4vw, 48px))); margin: auto; }
+.clock-header {
+  min-height: 67px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--clock-line);
+}
+.clock-header a {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  color: var(--clock-ink);
+  font-weight: 700;
+  text-decoration: none;
+}
+.clock-home::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-left: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg);
+  margin-inline: 3px 8px;
+}
+.clock-header .clock-group-link { color: var(--clock-blue); text-decoration: underline; text-underline-offset: 5px; }
+.clock-page { padding-block: clamp(22px, 3.7vh, 42px) 28px; }
+.clock-intro { margin-bottom: 22px; }
+.clock-intro h1 { font-size: clamp(28px, 4.05vw, 52px); line-height: 1.2; letter-spacing: -.052em; }
+.clock-intro p { margin-top: 9px; color: var(--clock-muted); font-size: clamp(15px, 1.55vw, 19px); }
+
+.clock-workspace { display: grid; grid-template-columns: 1.18fr 1fr; gap: 16px; }
+.clock-camera, .clock-result {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: clamp(12px, 1.8vw, 22px);
+  background: #fff;
+  border: 1px solid var(--clock-line);
+  border-radius: 10px;
+}
+.clock-panel-heading { min-height: 44px; display: flex; gap: 10px; justify-content: space-between; align-items: center; }
+.clock-panel-heading h2, .clock-practice h2 { font-size: clamp(16px, 1.75vw, 22px); letter-spacing: -.028em; }
+.clock-camera-toggle, .clock-hours button {
+  min-height: 44px;
+  padding: 6px 13px;
+  color: var(--clock-ink);
+  border: 1px solid #abc0cc;
+  border-radius: 6px;
+  background: #fff;
+  font-size: 15px;
+}
+.clock-camera-toggle {
+  color: #fff;
+  border-color: var(--clock-blue);
+  background: var(--clock-blue);
+  font-weight: 700;
+}
+.clock-camera-frame {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: 1;
+  min-height: clamp(240px, 38vh, 410px);
+  margin-top: 10px;
+  overflow: hidden;
+  background: #182e40;
+  border-radius: 6px;
+  color: #fff;
+  text-align: center;
+}
+.clock-camera-frame video, .clock-camera-frame canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.clock-camera-frame video { transform: scaleX(-1); }
+.clock-camera-frame canvas { pointer-events: none; }
+#clock-standby { max-width: 24ch; padding: 16px; color: #f2f6f8; }
+.clock-camera-status { margin-top: 9px; color: var(--clock-muted); min-height: 1.55em; font-size: 14px; }
+#clock-time { color: var(--clock-blue); font-size: clamp(16px, 2.35vw, 29px); font-weight: 700; white-space: nowrap; }
+#clock-dial { display: block; width: min(100%, clamp(220px, 41vh, 390px)); height: auto; margin: auto; }
+.clock-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; justify-content: center; padding-top: 7px; color: var(--clock-muted); font-size: 14px; }
+.clock-legend span { display: inline-flex; align-items: center; gap: 7px; }
+.clock-legend span::before { content: ""; display: inline-block; width: 17px; height: 4px; border-radius: 5px; background: var(--clock-blue); }
+.clock-legend .clock-legend-hour::before { width: 11px; background: var(--clock-orange); }
+
+.clock-practice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 18px;
+  padding-block: 15px;
+  margin-top: 14px;
+  border-top: 1px solid var(--clock-line);
+}
+#clock-feedback { margin-top: 4px; color: var(--clock-muted); font-size: 15px; }
+#clock-feedback[data-correct="true"] { color: #0b6b52; font-weight: 700; }
+.clock-hours { display: flex; flex-wrap: wrap; gap: 7px; }
+.clock-hours button { min-width: 60px; font-weight: 700; }
+.clock-hours button[aria-pressed="true"] { color: var(--clock-blue); background: #e9f0ff; border-color: var(--clock-blue); }
+
+@media (max-width: 640px) {
+  .clock-header { min-height: 54px; }
+  .clock-page { padding-top: 18px; }
+  .clock-intro { margin-bottom: 14px; }
+  .clock-workspace { grid-template-columns: minmax(0, 1fr); gap: 9px; }
+  .clock-camera-frame { min-height: clamp(137px, 23dvh, 230px); }
+  .clock-panel-heading { min-height: 36px; }
+  .clock-result { display: grid; grid-template-columns: minmax(0, 1fr) minmax(94px, auto); align-items: center; gap: 0 10px; }
+  .clock-result .clock-panel-heading { grid-column: 1 / -1; }
+  #clock-dial { width: min(100%, clamp(133px, 24dvh, 208px)); justify-self: center; }
+  .clock-legend { justify-content: flex-start; flex-direction: column; padding-top: 0; font-size: 13px; }
+  .clock-practice { margin-top: 10px; padding-top: 10px; }
+  .clock-hours { width: 100%; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .clock-hours button { min-width: 0; padding-inline: 3px; }
+}
+@media (hover: hover) {
+  .clock-header a:hover { color: var(--clock-blue); }
+  .clock-hours button:hover { border-color: var(--clock-blue); }
+  .clock-camera-toggle:hover { background: #194498; }
+}

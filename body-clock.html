@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>몸으로 시계 나타내기 · MOAKIT</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="css/body-clock.css?v=1">
+</head>
+<body>
+  <header class="clock-header">
+    <a class="clock-home" href="./index.html">처음으로</a>
+    <a class="clock-group-link" href="./group-motion.html?entry=student&amp;activity=clock">모둠 영상 찍기</a>
+  </header>
+  <main class="clock-page">
+    <div class="clock-intro">
+      <h1>몸으로 시계 나타내기</h1>
+      <p>한 팔은 12를 향해 뻗고, 다른 팔로 시를 가리켜요.</p>
+    </div>
+
+    <div class="clock-workspace">
+      <section class="clock-camera" aria-labelledby="clock-camera-title">
+        <div class="clock-panel-heading">
+          <h2 id="clock-camera-title">내 모습</h2>
+          <button type="button" id="clock-camera-toggle" class="clock-camera-toggle">카메라 켜기</button>
+        </div>
+        <div class="clock-camera-frame">
+          <video id="clock-video" playsinline muted hidden></video>
+          <canvas id="clock-arms" aria-hidden="true" hidden></canvas>
+          <p id="clock-standby">카메라를 켜면 여기에 내 모습이 보여요.</p>
+        </div>
+        <p id="clock-camera-status" class="clock-camera-status" role="status">카메라 앞에 양팔을 펼 공간을 만들어 주세요.</p>
+      </section>
+      <section class="clock-result" aria-labelledby="clock-result-title">
+        <div class="clock-panel-heading">
+          <h2 id="clock-result-title">내가 만든 시계</h2>
+          <output id="clock-time" aria-live="off">예시 9시</output>
+        </div>
+        <canvas id="clock-dial" width="640" height="640" aria-hidden="true"></canvas>
+        <div class="clock-legend">
+          <span class="clock-legend-hour">짧은 바늘 · 시</span>
+          <span class="clock-legend-minute">긴 바늘 · 분</span>
+        </div>
+      </section>
+    </div>
+
+    <section class="clock-practice" aria-labelledby="clock-practice-title">
+      <div>
+        <h2 id="clock-practice-title">연습할 시각</h2>
+        <p id="clock-feedback" role="status">카메라를 켜고 9시를 만들어 보세요.</p>
+      </div>
+      <div id="clock-hours" class="clock-hours" role="group" aria-label="연습할 시각"></div>
+    </section>
+  </main>
+  <script type="module" src="js/body-clock-page.js?v=1"></script>
+</body>
+</html>

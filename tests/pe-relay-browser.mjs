@@ -116,6 +116,7 @@ async function openRelay(browser, viewport, rejectCamera = false) {
   });
   await page.goto(`http://127.0.0.1:${server.address().port}/`, { waitUntil: 'domcontentloaded' });
   await page.locator('#loading').waitFor({ state: 'hidden', timeout: 60_000 });
+  await page.locator('#start-explore').click();
   await page.locator('#btn-pe').click();
   await phase(page, 'setup');
   await page.locator('#screen-motion.active').waitFor({ state: 'visible' });
@@ -348,7 +349,8 @@ try {
       const layout = width === 1366 ? await automaticThenManual(page) : await firstTurn(page, cameraDenied);
       assert.equal(!!layout.camera, !cameraDenied);
       await click(page, 'exit');
-      await page.locator('#screen-start.active #btn-pe').waitFor({ state: 'visible' });
+      await page.locator('#screen-start.active #start-explore').waitFor({ state: 'visible' });
+      assert.equal(await page.locator('#btn-pe').isVisible(), false);
       assert.equal(await page.locator(relay).isVisible(), false);
       assert.equal(await page.evaluate(() => window.__relayInput.stops), 1);
       assert.deepEqual(errors, []);

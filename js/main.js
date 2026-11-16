@@ -46,16 +46,18 @@ let customAvatar = false; // 관람객이 직접 불러온 아바타(.vrm/그림
 
 // ── 초기화 ──
 async function boot() {
-  await Avatar.initStage($('#stage'));
-
-  const loadingText = $('#loading-text');
+  const startIndicators = document.querySelectorAll('.start-load-status');
+  const setStartStatus = (message) => {
+    for (const status of startIndicators) status.textContent = message;
+  };
   try {
+    await Avatar.initStage($('#stage'));
     await Avatar.loadAvatar((r) => {
-      loadingText.textContent = `아바타를 불러오는 중… ${Math.round(r * 100)}%`;
+      setStartStatus(`아바타를 준비하고 있어요. ${Math.round(r * 100)}%`);
     });
   } catch (e) {
     console.error(e);
-    loadingText.textContent = '아바타 파일을 찾을 수 없어요. 폴더에 character.vrm 파일을 넣고 새로고침해 주세요.';
+    setStartStatus('아바타를 열지 못했어요. 연결을 확인한 뒤 새로고침해 주세요.');
     return;
   }
   Motion.setAvatar(Avatar.state.vrm, Avatar.getSkeletonMeasures());
@@ -64,14 +66,12 @@ async function boot() {
   // 3D 아바타는 숨겨진 채로 동작 계산에만 쓰인다. (그림을 지우면 다시 3D 캐릭터)
   let usingPicture = false;
   try {
-    usingPicture = !!(await Puppet.activateDefault((t) => { loadingText.textContent = t; }));
+    usingPicture = !!(await Puppet.activateDefault(setStartStatus));
   } catch (e) {
     console.warn('그림 캐릭터 준비 실패 → 3D 캐릭터 사용', e);
     setTimeout(() => toast('그림 캐릭터(character.png)를 열지 못해 3D 캐릭터로 시작했어요'), 500);
   }
   if (Avatar.state.usingSample && !usingPicture) $('#sample-badge').classList.remove('hidden');
-
-  $('#loading').classList.add('hidden');
 
   bindUI();
   Avatar.enableDragRotate($('#stage'));
@@ -134,6 +134,8 @@ async function boot() {
     }
   }
   startRenderLoop();
+  for (const status of startIndicators) status.hidden = true;
+  for (const controls of screens.start.querySelectorAll('[data-avatar-actions]')) controls.disabled = false;
 
   // 모션 인식은 백그라운드에서 미리 준비 (화면 3 진입이 빨라짐)
   Motion.initTrackers().then(() => {
@@ -233,7 +235,13 @@ function startRenderLoop() {
 function show(name) {
   current = name;
   for (const [key, el] of Object.entries(screens)) {
-    el.classList.toggle('active', key === name);
+    const active = key === name;
+    el.classList.toggle('active', active);
+    el.inert = !active;
+  }
+  if (name === 'start') {
+    for (const menu of screens.start.querySelectorAll('.start-menus details[open]')) menu.open = false;
+    screens.start.scrollTop = 0;
   }
   resetIdleTimer();
 }
