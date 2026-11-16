@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>다양한 움직임 · MOAKIT</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="css/body-clock.css?v=1">
+  <link rel="stylesheet" href="css/movement-practice.css?v=1">
+</head>
+<body>
+  <header class="clock-header">
+    <a class="clock-home" href="./index.html">처음으로</a>
+    <output id="move-progress" aria-live="off">0 / 9 동작 완료</output>
+  </header>
+  <main class="clock-page">
+    <div class="clock-intro">
+      <h1>다양한 움직임</h1>
+      <p>예시를 보고 카메라 앞에서 따라 해 봐요.</p>
+    </div>
+    <div class="move-layout">
+      <section class="move-workspace" aria-labelledby="move-title">
+        <div class="move-heading">
+          <div>
+            <h2 id="move-title">팔을 쭉 펴기</h2>
+            <p id="move-instruction">양팔을 어깨 높이에서 옆으로 쭉 펴요.</p>
+          </div>
+          <button type="button" id="move-next">다음 동작</button>
+        </div>
+        <div class="move-panes">
+          <section class="clock-camera" aria-label="동작 예시">
+            <div class="clock-panel-heading"><h2>동작 예시</h2></div>
+            <div class="move-art">
+              <canvas id="move-example" width="580" height="540" role="img" aria-label="팔을 쭉 펴기 예시"></canvas>
+              <p id="move-art-error" hidden>예시 그림을 불러오지 못했어요. 위의 동작 설명을 따라 해 봐요.</p>
+            </div>
+          </section>
+          <section class="clock-camera" aria-label="내 모습">
+            <div class="clock-panel-heading">
+              <h2>내 모습</h2>
+              <button type="button" id="move-camera" class="clock-camera-toggle">카메라 켜기</button>
+            </div>
+            <div class="clock-camera-frame move-camera-frame">
+              <video id="move-video" playsinline muted hidden></video>
+              <p id="move-standby">한 명씩 카메라 앞에 서요.</p>
+            </div>
+          </section>
+        </div>
+        <p id="move-feedback" role="status">카메라를 켜고 따라 해 보세요.</p>
+      </section>
+      <nav id="move-list" aria-label="연습할 동작"></nav>
+    </div>
+  </main>
+  <script type="module" src="js/movement-practice-page.js?v=1"></script>
+</body>
+</html>

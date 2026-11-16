@@ -5,7 +5,7 @@ import { extname, resolve } from 'node:path';
 import { chromium } from 'playwright';
 
 const root = resolve(import.meta.dirname, '..');
-const mime = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.mjs': 'text/javascript' };
+const mime = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.mjs': 'text/javascript', '.webp': 'image/webp' };
 const server = createServer(async (request, response) => {
   try {
     const pathname = new URL(request.url, 'http://localhost').pathname;
@@ -21,9 +21,14 @@ await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const origin = 'http://127.0.0.1:' + server.address().port;
 const poseModel = `
   import { bodyClockPose } from '/tests/fixtures/body-clock-pose.mjs';
+  import { movementPose } from '/tests/fixtures/movement-poses.mjs';
   export const FilesetResolver = { forVisionTasks: async () => ({}) };
   export const PoseLandmarker = { createFromOptions: async () => ({
     detectForVideo: video => {
+      if (window.movementInput) {
+        const { image, world } = movementPose(window.movementInput);
+        return { landmarks: [image], worldLandmarks: [world] };
+      }
       const image = bodyClockPose(window.clockInputHour, video.videoWidth / video.videoHeight);
       const world = image.map(p => ({ ...p, x: (p.x - .5) * 2, y: (p.y - .6) * 2 }));
       return { landmarks: [image], worldLandmarks: [world] };
@@ -135,8 +140,27 @@ try {
   await page.locator('#retry-upload').click();
   await page.waitForFunction(() => window.savedClockVideo > 0 && document.querySelector('#pending').hidden);
 
+  await page.goto(origin);
+  assert.equal(await page.getByRole('link', { name: '다양한 움직임' }).isVisible(), false);
+  await page.locator('#start-explore').click();
+  await page.getByRole('link', { name: '다양한 움직임' }).click();
+  await page.locator('#move-list button').last().waitFor();
+  assert.equal(await page.locator('#move-list button').count(), 9);
+  await page.waitForFunction(() => document.querySelector('#move-example').getContext('2d').getImageData(290, 270, 1, 1).data[3] > 0);
+  await page.evaluate(() => { window.movementInput = 'stretch'; });
+  await page.locator('#move-camera').click();
+  await page.waitForFunction(() => document.querySelector('#move-progress').textContent === '1 / 9 동작 완료');
+  await page.locator('#move-next').click();
+  assert.equal(await page.locator('#move-title').textContent(), '팔꿈치를 접기');
+  await page.evaluate(() => { window.movementInput = 'bend'; });
+  await page.waitForFunction(() => document.querySelector('#move-progress').textContent === '2 / 9 동작 완료');
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth));
+  await page.locator('#move-camera').click();
+  assert.equal(await page.locator('#move-video').evaluate(video => video.srcObject), null);
+
   assert.deepEqual(pageErrors, []);
-  console.log('Body clock browser checks passed: compact menus, phone layout, pose feedback, group recording, preview and submission.');
+  console.log('Body clock and movement lesson browser checks passed, including group recording and submission.');
 } finally {
   await browser?.close();
   await new Promise(resolve => server.close(resolve));

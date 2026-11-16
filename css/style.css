@@ -181,6 +181,11 @@ button { font-family: inherit; cursor: pointer; border: none; }
   touch-action: manipulation;
 }
 .start-menu-grid button:disabled { opacity: .5; cursor: default; }
+.start-lesson {
+  display: flex; align-items: center; min-height: 44px; margin-bottom: 7px; padding: 8px 10px;
+  border: 1px solid #adc1eb; border-radius: 5px; background: #edf3ff; color: var(--start-accent);
+  font-size: 15px; font-weight: 700; text-decoration: none;
+}
 .start-menu-grid button.avatar-ready { color: var(--start-accent); border-color: var(--start-accent); }
 .start-menu-grid p, .start-load-status { grid-column: 1 / -1; margin: 4px 0 6px; color: #465a69; font-size: 13px; line-height: 1.55; }
 #screen-start :is(a, button, summary):focus-visible { outline: 3px solid var(--start-accent); outline-offset: 3px; }
