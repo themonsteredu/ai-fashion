@@ -11,7 +11,7 @@ export const MOVEMENT_GROUPS = [
     poses: [
       { id: 'waist', title: '손을 허리 높이에', hint: '두 손을 허리 높이에서 양옆으로 벌려요.', art: 'hand-height', crop: [652, 145, 249, 337] },
       { id: 'above-head', title: '손을 머리 위로', hint: '양손을 머리 위로 높이 뻗어요.', art: 'hand-height', crop: [1020, 110, 192, 372] },
-      { id: 'stand', title: '몸을 펴고 서기', hint: '두 발을 바닥에 두고 허리와 무릎을 펴요.', art: 'stand-and-crouch', crop: [200, 12, 260, 515] },
+      { id: 'stand', title: '몸을 펴고 서기', hint: '팔을 내리고 두 발로 곧게 서요.', art: 'stand-and-crouch', crop: [200, 12, 260, 515] },
       { id: 'crouch', title: '무릎을 굽혀 몸 낮추기', hint: '두 발을 바닥에 두고 무릎을 살짝 굽혀요.', art: 'stand-and-crouch', crop: [637, 79, 270, 448] },
     ],
   },
@@ -47,18 +47,27 @@ function angle(a, joint, b) {
 }
 
 const rules = {
-  stretch: { need: arms, check: (f) => both.every(i => f.elbowAngle(i) >= 148
-    && Math.abs(f.handHeight(i)) <= .36 && f.outward(wrists[i], i) >= .52) },
+  stretch: { need: arms, check: (f) => both.every(i => f.elbowAngle(i) >= 140
+    && Math.abs(f.handHeight(i)) <= .50 && f.outward(wrists[i], i) >= .52) },
   bend: { need: arms, check: (f) => both.every(i => {
     const bend = f.elbowAngle(i);
-    return bend >= 55 && bend <= 123 && f.outward(elbows[i], i) >= .33
-      && Math.abs(f.dy(elbows[i], shoulders[i])) <= .43 && f.dy(elbows[i], wrists[i]) >= .28;
+    return bend >= 45 && bend <= 135 && f.outward(elbows[i], i) >= .25
+      && Math.abs(f.dy(elbows[i], shoulders[i])) <= .60 && f.dy(elbows[i], wrists[i]) >= .25;
   }) },
-  waist: { need: [...wrists, ...hips], check: (f) => both.every(i =>
-    Math.abs(f.dy(wrists[i], hips[i])) <= .44 && f.outward(wrists[i], i) >= .12) },
-  'above-head': { need: [0, ...arms], check: (f) => both.every(i =>
-    f.dy(0, wrists[i]) >= .08 && f.dy(shoulders[i], elbows[i]) >= .12) },
-  stand: { need: legs, check: (f) => both.every(i => f.kneeAngle(i) >= 155) && f.trunkTilt() < .20 },
+  waist: { need: [...wrists, ...hips], check: (f) => both.every(i => {
+    const torsoHeight = f.dy(hips[i], shoulders[i]);
+    if (torsoHeight <= .35) return false;
+    // The waist is above the hip landmark. Use torso height to allow different proportions.
+    const height = f.dy(hips[i], wrists[i]) / torsoHeight;
+    if (height < -.22 || height > .55) return false;
+    const reach = f.outward(wrists[i], i);
+    return reach >= .45 || (height >= .12 && reach >= .10)
+      || (f.canSee(elbows[i]) && f.elbowAngle(i) < 130 && reach >= -.35);
+  }) },
+  'above-head': { need: [0, ...wrists], check: (f) => both.every(i => f.dy(0, wrists[i]) >= .08) },
+  stand: { need: legs, check: (f) => both.every(i => f.kneeAngle(i) >= 152
+    && (!f.canSee(wrists[i]) || f.handHeight(i) < -.20))
+    && Math.abs(f.dy(ankles[0], ankles[1])) <= .50 && f.trunkTilt() < .22 },
   crouch: { need: legs, check: (f) => both.every(i => f.kneeAngle(i) < 150)
     && Math.abs(f.dy(ankles[0], ankles[1])) <= .5 },
   'raise-arm': { need: wrists, check: (f) => both.some(i => f.handHeight(i) >= .33 && f.handHeight(1 - i) <= -.40) },
@@ -76,16 +85,19 @@ export function matchesMovement(id, image, world, aspect) {
   const span = Math.hypot(p(11).x - p(12).x, p(11).y - p(12).y);
   if (span < .035) return null;
   const dy = (a, b) => (p(a).y - p(b).y) / span;
-  const outward = (index, side) => (p(index).x - p(shoulders[side]).x) / span * (side === 0 ? 1 : -1);
+  const outward = (index, side) => (p(index).x - p(shoulders[side]).x) / span
+    * Math.sign(p(shoulders[side]).x - p(shoulders[1 - side]).x);
   const projectedAngle = (a, b, c) => angle(p(a), p(b), p(c));
   const kneeAngle = (i) => {
     const indices = [hips[i], knees[i], ankles[i]];
+    const projected = projectedAngle(...indices);
     const joints = indices.map(index => world?.[index]);
     if (joints.every(j => j && (j.visibility ?? 1) >= .55 && [j.x, j.y, j.z ?? 0].every(Number.isFinite))) {
       const measured = angle(...joints);
-      if (Number.isFinite(measured)) return measured;
+      // Depth can make a straight leg look bent. A front view alone can hide a squat.
+      if (Number.isFinite(measured)) return Number.isFinite(projected) ? .6 * measured + .4 * projected : measured;
     }
-    return projectedAngle(...indices);
+    return projected;
   };
   const trunkTilt = () => {
     const mid = (pair, key) => (p(pair[0])[key] + p(pair[1])[key]) / 2;
@@ -93,39 +105,43 @@ export function matchesMovement(id, image, world, aspect) {
     return rise > .15 * span ? Math.abs(mid(shoulders, 'x') - mid(hips, 'x')) / rise : 0;
   };
   return rule.check({
-    dy, outward, kneeAngle, trunkTilt,
+    dy, outward, kneeAngle, trunkTilt, canSee: i => visible(image[i]),
     handHeight: i => dy(shoulders[i], wrists[i]),
     elbowAngle: i => projectedAngle(shoulders[i], elbows[i], wrists[i]),
   });
 }
 
 const HOLD_DURATION_MS = 2000;
+const TRACKING_GRACE_MS = 550;
+const MAX_SAMPLE_GAP_MS = 900;
 
 export class MovementHold {
   constructor() { this.reset(); }
 
   reset() {
-    this.since = null;
-    this.previous = null;
-    this.frames = 0;
+    this.heldMs = 0;
+    this.lastMatchAt = null;
+    this.interruptedAt = null;
   }
 
   get secondsLeft() {
-    if (this.since === null) return null;
-    return Math.max(0, Math.ceil((HOLD_DURATION_MS - (this.previous - this.since)) / 1000));
+    if (this.lastMatchAt === null) return null;
+    return Math.max(0, Math.ceil((HOLD_DURATION_MS - this.heldMs) / 1000));
   }
 
   update(matched, now) {
-    if (!matched) {
-      this.reset();
-      return false;
+    if (this.lastMatchAt !== null) {
+      const interrupted = this.interruptedAt !== null;
+      const gap = now - (this.interruptedAt ?? this.lastMatchAt);
+      // Slow, matching camera samples can count. A brief loss only pauses the hold.
+      if (gap < 0 || gap > (interrupted ? TRACKING_GRACE_MS : MAX_SAMPLE_GAP_MS)) this.reset();
+      else if (matched && !interrupted) this.heldMs += gap;
+      else if (!matched && !interrupted) this.interruptedAt = now;
     }
-    if (this.since === null || now - this.previous > 320) {
-      this.since = now;
-      this.frames = 0;
+    if (matched) {
+      this.lastMatchAt = now;
+      this.interruptedAt = null;
     }
-    this.previous = now;
-    this.frames++;
-    return this.frames >= 3 && now - this.since >= HOLD_DURATION_MS;
+    return matched === true && this.heldMs >= HOLD_DURATION_MS;
   }
 }

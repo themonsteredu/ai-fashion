@@ -5,7 +5,7 @@ import { extname, resolve } from 'node:path';
 import { chromium } from 'playwright';
 
 const root = resolve(import.meta.dirname, '..');
-const mime = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.mjs': 'text/javascript', '.webp': 'image/webp' };
+const mime = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.mjs': 'text/javascript', '.webp': 'image/webp', '.wasm': 'application/wasm' };
 const server = createServer(async (request, response) => {
   try {
     const pathname = new URL(request.url, 'http://localhost').pathname;
@@ -23,11 +23,26 @@ const poseModel = `
   import { bodyClockPose } from '/tests/fixtures/body-clock-pose.mjs';
   import { movementPose } from '/tests/fixtures/movement-poses.mjs';
   export const FilesetResolver = { forVisionTasks: async () => ({}) };
-  export const PoseLandmarker = { createFromOptions: async () => ({
-    detectForVideo: video => {
+  export const PoseLandmarker = { createFromOptions: async (_files, options) => ({
+    detectForVideo: (video, timestamp) => {
+      if (options.numPoses === 2) {
+        window.pairFrames = (window.pairFrames || 0) + 1;
+        const { image, world } = movementPose('stand');
+        const people = (window.pairInput || [0, 1]).map(index => ({
+          image: image.map(point => ({ ...point, x: (point.x - .5) * .4 + .25 + index * .5 })),
+          world,
+        }));
+        return { landmarks: people.map(person => person.image), worldLandmarks: people.map(person => person.world) };
+      }
       if (window.movementMissing) return { landmarks: [], worldLandmarks: [] };
       if (window.movementInput) {
-        const { image, world } = movementPose(window.movementInput);
+        // Drop a frame about once a second, as happens when a wrist briefly disappears.
+        const bucket = Math.floor(timestamp / 1000);
+        if (window.movementBucket !== bucket) {
+          window.movementBucket = bucket;
+          return { landmarks: [], worldLandmarks: [] };
+        }
+        const { image, world } = window.guidePoses[window.movementInput];
         return { landmarks: [image], worldLandmarks: [world] };
       }
       const image = bodyClockPose(window.clockInputHour, video.videoWidth / video.videoHeight);
@@ -58,6 +73,40 @@ try {
   page.on('pageerror', error => pageErrors.push(error.message));
   page.setDefaultTimeout(30_000);
   await page.route('https://cdn.jsdelivr.net/**', route => route.abort());
+  await page.goto(origin + '/movement-practice.html');
+  // Get real observations of the nine teaching illustrations before replaying them as camera frames.
+  const guidePoses = await page.evaluate(async () => {
+    const { MOVEMENTS, matchesMovement } = await import('/js/movement-practice.js');
+    const { PoseLandmarker, FilesetResolver } = await import('/lib/mediapipe/vision_bundle.mjs');
+    const model = await PoseLandmarker.createFromOptions(await FilesetResolver.forVisionTasks('/lib/mediapipe/wasm'), {
+      baseOptions: { modelAssetPath: '/models/pose_landmarker_lite.task', delegate: 'CPU' },
+      runningMode: 'IMAGE', numPoses: 1,
+    });
+    const frame = document.createElement('canvas');
+    frame.width = 960;
+    frame.height = 720;
+    const context = frame.getContext('2d');
+    const observations = {};
+    try {
+      for (const { id, art, crop } of MOVEMENTS) {
+        const image = new Image();
+        image.src = '/assets/movement/' + art + '.webp';
+        await image.decode();
+        const scale = Math.min(frame.width * .84 / crop[2], frame.height * .80 / crop[3]);
+        const width = crop[2] * scale, height = crop[3] * scale;
+        context.fillStyle = '#f7f4ee';
+        context.fillRect(0, 0, frame.width, frame.height);
+        context.drawImage(image, ...crop, (frame.width - width) / 2, (frame.height - height) / 2, width, height);
+        const result = model.detect(frame);
+        const points = result.landmarks[0], world = result.worldLandmarks[0];
+        if (!matchesMovement(id, points, world, frame.width / frame.height)) throw Error('Guide did not match: ' + id);
+        observations[id] = { image: points, world };
+      }
+    } finally {
+      model.close();
+    }
+    return observations;
+  });
   await page.route('**/lib/mediapipe/vision_bundle.mjs', route => route.fulfill({ contentType: 'text/javascript', body: poseModel }));
   await page.addInitScript(() => {
     window.clockInputHour = 9;
@@ -132,6 +181,7 @@ try {
   const poseIds = await moveButtons.evaluateAll(buttons => buttons.map(button => button.dataset.pose));
   const selectedMove = page.locator('#move-list button[aria-pressed="true"]');
   const setPose = id => page.evaluate(id => { window.movementInput = id; }, id);
+  await page.evaluate(poses => { window.guidePoses = poses; }, guidePoses);
   await setPose(poseIds[0]);
   await page.locator('#move-camera').click();
   await page.waitForFunction(() => {
@@ -176,6 +226,10 @@ try {
   await page.locator('.group-picker label').first().click();
   await page.locator('#join-submit').click();
   await page.waitForFunction(() => document.querySelector('#group-clock-time').textContent === '9시');
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('#group-pose');
+    return !canvas.hidden && canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data.some(value => value > 0);
+  });
   assert.equal(await page.locator('#group-topic').inputValue(), '몸으로 시계 나타내기');
   await page.locator('#format-avatar').click();
   await page.locator('#record').click();
@@ -196,6 +250,40 @@ try {
   await page.locator('#retry-upload').click();
   await page.waitForFunction(() => window.savedClockVideo > 0 && document.querySelector('#pending').hidden);
 
+  await page.goto(origin + '/group-motion.html');
+  await page.locator('#room-code').fill('123456');
+  await page.locator('.group-picker label').first().click();
+  await page.locator('#people-count').selectOption('2');
+  await page.locator('#join-submit').click();
+  await page.waitForFunction(() => document.querySelector('#pair-status').textContent.includes('2명 인식')
+    || document.querySelector('#pair-status').textContent.includes('두 사람'));
+  const overlayColors = () => {
+    const canvas = document.querySelector('#group-pose');
+    const data = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+    let green = 0, blue = 0, greenX = 0, blueX = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      const x = (i / 4) % canvas.width;
+      if (data[i] === 113 && data[i + 1] === 240 && data[i + 2] === 186) { green++; greenX += x; }
+      if (data[i] === 141 && data[i + 1] === 200 && data[i + 2] === 255) { blue++; blueX += x; }
+    }
+    return { green, blue, greenX: greenX / green, blueX: blueX / blue };
+  };
+  let colors = await page.evaluate(overlayColors);
+  assert.ok(colors.green > 0 && colors.blue > 0, 'both tracked students have an overlay');
+  assert.ok(colors.greenX < colors.blueX, 'student colors follow mirrored avatar order');
+  const pairFrame = await page.evaluate(() => { window.pairInput = [1, 0]; return window.pairFrames; });
+  await page.waitForFunction(frame => window.pairFrames > frame + 3, pairFrame);
+  colors = await page.evaluate(overlayColors);
+  assert.ok(colors.greenX < colors.blueX, 'changing detector order keeps student colors stable');
+  await page.evaluate(() => { window.pairInput = [0]; });
+  await page.waitForFunction(() => document.querySelector('#pair-status').textContent.includes('1명 인식'));
+  colors = await page.evaluate(overlayColors);
+  assert.equal(colors.green, 0, 'missing student overlay is cleared');
+  assert.ok(colors.blue > 0, 'remaining student retains the second identity');
+  await page.evaluate(() => { window.pairInput = []; });
+  await page.waitForFunction(() => document.querySelector('#pair-status').textContent.includes('0명 인식'));
+  assert.equal(await page.locator('#group-pose').evaluate(canvas => canvas.getContext('2d')
+    .getImageData(0, 0, canvas.width, canvas.height).data.some(value => value > 0)), false);
 
   assert.deepEqual(pageErrors, []);
   console.log('Body clock and movement lesson browser checks passed, including group recording and submission.');

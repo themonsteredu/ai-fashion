@@ -1,10 +1,10 @@
 import * as THREE from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import * as Motion from './motion.js?v=sports1';
-import {createPairedMotion} from './paired-motion.js?v=sports1';
+import {createPairedMotion} from './paired-motion.js?v=overlay1';
 import {createScenery} from './group-scenery.js?v=blue5';
 import {createKidRig} from './kid-rig.js';
-export async function createStage({mount,video,onStatus,onFrame,onPose,people=1}){
+export async function createStage({mount,video,onStatus,onFrame,onPose,onPeople,people=1}){
   const scene=new THREE.Scene();scene.background=new THREE.Color('#f5f3ed');
   const camera=new THREE.PerspectiveCamera(34,4/3,.05,30),target=new THREE.Vector3(0,.85,0);
   const renderer=new THREE.WebGLRenderer({antialias:true,alpha:false,preserveDrawingBuffer:true});
@@ -34,12 +34,14 @@ export async function createStage({mount,video,onStatus,onFrame,onPose,people=1}
       if(source==='demo')rig.demo(now/1000,'arms');
       if(source==='camera')try{
         if(paired) {
-          paired.update(now,dt);
+          paired.update(now,dt,onPeople);
         } else {
           Motion.detect(now);
-          if (onPose && video.videoHeight && video.currentTime !== lastPoseTime) {
+          if ((onPose || onPeople) && video.readyState >= 2 && video.videoHeight && video.currentTime !== lastPoseTime) {
             lastPoseTime = video.currentTime;
-            onPose(Motion.getPoseOverlay(), video.videoWidth / video.videoHeight, now);
+            const points = Motion.getPoseOverlay();
+            onPose?.(points, video.videoWidth / video.videoHeight, now);
+            onPeople?.([points]);
           }
           Motion.applyToVRM(rig,dt);
           rig.update();

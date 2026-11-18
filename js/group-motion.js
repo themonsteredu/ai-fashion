@@ -2,6 +2,7 @@ import {makeRecording,openGroupStore,fileExtension,chooseMime} from './group-rec
 import {canStartRecording,prepareRecording} from './group-recording-start.js';
 import {roomRequest,readSession,writeSession,GROUP_SESSION,draftKey,uploadRecording} from './group-room-api.js';
 import {BodyClockTracker,paintClock} from './body-clock.js?v=1';
+import {drawPoseOverlay} from './pose-overlay.js?v=1';
 const $=id=>document.getElementById(id);
 const text=(id,value)=>{if($(id).textContent!==value)$(id).textContent=value;};
 const clockActivity = new URLSearchParams(location.search).get('activity') === 'clock';
@@ -9,6 +10,14 @@ const clockTracker = clockActivity ? new BodyClockTracker() : null;
 const clockCanvas = $('group-clock-dial');
 const clockTitle = '몸으로 시계 나타내기';
 let clockReading = null;
+const poseCanvas = $('group-pose');
+function showPeople(people = []) {
+  drawPoseOverlay(poseCanvas, $('camera'), people.map((points, index) => ({
+    points,
+    color: index === 0 ? '#71f0ba' : '#8dc8ff',
+    label: membership?.people === 2 ? `학생 ${index + 1}` : '인식 중',
+  })));
+}
 $('people-choice').hidden = clockActivity;
 if (clockActivity) {
   document.title = `${clockTitle} · 모둠 영상 · MOAKIT`;
@@ -90,6 +99,9 @@ function paintFrame(src){
 }
 function frame(state,src){
   frameState=state;
+  const showingCamera = state.source === 'camera' && state.cameraActive;
+  if (!showingCamera && !poseCanvas.hidden) showPeople();
+  poseCanvas.hidden = !showingCamera;
   if (clockReading && state.source !== 'camera') {
     clockTracker.reset();
     showClockReading(null);
@@ -121,7 +133,7 @@ async function enter(next){
   try{$('group-topic').value=localStorage.getItem(topicKey(next))||defaultTopic;}catch{$('group-topic').value=defaultTopic;}
   if(pending?.topic)$('group-topic').value=pending.topic;
   controls();
-  try{const {createStage}=await import('./group-stage.js?v=clock1');stage=await createStage({mount:$('avatar-stage'),video:$('camera'),onStatus:notice,onFrame:frame,onPose:clockActivity?updateClock:undefined,people:next.people===2?2:1});try{await stage.camera();notice('');}catch{notice('카메라 사용을 허용한 뒤 녹화를 눌러 주세요.');}}
+  try{const {createStage}=await import('./group-stage.js?v=overlay1');stage=await createStage({mount:$('avatar-stage'),video:$('camera'),onStatus:notice,onFrame:frame,onPose:clockActivity?updateClock:undefined,onPeople:showPeople,people:next.people===2?2:1});try{await stage.camera();notice('');}catch{notice('카메라 사용을 허용한 뒤 녹화를 눌러 주세요.');}}
   catch{stageError=true;$('avatar-stage').textContent='이 브라우저에서 3D 화면을 열 수 없어요.';notice('3D 화면을 열지 못했어요. 최신 Chrome·Safari에서 열어 주세요. 저장한 녹화는 확인할 수 있어요.');}
   busy=false;controls();
 }

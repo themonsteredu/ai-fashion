@@ -96,3 +96,11 @@ body.studio-mode{background:#fff;color:#10244c}
   text-align: center;
 }
 @media(max-width:520px){#group-clock{inset:auto 6px 6px auto;width:clamp(69px,40%,95px)}}
+#group-pose {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+}
