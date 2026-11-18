@@ -1,56 +1,17 @@
-import { MOVEMENT_GROUPS, MOVEMENTS, matchesMovement, MovementHold } from './movement-practice.js?v=2';
+import { MOVEMENT_GROUPS, MOVEMENTS, matchesMovement, MovementHold } from './movement-practice.js?v=3';
+import { drawPoseOverlay } from './pose-overlay.js?v=1';
 import { connectPoseCamera } from './pose-camera.js?v=1';
 
 const $ = id => document.getElementById(id);
 const video = $('move-video'), toggle = $('move-camera'), standby = $('move-standby');
 const canvas = $('move-example'), ctx = canvas.getContext('2d'), artError = $('move-art-error');
 const countdown = $('move-countdown');
-const poseCanvas = $('move-pose'), poseContext = poseCanvas.getContext('2d');
-const poseConnections = [
-  [11, 12], [11, 13], [13, 15], [12, 14], [14, 16],
-  [11, 23], [12, 24], [23, 24],
-  [23, 25], [25, 27], [24, 26], [26, 28],
-];
-const poseJoints = [...new Set(poseConnections.flat())];
+const poseCanvas = $('move-pose');
 const hold = new MovementHold(), completed = new Set(), buttons = new Map(), images = new Map();
 let current = MOVEMENTS[0], active = false;
 
 function drawPose(points) {
-  // Match the video's intrinsic size so object-fit and mirroring align both layers.
-  const width = video.videoWidth || 960, height = video.videoHeight || 720;
-  if (poseCanvas.width !== width) poseCanvas.width = width;
-  if (poseCanvas.height !== height) poseCanvas.height = height;
-  poseContext.clearRect(0, 0, width, height);
-  if (!points) return;
-  const usable = point => point && (point.visibility ?? 1) >= .55
-    && Number.isFinite(point.x) && Number.isFinite(point.y)
-    && point.x >= 0 && point.x <= 1 && point.y >= 0 && point.y <= 1;
-  const scale = width / 480;
-  poseContext.lineCap = 'round';
-  poseContext.setLineDash([6 * scale, 5 * scale]);
-  for (const [a, b] of poseConnections) {
-    if (!usable(points[a]) || !usable(points[b])) continue;
-    poseContext.beginPath();
-    poseContext.moveTo(points[a].x * width, points[a].y * height);
-    poseContext.lineTo(points[b].x * width, points[b].y * height);
-    poseContext.strokeStyle = 'rgba(10, 28, 35, .8)';
-    poseContext.lineWidth = 5 * scale;
-    poseContext.stroke();
-    poseContext.strokeStyle = '#71f0ba';
-    poseContext.lineWidth = 2.5 * scale;
-    poseContext.stroke();
-  }
-  poseContext.setLineDash([]);
-  for (const index of poseJoints) {
-    if (!usable(points[index])) continue;
-    poseContext.beginPath();
-    poseContext.arc(points[index].x * width, points[index].y * height, 3.5 * scale, 0, Math.PI * 2);
-    poseContext.fillStyle = '#71f0ba';
-    poseContext.fill();
-    poseContext.strokeStyle = '#173548';
-    poseContext.lineWidth = 1.5 * scale;
-    poseContext.stroke();
-  }
+  drawPoseOverlay(poseCanvas, video, [{ points }]);
 }
 
 function setText(id, text) {
@@ -182,10 +143,14 @@ const camera = connectPoseCamera({
       finishMovement();
       return;
     }
-    countdown.hidden = !match;
-    if (match) setText('move-countdown', `${hold.secondsLeft}초`);
-    feedback(match === null ? '필요한 몸 부위가 화면 안에 들어오도록 서 주세요.'
-      : match ? '좋아요! 그대로 있어요.' : current.hint);
+    const remaining = hold.secondsLeft;
+    countdown.hidden = remaining === null;
+    if (remaining !== null) {
+      setText('move-countdown', `${remaining}초`);
+      feedback('좋아요! 그대로 있어요.');
+    } else {
+      feedback(match === null ? '필요한 몸 부위가 화면 안에 들어오도록 서 주세요.' : current.hint);
+    }
   },
 });
 toggle.addEventListener('click', camera.toggle);

@@ -29,7 +29,7 @@ export function createPairedMotion(rigs,onStatus){
       try{candidate=await navigator.mediaDevices.getUserMedia({video:{width:{ideal:1280},height:{ideal:720},frameRate:{ideal:30},facingMode:'user'},audio:false});if(disposed)throw Error('화면을 닫았어요.');stream=candidate;video.srcObject=stream;await video.play();reset();}
       catch(e){candidate?.getTracks().forEach(t=>t.stop());stop();throw e;}
     },
-    update(now,dt){
+    update(now,dt,onPeople){
       if(stream&&video.readyState>=2&&video.currentTime!==lastVideo&&now-lastTime>=frameInterval){
         lastVideo=video.currentTime;lastTime=now;lastTs=Math.max(lastTs+1,Math.round(now));
         latest=identities.update(pose.detectForVideo(video,lastTs),now);
@@ -39,8 +39,12 @@ export function createPairedMotion(rigs,onStatus){
           if(person&&person.generation!==generations[i]){drivers[i].resetForNextStudent();generations[i]=person.generation;}
           drivers[i].feedPose(person?{...person,hands:assigned[i]}:null,now,{width:video.videoWidth,height:video.videoHeight});
         });
+        onPeople?.(drivers.map(driver => driver.getPoseOverlay()));
       }
-      if(stream&&now-lastTime>600){latest=[null,null];drivers.forEach(driver=>driver.feedPose(null,now));}
+      if(stream&&now-lastTime>600){
+        if(latest.some(Boolean)) onPeople?.([null, null]);
+        latest=[null,null];drivers.forEach(driver=>driver.feedPose(null,now));
+      }
       drivers.forEach((driver,i)=>{driver.applyToVRM(rigs[i],dt);rigs[i].update();});
     },
     dispose(){disposed=true;stop();pose?.close();hands?.close();pose=hands=null;},

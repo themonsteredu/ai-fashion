@@ -29,7 +29,6 @@
 .move-art { display: grid; place-items: center; overflow: hidden; border-radius: 6px; background: #faf6f0; }
 #move-example { display: block; width: 100%; height: 100%; object-fit: contain; }
 #move-art-error, #move-standby { padding: 14px; text-align: center; }
-#move-pose { transform: scaleX(-1); }
 #move-countdown {
   position: absolute;
   inset: auto 8px 8px auto;
