@@ -127,13 +127,26 @@ try {
   await page.locator('#move-list button').last().waitFor();
   assert.equal(await page.locator('#move-list button').count(), 9);
   await page.waitForFunction(() => document.querySelector('#move-example').getContext('2d').getImageData(290, 270, 1, 1).data[3] > 0);
-  await page.evaluate(() => { window.movementInput = 'stretch'; });
+  const moveButtons = page.locator('#move-list button');
+  const poseIds = await moveButtons.evaluateAll(buttons => buttons.map(button => button.dataset.pose));
+  const selectedMove = page.locator('#move-list button[aria-pressed="true"]');
+  const setPose = id => page.evaluate(id => { window.movementInput = id; }, id);
+  await setPose(poseIds[0]);
   await page.locator('#move-camera').click();
-  await page.waitForFunction(() => document.querySelector('#move-progress').textContent === '1 / 9 동작 완료');
+  for (const [index, id] of poseIds.entries()) {
+    // Only supply the landmark fixture. The lesson itself must select the next guide.
+    await page.locator(`[data-pose="${id}"][aria-pressed="true"]`).waitFor();
+    await setPose(id);
+    await page.waitForFunction(count => document.querySelector('#move-progress').textContent ===
+      count + ' / 9 동작 완료', index + 1);
+  }
+  assert.equal(await selectedMove.getAttribute('data-pose'), poseIds.at(-1));
+  assert.equal(await page.locator('.move-done').count(), 9);
+  assert.equal(await page.locator('#move-next').textContent(), '다시 시작하기');
   await page.locator('#move-next').click();
-  assert.equal(await page.locator('#move-title').textContent(), '팔꿈치를 접기');
-  await page.evaluate(() => { window.movementInput = 'bend'; });
-  await page.waitForFunction(() => document.querySelector('#move-progress').textContent === '2 / 9 동작 완료');
+  assert.equal(await page.locator('#move-progress').textContent(), '0 / 9 동작 완료');
+  assert.equal(await selectedMove.getAttribute('data-pose'), poseIds[0]);
+  assert.equal(await page.locator('.move-done').count(), 0);
   await page.setViewportSize({ width: 390, height: 844 });
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth));
   await page.locator('#move-camera').click();

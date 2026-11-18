@@ -1,9 +1,10 @@
-import { MOVEMENT_GROUPS, MOVEMENTS, matchesMovement, MovementHold } from './movement-practice.js?v=1';
+import { MOVEMENT_GROUPS, MOVEMENTS, matchesMovement, MovementHold } from './movement-practice.js?v=2';
 import { connectPoseCamera } from './pose-camera.js?v=1';
 
 const $ = id => document.getElementById(id);
 const video = $('move-video'), toggle = $('move-camera'), standby = $('move-standby');
 const canvas = $('move-example'), ctx = canvas.getContext('2d'), artError = $('move-art-error');
+const countdown = $('move-countdown');
 const hold = new MovementHold(), completed = new Set(), buttons = new Map(), images = new Map();
 let current = MOVEMENTS[0], active = false;
 
@@ -18,7 +19,9 @@ function feedback(text, correct = false) {
 
 function resetFeedback(message = active ? '예시를 보고 따라 해요.' : '카메라를 켜고 따라 해 보세요.') {
   hold.reset();
-  feedback(completed.has(current.id) ? '이 동작을 완성했어요. 다른 동작도 해 봐요.' : message, completed.has(current.id));
+  countdown.hidden = true;
+  if (completed.size === MOVEMENTS.length) feedback('아홉 가지 움직임을 모두 완성했어요!', true);
+  else feedback(message);
 }
 
 function exampleImage(art) {
@@ -58,7 +61,8 @@ function select(pose) {
   buttons.get(pose.id).setAttribute('aria-pressed', 'true');
   setText('move-title', pose.title);
   setText('move-instruction', pose.hint);
-  setText('move-next', pose === MOVEMENTS.at(-1) ? '첫 동작으로' : '다음 동작');
+  setText('move-next', completed.size === MOVEMENTS.length ? '다시 시작하기'
+    : pose === MOVEMENTS.at(-1) ? '첫 동작으로' : '다음 동작');
   resetFeedback();
   void drawExample(pose);
 }
@@ -82,7 +86,37 @@ for (const group of MOVEMENT_GROUPS) {
   $('move-list').append(section);
 }
 select(current);
-$('move-next').addEventListener('click', () => select(MOVEMENTS[(MOVEMENTS.indexOf(current) + 1) % MOVEMENTS.length]));
+$('move-next').addEventListener('click', () => {
+  if (completed.size === MOVEMENTS.length) {
+    completed.clear();
+    for (const mark of $('move-list').querySelectorAll('.move-done')) mark.remove();
+    setText('move-progress', `0 / ${MOVEMENTS.length} 동작 완료`);
+    select(MOVEMENTS[0]);
+    return;
+  }
+  select(MOVEMENTS[(MOVEMENTS.indexOf(current) + 1) % MOVEMENTS.length]);
+});
+
+function finishMovement() {
+  if (!completed.has(current.id)) {
+    completed.add(current.id);
+    const mark = document.createElement('span');
+    mark.className = 'move-done';
+    mark.textContent = '완료';
+    buttons.get(current.id).append(mark);
+    setText('move-progress', `${completed.size} / ${MOVEMENTS.length} 동작 완료`);
+  }
+  if (completed.size === MOVEMENTS.length) {
+    setText('move-next', '다시 시작하기');
+    resetFeedback();
+    return;
+  }
+  let index = MOVEMENTS.indexOf(current);
+  do {
+    index = (index + 1) % MOVEMENTS.length;
+  } while (completed.has(MOVEMENTS[index].id));
+  select(MOVEMENTS[index]);
+}
 
 const camera = connectPoseCamera({
   video, height: 720,
@@ -92,23 +126,18 @@ const camera = connectPoseCamera({
     standby.hidden = active;
     setText('move-camera', active ? '카메라 끄기' : state === 'starting' ? '취소' : '카메라 켜기');
     resetFeedback(message);
-    if (message) feedback(message);
   },
   onPose(points, world, aspect, now) {
-    if (completed.has(current.id)) return;
+    if (completed.size === MOVEMENTS.length) return;
     const match = matchesMovement(current.id, points, world, aspect);
     if (hold.update(match, now)) {
-      completed.add(current.id);
-      const mark = document.createElement('span');
-      mark.className = 'move-done';
-      mark.textContent = '완료';
-      buttons.get(current.id).append(mark);
-      setText('move-progress', `${completed.size} / ${MOVEMENTS.length} 동작 완료`);
-      feedback(completed.size === MOVEMENTS.length ? '아홉 가지 움직임을 모두 완성했어요!' : '좋아요! 동작을 완성했어요.', true);
+      finishMovement();
       return;
     }
+    countdown.hidden = !match;
+    if (match) setText('move-countdown', `${hold.secondsLeft}초`);
     feedback(match === null ? '필요한 몸 부위가 화면 안에 들어오도록 서 주세요.'
-      : match ? '그 자세를 잠깐 유지해요.' : current.hint);
+      : match ? '좋아요! 그대로 있어요.' : current.hint);
   },
 });
 toggle.addEventListener('click', camera.toggle);

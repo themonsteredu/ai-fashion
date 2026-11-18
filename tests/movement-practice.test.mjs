@@ -22,13 +22,28 @@ test('standing is distinct from crouching, leaning and lifting a knee', () => {
   assert.equal(matchesMovement('raise-leg', image, world, 1.5), null);
 });
 
-test('confirmation requires a continuous, visible pose for half a second', () => {
+test('confirmation begins exactly two seconds after the first matching frame', () => {
   const hold = new MovementHold();
-  assert.equal(hold.update(true, 30), false);
-  assert.equal(hold.update(true, 270), false);
-  assert.equal(hold.update(null, 290), false);
-  assert.equal(hold.update(true, 310), false);
-  assert.equal(hold.update(true, 530), false);
-  assert.equal(hold.update(true, 819), true);
-  assert.equal(hold.update(true, 1210), false);
+  for (let elapsed = 0; elapsed < 2000; elapsed += 250) {
+    assert.equal(hold.update(true, 100 + elapsed), false);
+  }
+  assert.equal(hold.update(true, 2099), false);
+  assert.equal(hold.update(true, 2100), true);
+});
+
+test('a mismatched pose, a missing joint or a camera frame gap restarts the full hold', () => {
+  for (const interruption of ['mismatch', 'missing', 'gap']) {
+    const hold = new MovementHold();
+    for (let time = 0; time <= 1750; time += 250) {
+      assert.equal(hold.update(true, time), false);
+    }
+    if (interruption !== 'gap') {
+      assert.equal(hold.update(interruption === 'missing' ? null : false, 1900), false);
+    }
+    const resumed = interruption === 'gap' ? 2200 : 1950;
+    for (let elapsed = 0; elapsed < 2000; elapsed += 250) {
+      assert.equal(hold.update(true, resumed + elapsed), false, interruption);
+    }
+    assert.equal(hold.update(true, resumed + 2000), true, interruption);
+  }
 });
