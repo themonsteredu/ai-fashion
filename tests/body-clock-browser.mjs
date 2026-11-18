@@ -25,6 +25,7 @@ const poseModel = `
   export const FilesetResolver = { forVisionTasks: async () => ({}) };
   export const PoseLandmarker = { createFromOptions: async () => ({
     detectForVideo: video => {
+      if (window.movementMissing) return { landmarks: [], worldLandmarks: [] };
       if (window.movementInput) {
         const { image, world } = movementPose(window.movementInput);
         return { landmarks: [image], worldLandmarks: [world] };
@@ -133,6 +134,17 @@ try {
   const setPose = id => page.evaluate(id => { window.movementInput = id; }, id);
   await setPose(poseIds[0]);
   await page.locator('#move-camera').click();
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('#move-pose');
+    return !canvas.hidden && canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height)
+      .data.some((value, index) => index % 4 === 3 && value > 0);
+  });
+  await page.evaluate(() => { window.movementMissing = true; });
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('#move-pose');
+    return !canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data.some(value => value > 0);
+  });
+  await page.evaluate(() => { window.movementMissing = false; });
   for (const [index, id] of poseIds.entries()) {
     // Only supply the landmark fixture. The lesson itself must select the next guide.
     await page.locator(`[data-pose="${id}"][aria-pressed="true"]`).waitFor();
@@ -151,6 +163,9 @@ try {
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth));
   await page.locator('#move-camera').click();
   assert.equal(await page.locator('#move-video').evaluate(video => video.srcObject), null);
+  assert.equal(await page.locator('#move-pose').isVisible(), false);
+  assert.equal(await page.locator('#move-pose').evaluate(canvas => canvas.getContext('2d')
+    .getImageData(0, 0, canvas.width, canvas.height).data.some(value => value > 0)), false);
   console.log('Movement lesson camera and progress verified.');
   await page.goto(origin + '/body-clock.html');
   await page.setViewportSize({ width: 1100, height: 768 });

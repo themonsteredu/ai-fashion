@@ -6,7 +6,7 @@
   <title>다양한 움직임 · MOAKIT</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="css/body-clock.css?v=1">
-  <link rel="stylesheet" href="css/movement-practice.css?v=2">
+  <link rel="stylesheet" href="css/movement-practice.css?v=3">
 </head>
 <body>
   <header class="clock-header">
@@ -42,6 +42,7 @@
             </div>
             <div class="clock-camera-frame move-camera-frame">
               <video id="move-video" playsinline muted hidden></video>
+              <canvas id="move-pose" aria-hidden="true" hidden></canvas>
               <span id="move-countdown" aria-hidden="true" hidden></span>
               <p id="move-standby">한 명씩 카메라 앞에 서요.</p>
             </div>
@@ -52,6 +53,6 @@
       <nav id="move-list" aria-label="연습할 동작"></nav>
     </div>
   </main>
-  <script type="module" src="js/movement-practice-page.js?v=2"></script>
+  <script type="module" src="js/movement-practice-page.js?v=3"></script>
 </body>
 </html>
