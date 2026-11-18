@@ -99,6 +99,8 @@ export function matchesMovement(id, image, world, aspect) {
   });
 }
 
+const HOLD_DURATION_MS = 2000;
+
 export class MovementHold {
   constructor() { this.reset(); }
 
@@ -106,6 +108,11 @@ export class MovementHold {
     this.since = null;
     this.previous = null;
     this.frames = 0;
+  }
+
+  get secondsLeft() {
+    if (this.since === null) return null;
+    return Math.max(0, Math.ceil((HOLD_DURATION_MS - (this.previous - this.since)) / 1000));
   }
 
   update(matched, now) {
@@ -119,6 +126,6 @@ export class MovementHold {
     }
     this.previous = now;
     this.frames++;
-    return this.frames >= 3 && now - this.since >= 500;
+    return this.frames >= 3 && now - this.since >= HOLD_DURATION_MS;
   }
 }

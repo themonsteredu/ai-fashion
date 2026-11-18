@@ -6,7 +6,7 @@
   <title>다양한 움직임 · MOAKIT</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="css/body-clock.css?v=1">
-  <link rel="stylesheet" href="css/movement-practice.css?v=1">
+  <link rel="stylesheet" href="css/movement-practice.css?v=2">
 </head>
 <body>
   <header class="clock-header">
@@ -16,13 +16,13 @@
   <main class="clock-page">
     <div class="clock-intro">
       <h1>다양한 움직임</h1>
-      <p>예시를 보고 카메라 앞에서 따라 해 봐요.</p>
+      <p>예시와 같은 자세를 2초 동안 유지하면 다음 동작으로 넘어가요.</p>
     </div>
     <div class="move-layout">
       <section class="move-workspace" aria-labelledby="move-title">
         <div class="move-heading">
           <div>
-            <h2 id="move-title">팔을 쭉 펴기</h2>
+            <h2 id="move-title" aria-live="polite">팔을 쭉 펴기</h2>
             <p id="move-instruction">양팔을 어깨 높이에서 옆으로 쭉 펴요.</p>
           </div>
           <button type="button" id="move-next">다음 동작</button>
@@ -42,6 +42,7 @@
             </div>
             <div class="clock-camera-frame move-camera-frame">
               <video id="move-video" playsinline muted hidden></video>
+              <span id="move-countdown" aria-hidden="true" hidden></span>
               <p id="move-standby">한 명씩 카메라 앞에 서요.</p>
             </div>
           </section>
@@ -51,6 +52,6 @@
       <nav id="move-list" aria-label="연습할 동작"></nav>
     </div>
   </main>
-  <script type="module" src="js/movement-practice-page.js?v=1"></script>
+  <script type="module" src="js/movement-practice-page.js?v=2"></script>
 </body>
 </html>
