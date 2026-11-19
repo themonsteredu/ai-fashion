@@ -214,6 +214,18 @@ try {
   assert.equal(await page.locator('#move-progress').textContent(), '0 / 9 동작 완료');
   assert.equal(await selectedMove.getAttribute('data-pose'), poseIds[0]);
   assert.equal(await page.locator('.move-done').count(), 0);
+  // An empty camera frame and the manual skip should both let the student finish the round.
+  const nextMovement = page.locator('#move-next');
+  await page.evaluate(() => { window.movementMissing = true; });
+  await moveButtons.nth(0).locator('.move-skipped').waitFor();
+  assert.equal(await selectedMove.getAttribute('data-pose'), poseIds[1]);
+  assert.equal(await nextMovement.textContent(), '건너뛰기');
+  await nextMovement.click();
+  assert.equal(await selectedMove.getAttribute('data-pose'), poseIds[2]);
+  assert.equal(await page.locator('#move-progress').textContent(), '0 / 9 동작 완료 · 2개 건너뜀');
+  await setPose(poseIds[2]);
+  await page.evaluate(() => { window.movementMissing = false; });
+  await moveButtons.nth(2).locator('.move-done').waitFor();
   await page.setViewportSize({ width: 390, height: 844 });
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth));
   await page.locator('#move-camera').click();
@@ -221,6 +233,23 @@ try {
   assert.equal(await page.locator('#move-pose').isVisible(), false);
   assert.equal(await page.locator('#move-pose').evaluate(canvas => canvas.getContext('2d')
     .getImageData(0, 0, canvas.width, canvas.height).data.some(value => value > 0)), false);
+  for (const id of poseIds.slice(3)) {
+    assert.equal(await selectedMove.getAttribute('data-pose'), id);
+    await nextMovement.click();
+  }
+  assert.equal(await nextMovement.textContent(), '다시 시작하기');
+  assert.equal(await page.locator('#move-progress').textContent(), '1 / 9 동작 완료 · 8개 건너뜀');
+  // Replaying a skipped guide replaces its mark instead of double-counting it.
+  await moveButtons.first().click();
+  await setPose(poseIds[0]);
+  await page.locator('#move-camera').click();
+  await moveButtons.first().locator('.move-done').waitFor();
+  assert.equal(await page.locator('#move-progress').textContent(), '2 / 9 동작 완료 · 7개 건너뜀');
+  assert.equal(await nextMovement.textContent(), '다시 시작하기');
+  await nextMovement.click();
+  assert.equal(await page.locator('#move-progress').textContent(), '0 / 9 동작 완료');
+  assert.equal(await page.locator('.move-done, .move-skipped').count(), 0);
+  await page.locator('#move-camera').click();
   console.log('Movement lesson camera and progress verified.');
   await page.goto(origin + '/body-clock.html');
   await page.setViewportSize({ width: 1100, height: 768 });

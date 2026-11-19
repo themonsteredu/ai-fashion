@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { MOVEMENT_GROUPS, MOVEMENTS, matchesMovement, MovementHold } from '../js/movement-practice.js';
+import { MOVEMENT_GROUPS, MOVEMENTS, matchesMovement, MovementAttempt, MovementHold } from '../js/movement-practice.js';
 import { movementPose } from './fixtures/movement-poses.mjs';
 
 test('all nine reference movements have their own guide and accept a matching pose', () => {
@@ -78,4 +78,38 @@ test('sustained incorrect or missing poses and a frozen camera require a fresh t
     for (let time = 2500; time < 4500; time += 250) assert.equal(hold.update(true, time), false);
     assert.equal(hold.update(true, 4500), true);
   }
+});
+
+test('unmatched and missing poses advance as skipped after eight seconds of camera frames', () => {
+  const attempt = new MovementAttempt();
+  for (const reading of [false, null]) {
+    attempt.reset();
+    for (let now = 0; now < 8000; now += 250) assert.equal(attempt.update(reading, now), null);
+    assert.equal(attempt.update(reading, 7999), null);
+    assert.equal(attempt.update(reading, 8000), 'skipped');
+  }
+});
+
+test('a correct pose near the skip deadline can still complete its hold', () => {
+  const attempt = new MovementAttempt();
+  for (let now = 0; now <= 7500; now += 500) assert.equal(attempt.update(false, now), null);
+  for (let now = 7900; now < 9900; now += 200) assert.equal(attempt.update(true, now), null);
+  assert.equal(attempt.update(true, 9900), 'done');
+});
+
+test('flickering recognition cannot postpone a skip indefinitely', () => {
+  const attempt = new MovementAttempt();
+  for (let now = 0; now <= 10500; now += 250) {
+    assert.equal(attempt.update(now % 500 === 0, now), null);
+  }
+  assert.equal(attempt.update(true, 10550), 'skipped');
+});
+
+test('camera stalls and the previous movement do not exhaust a new attempt', () => {
+  const attempt = new MovementAttempt();
+  for (let now = 0; now <= 6000; now += 500) attempt.update(false, now);
+  assert.equal(attempt.update(null, 60000), null);
+  attempt.reset();
+  for (let now = 61000; now < 69000; now += 500) assert.equal(attempt.update(null, now), null);
+  assert.equal(attempt.update(null, 69000), 'skipped');
 });

@@ -114,6 +114,7 @@ export function matchesMovement(id, image, world, aspect) {
 const HOLD_DURATION_MS = 2000;
 const TRACKING_GRACE_MS = 550;
 const MAX_SAMPLE_GAP_MS = 900;
+const SKIP_AFTER_MS = 8000;
 
 export class MovementHold {
   constructor() { this.reset(); }
@@ -143,5 +144,35 @@ export class MovementHold {
       this.interruptedAt = null;
     }
     return matched === true && this.heldMs >= HOLD_DURATION_MS;
+  }
+}
+
+export class MovementAttempt {
+  constructor() {
+    this.hold = new MovementHold();
+    this.reset();
+  }
+
+  reset() {
+    this.hold.reset();
+    this.elapsedMs = 0;
+    this.lastFrameAt = null;
+  }
+
+  get skipSecondsLeft() {
+    return Math.max(0, Math.ceil((SKIP_AFTER_MS - this.elapsedMs) / 1000));
+  }
+
+  update(matched, now) {
+    if (this.lastFrameAt !== null) {
+      // A stalled camera must not use up the whole attempt on its first new frame.
+      this.elapsedMs += Math.max(0, Math.min(now - this.lastFrameAt, 1000));
+    }
+    this.lastFrameAt = now;
+    if (this.hold.update(matched, now)) return 'done';
+    if (this.elapsedMs < SKIP_AFTER_MS) return null;
+    // Give a hold already in progress time to finish, even with a brief tracking loss.
+    if (this.hold.secondsLeft !== null && this.elapsedMs < SKIP_AFTER_MS + HOLD_DURATION_MS + TRACKING_GRACE_MS) return null;
+    return 'skipped';
   }
 }
