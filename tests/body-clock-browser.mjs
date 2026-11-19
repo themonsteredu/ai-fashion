@@ -143,9 +143,13 @@ try {
 
   await page.goto(origin);
   const activities = page.locator('.start-activities a');
-  assert.equal(await activities.count(), 2);
+  const clockActivity = page.locator('#start-explore + a');
+  assert.deepEqual(await activities.locator('strong').allTextContents(), ['모둠 영상 만들기', '다양한 움직임']);
+  assert.equal(await clockActivity.textContent(), '몸으로 시계 나타내기');
+  assert.equal(await clockActivity.isVisible(), false);
   assert.equal(await page.locator('#btn-mission').isVisible(), false);
   await page.locator('#start-explore').click();
+  assert.equal(await clockActivity.isVisible(), true);
   assert.equal(await page.locator('#btn-pe').isVisible(), true);
   await page.locator('#start-avatars').click();
   assert.equal(await page.locator('#btn-mission').isVisible(), false);
@@ -155,7 +159,9 @@ try {
   await page.setViewportSize({ width: 390, height: 844 });
   assert.equal(await activities.last().isVisible(), true);
   assert.ok(await page.locator('#screen-start').evaluate(el => el.scrollWidth === el.clientWidth));
-  await activities.last().click();
+  await page.locator('#start-explore').click();
+  await clockActivity.click();
+  assert.equal(new URL(page.url()).pathname, '/body-clock.html');
   assert.equal(await page.locator('#clock-time').textContent(), '예시 9시');
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth === innerWidth));
 
@@ -171,9 +177,8 @@ try {
   assert.equal(await page.locator('#clock-video').evaluate(video => video.srcObject), null);
 
   await page.goto(origin);
-  assert.equal(await page.getByRole('link', { name: '다양한 움직임' }).isVisible(), false);
-  await page.locator('#start-explore').click();
-  await page.getByRole('link', { name: '다양한 움직임' }).click();
+  await activities.last().click();
+  assert.equal(new URL(page.url()).pathname, '/movement-practice.html');
   await page.locator('#move-list button').last().waitFor();
   assert.equal(await page.locator('#move-list button').count(), 9);
   await page.waitForFunction(() => document.querySelector('#move-example').getContext('2d').getImageData(290, 270, 1, 1).data[3] > 0);
